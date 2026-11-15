@@ -1,0 +1,299 @@
+# 系统架构
+
+> 交通流（`traffic`）列入后续计划。本文保留其设计，实现安排见 [开发路线图](./06-Roadmap.md)。
+
+DRISCA 由一个父进程和若干子进程组成。桌面端 `launcher` 负责实验前后的准备、子进程的启动与监管、平板页面、数据面板、调试面板、按键说明，以及实验数据的读写。`simulator` 是模拟主循环，按固定频率推进 CARLA 世界、采集传感器并绘制驾驶画面。`traffic` 是背景交通流循环（计划中）。它们与 CARLA 服务端、同一个 SQLite 数据库协同工作。
+
+`simulator` 按帧推进模拟，`launcher` 处理界面操作和网络消息。进程分离使模拟循环与界面事件各自运行。
+
+## 术语
+
+全文使用以下名称。
+
+| 术语 | 含义 |
+| --- | --- |
+| 操作者（operator） | 在桌面端 `launcher` 上准备、监控和控制实验的人员 |
+| 被试（subject） | 在 `simulator` 驾驶台前参与实验的驾驶人 |
+| 子进程（worker） | 由 `launcher` 启动的 `simulator` 与 `traffic` |
+| 会话（session） | 一次实验，对应 `session` 表中的一行 |
+| 运行配置（RunConfig） | 一次会话实际使用的完整配置，启动前由 `launcher` 合成 |
+| 预设（preset） | 实验配置的文件形式，保存在 `presets/` 目录 |
+| 遥测快照（telemetry snapshot） | `simulator` 每隔数帧上报一次的运行状态 |
+| HUD 数据 | 从遥测快照中挑出、推送到平板的子集 |
+| 数据面板 | `launcher` 桌面端中实时显示遥测快照的区域 |
+| 调试面板 | `launcher` 实验控制台中供操作者在运行期下发控制命令、实时调整相机、拾取出生点并写回预设的区域 |
+| 按键说明 | `launcher` 桌面端中列出操作按键的页面 |
+| 世界帧（frame） | CARLA 世界每推进一次的编号 |
+
+## 进程与通信
+
+```mermaid
+flowchart TD
+    tablet["平板浏览器"]
+    wheel["方向盘硬件"]
+
+    subgraph host["实验主机 (Windows)"]
+        launcher["launcher<br/>Qt 界面 + HTTP/WS 服务"]
+        simulator["simulator<br/>60Hz 循环、渲染、外设"]
+        traffic["traffic（计划中）<br/>交通流循环"]
+        db[("SQLite")]
+    end
+
+    carla[("CARLA 服务端")]
+
+    tablet <-->|"HTTP 页面 + SSE"| launcher
+    wheel <-->|"USB / DirectInput"| simulator
+    launcher <-->|"本地 WebSocket"| simulator
+    launcher <-.->|"本地 WebSocket"| traffic
+
+    launcher -->|"预检、地图、天气、清理"| carla
+    simulator <-->|"推进世界、主车、传感器"| carla
+    traffic <-.->|"读取世界、控制背景车"| carla
+
+    simulator -->|"写入数据行"| db
+    traffic -.->|"写入数据行"| db
+    launcher <-->|"会话登记与收尾、事件写入、读取与导出"| db
+
+    style traffic stroke-dasharray: 5 5
+```
+
+`launcher` 是唯一的父进程，也是唯一的网络服务端。它在同一个 HTTP 服务中同时承载平板页面（HTTP 与 SSE）和子进程的本地 WebSocket 接入。`simulator` 与 `traffic` 不开放端口，由 `launcher` 以 `sys.executable -m` 启动，启动后主动连回 `launcher`。
+
+运行期的通道是本地 WebSocket，承载三类内容：下行的控制命令，上行的遥测快照、日志和状态，以及子进程在执行操作后上报的实验事件。相机画面等大流量数据不经过这条通道，只在 `simulator` 与 CARLA 之间传输。
+
+`launcher` 同时通过操作系统的 `stdout` 与 `stderr` 管道捕获子进程的输出和退出码。子进程即使在连上 WebSocket 之前因底层扩展或环境问题崩溃，错误输出也能保留下来。
+
+`launcher` 与子进程的生命周期关系是：子进程由 `launcher` 启动，接受 `launcher` 的停止命令，退出后由 `launcher` 完成收尾。子进程加入 Windows Job Object，`launcher` 异常退出时，操作系统会一并结束这些子进程。直接从命令行启动子进程用于开发调试，此时没有 WebSocket 地址，日志直接输出到终端，核心逻辑不受影响。
+
+## 代码分层与依赖
+
+代码直接划分为五个顶层子包，不设独立的命令行层。每个可运行的进程都有包内的 `__main__.py` 作为入口。
+
+```mermaid
+flowchart TD
+    launcher["launcher<br/>界面、进程编排、HTTP 服务、数据浏览"]
+    simulator["simulator<br/>主循环、车辆控制、方向盘、pygame 渲染"]
+    traffic["traffic（计划中）<br/>背景交通流"]
+
+    core["core<br/>CARLA 封装、配置模型、通道消息"]
+    storage["storage<br/>表结构、批量写入、查询与导出"]
+
+    launcher --> core
+    launcher --> storage
+    simulator --> core
+    simulator --> storage
+    traffic -.-> core
+    traffic -.-> storage
+
+    core --> carla_pkg[("carla 包")]
+    storage --> sqlite_pkg[("sqlite3 标准库")]
+
+    style traffic stroke-dasharray: 5 5
+```
+
+依赖只能从上往下指，`import` 不能反向。几条具体约束如下。
+
+`core` 封装 CARLA 的连接、世界状态、对象（车辆、行人、传感器）的增删查和传感器回调。它也持有跨进程共享的纯数据结构，即配置模型和通道消息模型。`core` 不导入 `pygame`、方向盘 SDK、`PySide6`、`fastapi` 或 `storage`。
+
+`storage` 是数据库的唯一入口，负责表结构、版本校验、批量写入、查询和导出。它只依赖标准库 `sqlite3`，不导入 `carla`、硬件或界面框架。CARLA 的原生对象要先投影成扁平的行结构，才能交给 `storage`。
+
+`simulator` 内部把「世界与车辆状态」和「pygame 画面」分开。窗口模块只读取状态，不直接调用 CARLA 接口。方向盘的初始化、读取和力反馈都封装在 `simulator` 内部，其他模块不接触硬件。
+
+`launcher` 的主线程运行 Qt 事件循环，另有一个守护线程运行 HTTP 服务。两者通过线程安全的信号和队列交换数据。
+
+模块被导入时不做任何外部操作：不连接 CARLA，不初始化方向盘，不打开数据库，不启动线程，不监听端口。这些动作只在入口函数被显式调用时发生。
+
+## 配置
+
+配置按生命周期分为三份配置文件、单次实验设置和代码内的模块常量。每一层只保存自己的内容。
+
+| 层级 | 包含内容 | 来源 |
+| --- | --- | --- |
+| 机器配置（`MachineConfig`） | CARLA 地址与端口、显示器分辨率与全屏、服务端口、语音与调试开关 | `config/machine.toml`，每台机器设置一次 |
+| 控制配置（`ControlConfig`） | 键盘各驾驶动作的按键、方向盘硬件开关与灵敏度系数、轴号与按钮序号 | `config/control.toml`，按外设方案保存，不同机器若方向盘相同可直接复用 |
+| 实验预设（`PresetConfig`） | 地图、天气、主车与出生点、四路相机的安装位置与视野、同步模式、随机种子（可选）、是否保存数据 | `presets/*.toml`，在预设页中静态编辑；运行期也可通过调试面板调整并覆盖当前预设或另存为新预设 |
+| 实验设置（`RunSettings`） | 被试编号、本次备注 | 每次启动实验时在实验控制台中填写，不保存为预设 |
+| 模块常量 | 控制器默认系数、G29 物理按钮名称对照表 | 代码中的具名常量 |
+
+启动实验时，`launcher` 读取机器配置、控制配置和所选预设，并结合本次填写的实验设置，合并、校验后生成不可变的 `RunConfig`，其中包含本次会话的 `session_id` 与数据库文件绝对路径 `db_path`。`RunConfig` 有两个去处：一是以 JSON 文本存入 `session` 表，二是写到 `cache/run/<session_id>.json` 便于事后排查。子进程通过 `--config` 读取这份文件，并把它反序列化为冻结的对象，显式传给各个子模块。
+
+派生值（例如按窗口分辨率算出的主视图实际像素尺寸）保存在运行时的上下文中，不回写配置对象。因此，同一份 `RunConfig` 不会在运行中与会话记录产生偏差。
+
+## 一次实验的过程
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 操作者
+    participant L as launcher
+    participant C as CARLA 服务端
+    participant D as SQLite
+    participant S as simulator
+    participant T as traffic（计划中）
+    participant P as 平板
+
+    U->>L: 选择预设，填写被试编号，点击「开始实验」
+    L->>C: 预检（连接、版本、地图）
+    L->>C: 加载地图，设置初始天气，清理残留车辆与行人
+    L->>L: 生成 session_id，合成 RunConfig
+    L->>D: 创建会话记录（status = running）
+    L->>S: 启动子进程，传入 RunConfig
+    S->>C: 连接，开启同步模式，生成主车与传感器
+    S-->>L: 上报就绪（主车 ID 与蓝图）
+    L->>D: 回填主车信息
+
+    opt 启用交通流（计划中）
+        L->>T: 启动子进程，传入 RunConfig
+        T->>C: 连接，按角色名找到主车
+        T-->>L: 上报运行状态
+    end
+
+    par simulator 循环
+        S->>C: 施加主车控制，推进世界，读取传感器
+        S->>D: 批量写入数据行
+        S-->>L: 遥测快照、日志与已应用的实验事件
+        L->>D: 将实验事件写入 event 表
+        L-->>P: 通过 SSE 推送 HUD 数据
+    and traffic 循环（计划中）
+        T->>C: 读取世界，计算并施加背景车控制
+        T->>D: 批量写入背景车数据
+        T-->>L: 运行状态与日志
+    end
+
+    U->>L: 点击「结束实验」，或子进程异常退出
+    L->>T: 发送停止命令（超时后强制结束）
+    L->>S: 发送停止命令（超时后强制结束）
+    S->>D: 写入剩余批次
+    L->>C: 复位 synchronous_mode，清理车辆与行人
+    L->>D: 写入结束时间与最终状态
+```
+
+实验开始和结束时，`launcher` 自动清理场景中的全部车辆与行人；操作者也可手动清理。`simulator` 在退出时销毁主车传感器。
+
+会话编号由 `launcher` 生成，并随启动参数交给子进程，子进程不需要协商。会话行由 `launcher` 写入，包括创建、回填主车信息、结束时的状态。数据行由子进程写入。
+
+实验中需要记录的事件，例如自动驾驶与接管的切换、档位与手刹、车灯、后视镜显隐、镜头调整、天气变化，都由执行该操作的进程在应用之后上报。
+
+`launcher` 发出的远程命令（如切换自动驾驶、调整相机、切换天气）不直接写入事件表。`simulator` 收到命令并应用成功后，上报一条实验事件，触发源记为 `launcher`。命令与事件分开，事件表只记录实际生效的操作，同一个操作也只记录一次。
+
+`launcher` 把子进程上报的事件与自身产生的事件（实验开始与结束、子进程状态变化、打点标记）一起写入事件表 `event`。事件表将帧号、实验经过秒数、时间戳、事件分类、事件名与触发源拆为独立列，同时用 `payload_json` 保存结构化详情。连续控制（油门、刹车、转向）不作为事件记录。
+
+正常停机时，子进程先停止主循环，等待存储线程提交剩余数据，再发送完剩余日志与事件并关闭 WebSocket 后退出。`launcher` 等待子进程退出及已接收事件入库，复位 CARLA 世界并清理对象，最后写入实验结束事件，将会话标记为 `committed`。
+
+停机时顺序固定：先停 `traffic`，再停 `simulator`。若先停 `simulator`，世界不再推进，仍在循环中的 `traffic` 会一直等待下一帧，直到超时。
+
+最终状态分为两种。正常结束时写为 `committed`。子进程异常退出或实验被中止时写为 `aborted`。`launcher` 启动时还会把上次遗留的 `running` 会话统一标记为 `aborted`，因此不会出现长期停留在运行中的记录。
+
+同步模式有一个特殊的风险。一旦 `simulator` 停止调用 `world.tick()`，CARLA 服务端就会停止推进，之后任何阻塞式调用都会一直等待。因此无论实验正常结束还是 `simulator` 崩溃，`launcher` 都要在回收子进程后，第一时间把 `synchronous_mode` 复位为 `False`，然后再清理残留对象。
+
+## 世界推进与帧对齐
+
+只有 `simulator` 推进世界。同步模式下，它在每个循环里调用 `world.tick()`，并从各传感器的队列中取出对应世界帧的数据，完成对齐。异步模式下它不调用 `tick()`，只读取最新到达的快照。两种模式的切换只由 `simulator` 决定。
+
+`traffic` 从不推进世界，只通过 `wait_for_tick()` 或读取世界状态来跟随。它与 `simulator` 是两个进程，没有共享的调度。因此，`traffic` 的控制作用在哪一帧，取决于两个进程的调度时机，不一定固定为下一帧。
+
+```mermaid
+sequenceDiagram
+    participant S as simulator
+    participant W as CARLA
+    participant T as traffic（计划中）
+
+    par simulator 循环
+        S->>W: 推进到第 N 帧
+        W-->>S: 返回第 N 帧的传感器数据
+    and traffic 循环
+        T->>W: 读取当前世界
+        T->>W: 发送控制
+    end
+    Note over S,T: 控制作用在哪一帧取决于调度。两边的数据都带有帧号，分析时可以对齐。
+```
+
+每条数据行都带有世界帧号和墙上时间，分析时 `simulator` 与 `traffic` 的数据依靠帧号对齐。交通流不要求精确到某一帧，少量帧的偏移可以接受，只要每条记录的帧号正确即可用于分析。
+
+## 遥测、HUD、数据面板与调试面板
+
+`simulator` 每隔数帧上报一次遥测快照，频率约为 20 至 30 Hz。快照包含车辆的运动、控制、位姿、道路和传感器状态。快照经过 WebSocket 发给 `launcher`，`simulator` 自身不做任何文字绘制。
+
+`launcher` 收到快照后，分三路使用它。
+
+数据面板位于桌面端的实验控制台，显示完整的遥测内容，供操作者观察车辆状态。
+
+平板 HUD 显示车速、限速、挡位、转向、驾驶模式。这些字段由 `launcher` 从快照中挑出，通过 SSE 推送给平板。平板不读取数据库，因此即使实验配置为「不保存数据」，HUD 依然可以工作。
+
+事件引擎根据快照判断超速、驾驶模式切换等情况，决定是否触发语音提示或向 `simulator` 下发命令。现阶段只提供这一接口，具体的触发规则等实验设计确定后再加入。
+
+调试面板位于实验控制台，供操作者在运行期完成以下工作：向 `simulator` 发送控制命令（切换自动驾驶、触发接管、显隐后视镜、切换天气）；实时调整四路相机的位姿与视野；从遥测快照中拾取当前主车位置作为出生点。
+
+调整相机时，`launcher` 发送 `UpdateCameraCommand`，`simulator` 应用后上报 `UpdateCameraEvent`，再由 `launcher` 写入事件表。调好后，操作者可以覆盖当前预设，也可以另存为新预设，供后续实验使用。预设页只用于实验前的静态配置编辑。
+
+按键说明由 `launcher` 的控制与按键页提供。控制配置中的键盘按键与方向盘按钮，由 `launcher` 读取并展示为对照表，同时随运行配置交给 `simulator`。`simulator` 的窗口只显示驾驶画面。
+
+平板只连接 `launcher` 的一个地址。如果 `launcher` 没有收到快照超过设定时间，它会向平板广播重置状态，避免界面停留在旧数值上。
+
+遥测快照与数据行是两条独立的路径。数据行由存储线程高频、完整地写入数据库。遥测快照只保留最新一份，约 20 至 30 Hz 发给 `launcher` 用于显示，不写入数据库。
+
+## 存储
+
+所有实验数据保存在一个 SQLite 文件中，使用 WAL 模式、`synchronous = NORMAL` 和 `busy_timeout = 5000`。
+
+会话表（`session`）每次实验一行，记录会话编号、被试编号、起止时间、应用版本、结构版本、状态、主车信息、备注和完整的运行配置。被试编号由 `launcher` 管理，同一个库内每次实验靠会话编号隔开。结束时间和主车信息在会话开始时尚不存在，因此这些列允许为空。状态取值为 `running`、`committed`、`aborted`。
+
+数据表（`data`）保存主车的运动状态、控制输入、传感器帧和碰撞等信息，按会话编号和世界帧号建立索引。交通流表（`traffic`）属于 后续规划，同样按会话编号、世界帧号和车辆编号建立索引。
+
+子进程的数据写入由后台线程攒批完成，每 500 至 1000 行或每 0.5 秒提交一次。每批用 `BEGIN IMMEDIATE` 开启短事务并执行批量插入。事务持有写锁的时间很短，多个进程争用时按 `busy_timeout` 等待。等待超时或写入失败时记录错误并退出，`launcher` 展示日志，操作者联系开发者处理。
+
+「不保存」模式在业务侧直接跳过入队，不引入内存数据库，也不建立第二条存储路径。
+
+结构版本由 `PRAGMA user_version` 记录。启动时如果数据库版本与代码中的 `SCHEMA_VERSION` 不一致，程序直接报错退出，日志中说明处置方式（删除测试库，或运行一次性迁移脚本）。程序不会自动改表。
+
+事件表（`event`）记录实验中发生的事件，按会话编号、世界帧号和时间建立索引。数据库读取和导出由 `launcher` 完成，导出的 CSV 按数据库的列名与顺序输出，不另做格式转换。导出文件名由 `launcher` 按「被试编号-实验开始时间（年月日时分秒）」自动生成，导出时操作者可以修改。
+
+`launcher` 负责写入会话表和事件表。数据行只由产生数据的子进程写入。
+
+## 线程模型
+
+`simulator` 的主线程按 60 Hz 运行，每一帧的步骤依次为：处理控制命令队列、采集外设输入、计算并施加控制、推进世界并对齐传感器、更新运行状态、合成画面并上屏。网络、日志和数据库写入都在独立线程中完成。
+
+```mermaid
+flowchart LR
+    subgraph main["主线程（60 Hz）"]
+        cmd["消费命令队列<br/>（非阻塞）"]
+        inp["采集输入"]
+        ctrl["计算并施加控制"]
+        tick["推进世界并对齐"]
+        state["更新运行状态"]
+        render["合成画面并上屏"]
+        cmd --> inp --> ctrl --> tick --> state --> render
+    end
+
+    subgraph io["网络与日志线程"]
+        slot["最新遥测快照槽<br/>（只保留一份）"]
+        log_q["出站日志与事件队列<br/>（有界）"]
+        cmd_q["入站命令队列<br/>（有界）"]
+        ws["WebSocket 客户端"]
+    end
+
+    subgraph db_worker["存储线程"]
+        db_q["数据行缓冲"]
+        writer["批量写入事务"]
+    end
+
+    cmd_q -.-> cmd
+    state -.-> slot
+    state -.-> db_q
+    main -.-> log_q
+    slot --> ws
+    log_q --> ws
+    ws --> cmd_q
+    db_q --> writer
+```
+
+主线程与网络线程之间通过有界结构交换数据：遥测快照槽只保留一份，命令队列与日志队列有界。主线程写入遥测快照槽时只替换引用，不等待网络发送。命令队列在主线程中只做非阻塞读取。队列满时直接报错退出，由开发者排查设计。
+
+数据行的写入不经过上述结构。主线程把数据行交给存储线程的缓冲，存储线程批量提交。
+
+## 版本与依赖的边界
+
+应用版本只在 `pyproject.toml` 中维护。结构版本只由存储层维护。两者互不影响。
+
+本项目只支持最新版本。旧数据、旧接口、旧配置项不做兼容处理，不兼容时直接报错，并在日志中说明原因和处置方式。

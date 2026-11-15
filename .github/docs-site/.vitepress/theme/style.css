@@ -1,0 +1,8 @@
+/* 避免正文段落样式改变 Mermaid 节点文字的尺寸。 */
+.vp-doc .mermaid .nodeLabel p,
+.vp-doc .mermaid .edgeLabel p,
+.mermaid-view-content .nodeLabel p,
+.mermaid-view-content .edgeLabel p {
+  margin: 0;
+  line-height: 1.5;
+}
