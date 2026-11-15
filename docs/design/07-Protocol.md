@@ -1,0 +1,195 @@
+# 进程间通信协议
+
+本文保留上下行消息的字段定义。配置类型见[配置模型](./08-ConfigurationModels.md)，入库字段见[运行状态与实验数据](./02-DataStructures.md)，离散操作与传感器事件的完整类型见[实验事件](./09-ExperimentEvents.md)。
+
+`simulator` 与 `launcher` 之间通过本地 WebSocket 传输 Pydantic JSON 消息，利用 `discriminator` 实现多态反序列化。
+
+其中 `TelemetrySnapshotEvent`（遥测快照）包含 `simulator` 的实时运行状态，由 `launcher` 用于以下两处：
+
+1. 平板 HUD：`launcher` 从快照中取出子集（车速、限速、挡位、转向、驾驶模式），通过 SSE 推送给平板。
+2. `launcher` 数据面板与调试面板：以 20~30 Hz 显示遥测指标与控制条，并支持在调试面板中拾取快照里的主车当前坐标作为 `spawn_point`。
+
+```python
+from enum import StrEnum
+from typing import Annotated, Any, Literal
+from pydantic import BaseModel, Field
+
+
+class WorkerRole(StrEnum):
+    SIMULATOR = 'simulator'
+    TRAFFIC = 'traffic'
+
+
+class WorkerState(StrEnum):
+    STARTING = 'starting'
+    RUNNING = 'running'
+    STOPPING = 'stopping'
+    ERROR = 'error'
+
+
+class LogLevel(StrEnum):
+    DEBUG = 'DEBUG'
+    INFO = 'INFO'
+    WARNING = 'WARNING'
+    ERROR = 'ERROR'
+    CRITICAL = 'CRITICAL'
+
+
+class ControlMode(StrEnum):
+    MANUAL = 'manual'
+    AUTOPILOT = 'autopilot'
+
+
+# 上行消息：子进程 -> launcher (WorkerEvent)
+
+class WorkerReadyEvent(BaseModel, frozen=True):
+    """主车与传感器在 CARLA 中生成完毕后立刻上报，用于回填 session 表"""
+    type: Literal['ready'] = 'ready'
+    role: WorkerRole = WorkerRole.SIMULATOR
+    ego_actor_id: int
+    ego_type_id: str
+
+
+class WorkerStatusEvent(BaseModel, frozen=True):
+    type: Literal['status'] = 'status'
+    role: WorkerRole
+    state: WorkerState
+    detail: str = ''
+
+
+class LogEvent(BaseModel, frozen=True):
+    """由 loguru sink 写入有界队列后异步上报"""
+    type: Literal['log'] = 'log'
+    role: WorkerRole
+    timestamp: float
+    level: LogLevel
+    message: str
+    command_id: str | None = None  # 命令执行错误关联编号
+
+
+# ExperimentEvent 的字段与判别联合见实验事件文档。
+
+class TelemetrySnapshotEvent(BaseModel, frozen=True):
+    """遥测快照（20~30Hz）：simulator 的实时运行状态，供 launcher 数据面板、平板 HUD（取子集）使用"""
+    type: Literal['telemetry'] = 'telemetry'
+    seq: int
+    timestamp: float
+    frame_no: int = 0
+    server_fps: float = 0.0
+    simulator_fps: float = 0.0
+    # 核心 HUD 与控制状态
+    control_mode: ControlMode = ControlMode.MANUAL
+    input_throttle: float = 0.0
+    input_steer: float = 0.0
+    input_brake: float = 0.0
+    speed_mps: float = 0.0
+    speed_limit_mps: float = 0.0
+    gear: int = 0               # -1: R, 0: N, >=1: D 挡位
+    steer: float = 0.0          # [-1.0, 1.0]
+    throttle: float = 0.0       # [0.0, 1.0]
+    brake: float = 0.0          # [0.0, 1.0]
+    reverse: bool = False
+    hand_brake: bool = False
+    manual_gear_shift: bool = False
+    takeover_requested: bool = False
+    # 位姿、道路与传感器遥测（供 launcher 数据面板、出生点拾取与事件判定使用）
+    location_x: float = 0.0
+    location_y: float = 0.0
+    location_z: float = 0.0
+    rotation_pitch: float = 0.0
+    rotation_yaw: float = 0.0
+    rotation_roll: float = 0.0
+    compass: float = 0.0
+    road_id: int = 0
+    lane_id: int = 0
+    lane_offset: float = 0.0
+    collision_intensity: float = 0.0
+    invaded_lane_marking: str = ''
+
+
+WorkerEvent = Annotated[
+    WorkerReadyEvent
+    | WorkerStatusEvent
+    | LogEvent
+    | ExperimentEvent
+    | TelemetrySnapshotEvent,
+    Field(discriminator='type'),
+]
+
+
+# 下行命令：launcher -> 子进程 (LauncherCommand)
+
+class StopCommand(BaseModel, frozen=True):
+    """通知子进程退出主循环、Flush 数据库并销毁 Actor"""
+    command_id: str
+    type: Literal['stop'] = 'stop'
+
+
+class SetAutopilotCommand(BaseModel, frozen=True):
+    """由 launcher 远程切换主车自动驾驶状态"""
+    command_id: str
+    type: Literal['set_autopilot'] = 'set_autopilot'
+    enabled: bool
+
+
+class SetTakeoverCommand(BaseModel, frozen=True):
+    """由操作者远程触发或解除接管请求"""
+    command_id: str
+    type: Literal['set_takeover'] = 'set_takeover'
+    enabled: bool
+
+
+class SetWeatherCommand(BaseModel, frozen=True):
+    """由 launcher 运行期动态切换天气"""
+    command_id: str
+    type: Literal['set_weather'] = 'set_weather'
+    weather: WeatherConfig
+
+
+class UpdateCameraCommand(BaseModel, frozen=True):
+    """由 launcher 实时调整任一车载相机的安装位姿与视野"""
+    command_id: str
+    type: Literal['update_camera'] = 'update_camera'
+    camera_name: Literal['front', 'rear_top', 'rear_left', 'rear_right'] = 'front'
+    mount: CameraConfig
+
+
+class SetRearviewCommand(BaseModel, frozen=True):
+    """由 launcher 远程显隐三路后视镜画面"""
+    command_id: str
+    type: Literal['set_rearview'] = 'set_rearview'
+    enabled: bool
+
+
+LauncherCommand = Annotated[
+    StopCommand
+    | SetAutopilotCommand
+    | SetTakeoverCommand
+    | SetWeatherCommand
+    | UpdateCameraCommand
+    | SetRearviewCommand,
+    Field(discriminator='type'),
+]
+```
+
+> 命令与事件的区别：`XxxCommand` 表示要求子进程执行某个操作，由 `launcher` 发出。`ExperimentEvent`（`XxxEvent`）表示某个操作已经在子进程中执行生效，由实际执行它的进程在应用之后上报并记录。例如 `launcher` 发出 `SetAutopilotCommand`，`simulator` 切换成功后上报 `ToggleAutopilotEvent(source='launcher')`。事件表记录实际生效的操作，界面依据事件和最新遥测更新。
+
+## 命令错误
+
+命令沿用 `command_id`。成功应用的状态变化通过现有实验事件上报，事件携带来源命令编号。执行失败时记录一条 ERROR 日志，在已有 `LogEvent` 中附上 `command_id` 和错误说明。
+
+命令按失败后是否影响实验继续进行处理，分类在执行处确定。
+
+| 操作 | 失败处理 |
+| --- | --- |
+| 相机微调、后视镜显示等调试操作 | 记录错误，继续实验 |
+| 接管、控制权切换等决定实验过程的操作 | 记录错误并停止实验 |
+| 停止命令 | 按停机超时流程回收进程 |
+
+天气切换默认按普通操作处理；某次实验要求该操作必须成功时，在该实验的执行处明确失败后停止。
+
+## 接管与事件
+
+`control_mode` 表示手动或自动驾驶，`takeover_requested` 表示接管提示状态。操作者可发出接管请求。被试执行接管动作时，直接关闭自动驾驶并进入人工驾驶，同时结束接管提示。键盘与方向盘的 `takeover` 绑定执行这一动作。
+
+碰撞与压线回调每发生一次生成一条事件，同一世界帧可有多条。事件携带发生时的世界帧号和时间戳。操作者打点使用实际时间戳并关联最新遥测帧。管理端收到事件后更新面板，开启保存时写入 event 表。

@@ -1,0 +1,37 @@
+# 复制为 control.toml，按设备选择轴号和按钮绑定。
+
+[keyboard]
+quit = ["escape"]
+toggle_autopilot = ["p", "keypad 1"]
+takeover = ["backslash", "keypad 2"]
+toggle_reverse = ["q"]
+toggle_manual_transmission = ["m"]
+gear_up = ["period"]
+gear_down = ["comma"]
+toggle_handbrake = ["space"]
+toggle_light_double_blinker = ["semicolon"]
+toggle_light_low_beam = ["k"]
+toggle_light_high_beam = ["l"]
+toggle_light_left_blinker = ["z"]
+toggle_light_right_blinker = ["x"]
+toggle_light_interior = ["i"]
+drive_forward = ["up", "w"]
+drive_backward = ["down", "s"]
+drive_left = ["left", "a"]
+drive_right = ["right", "d"]
+
+[wheel]
+enable_wheel = false
+show_button_key = false
+autopilot_wheel_sync = false # 保留的方向盘随动设置，功能后续实现
+device_index = 0
+steering_axis = 0
+throttle_axis = 1
+brake_axis = 2
+toggle_autopilot = [23]
+takeover = [0]
+toggle_reverse = [5]
+toggle_handbrake = [4]
+toggle_light_left_blinker = [7]
+toggle_light_right_blinker = [6]
+toggle_light_double_blinker = [3]

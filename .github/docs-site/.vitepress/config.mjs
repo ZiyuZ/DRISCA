@@ -27,8 +27,8 @@ export default withMermaid(defineConfig({
   head: [['link', { rel: 'icon', type: 'image/png', href: `${base}assets/icon.png` }]],
   themeConfig: {
     logo: '/assets/icon.png',
-    nav: [{ text: '使用指南', link: '/guide/01-QuickStart' }, { text: '设计文档', link: '/design/01-Architecture' }],
-    sidebar: [group('guide', '使用指南'), group('design', '设计文档')],
+    nav: [{ text: '使用指南', link: '/guide/01-QuickStart' }, { text: '设计文档', link: '/design/01-Architecture' }, { text: '参考资料', link: '/reference/RenderingPipeline' }],
+    sidebar: [group('guide', '使用指南'), group('design', '设计文档'), group('reference', '参考资料')],
     outline: { level: [2, 3], label: '本页内容' },
     docFooter: { prev: '上一页', next: '下一页' },
     sidebarMenuLabel: '文档目录', returnToTopLabel: '返回顶部',

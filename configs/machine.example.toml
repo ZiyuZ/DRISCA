@@ -1,0 +1,21 @@
+# 复制为 machine.toml，填写本机设置。
+db_path = "data/experiments.sqlite3"
+recorder_dir = "data/recordings"
+
+[carla]
+host = "127.0.0.1"
+port = 2000
+tm_port = 8000
+timeout = 5.0
+
+[display]
+resolution = [1600, 900]
+fullscreen = false
+borderless = false
+target_fps = 60
+
+[service]
+launcher_host = "0.0.0.0"
+launcher_port = 7777
+enable_tts = true
+debug = false

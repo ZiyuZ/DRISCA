@@ -21,8 +21,8 @@ features:
     linkText: 桌面管理端设计
   - title: 模拟驾驶体验
     details: 结合 CARLA 场景、车载画面和驾驶外设，开展驾驶行为实验。
-    link: /design/05-RenderingPipeline
-    linkText: 渲染与画面传输
+    link: /design/01-Architecture
+    linkText: 系统架构
   - title: 记录与分析
     details: 保存实验会话、车辆状态与事件，为后续分析提供数据。
     link: /design/02-DataStructures
@@ -33,5 +33,7 @@ features:
 
 DRISCA 当前处于设计阶段。[系统架构](./design/01-Architecture.md)介绍平台的组成与实验流程；[开发路线图](./design/06-Roadmap.md)记录阶段目标。
 
-使用指南将在新版 CARLA 环境和管理端完成后更新。
+配置文件位置与填写示例见[配置管理](./guide/05-Configuration.md)。开发者可分别查阅[配置模型](./design/08-ConfigurationModels.md)、[进程通信](./design/07-Protocol.md)和[运行状态与实验数据](./design/02-DataStructures.md)。
 可从[快速开始](./guide/01-QuickStart.md)或 [CARLA 服务端](./guide/02-CarlaServer.md)进入。
+
+渲染链路与已有测量收录在[参考资料](./reference/RenderingPipeline.md)。

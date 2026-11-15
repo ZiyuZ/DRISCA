@@ -1,0 +1,86 @@
+# 另存为 basic.toml，按实验环境调整地图、车辆与相机。
+
+[world]
+map_name = "Town10HD_Opt"
+load_map = false
+sync_mode = true
+simulation_fps = 60
+
+[world.weather]
+preset_name = "ClearNoon"
+cloudiness = 30.0
+wetness = 80.0
+precipitation = 80.0
+precipitation_deposits = 80.0
+wind_intensity = 20.0
+dust_storm = 0.0
+sun_azimuth_angle = 0.0
+sun_altitude_angle = 45.0
+fog_density = 0.0
+fog_distance = 0.0
+fog_falloff = 0.0
+scattering_intensity = 0.0
+mie_scattering_scale = 0.0
+rayleigh_scattering_scale = 0.0331
+
+[ego]
+role_name = "hero"
+blueprint = "vehicle.audi.a2"
+default_speed_limit = 33.33
+dynamic_speed_limit = false
+init_autopilot = false
+
+# 示例出生坐标，使用前请从目标地图选择位置并保存。
+[ego.spawn_point]
+x = 120.0
+y = 30.0
+z = 0.5
+pitch = 0.0
+yaw = 90.0
+roll = 0.0
+
+[cameras]
+show_rearview = true
+
+[cameras.front]
+x = 0.5
+y = -0.35
+z = 1.35
+pitch = 5.8
+yaw = 0.0
+roll = 0.0
+screen_position = [0.5, 0.5]
+fov = 120.0
+
+[cameras.rear_top]
+x = 0.34
+y = 0.0
+z = 1.27
+pitch = 5.8
+yaw = 180.0
+roll = 0.0
+screen_position = [0.5, 0.1]
+image_size = [320, 150]
+fov = 100.0
+
+[cameras.rear_left]
+x = 0.4
+y = -0.93
+z = 1.03
+pitch = 5.8
+yaw = 180.0
+roll = 0.0
+screen_position = [0.12, 0.9]
+image_size = [320, 150]
+fov = 100.0
+
+[cameras.rear_right]
+x = 0.4
+y = 0.93
+z = 1.03
+pitch = 5.8
+yaw = 180.0
+roll = 0.0
+screen_position = [0.88, 0.9]
+image_size = [320, 150]
+fov = 100.0
