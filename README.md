@@ -7,7 +7,7 @@
   <p>Driving Simulator based on CARLA<br>An Experimental Platform for Human Driving Behavior Research</p>
   <p>
     <img src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square" alt="平台：Windows">
-    <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square" alt="Python 3.12">
+    <img src="https://img.shields.io/badge/Python-3.14-3776AB?style=flat-square" alt="Python 3.14">
   </p>
   <p>
     <a href="docs/index.md">文档首页</a> ·
