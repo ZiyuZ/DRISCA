@@ -83,7 +83,7 @@ class DisplayConfig(BaseModel, frozen=True, extra='forbid'):
 
 class ServiceConfig(BaseModel, frozen=True, extra='forbid'):
     launcher_host: str = '0.0.0.0'  # 监听局域网以便平板连接
-    launcher_port: int = 7777
+    launcher_port: int = 7900
     enable_tts: bool = True         # 由 launcher 托管的语音播报开关
     debug: bool = False
 

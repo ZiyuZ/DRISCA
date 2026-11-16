@@ -16,6 +16,6 @@ target_fps = 60
 
 [service]
 launcher_host = "0.0.0.0"
-launcher_port = 7777
+launcher_port = 7900
 enable_tts = true
 debug = false

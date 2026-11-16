@@ -99,8 +99,8 @@ class CameraRigConfig(BaseModel, frozen=True, extra='forbid'):
 
 class CarlaConnectionConfig(BaseModel, frozen=True, extra='forbid'):
     host: str = '127.0.0.1'
-    port: int = Field(default=2000, ge=1, le=65535)
-    tm_port: int = Field(default=8000, ge=1, le=65535)
+    port: int = Field(default=2000, gt=1024, le=65535)
+    tm_port: int = Field(default=8000, gt=1024, le=65535)
     timeout: float = Field(default=5.0, gt=0)
 
 
@@ -120,7 +120,7 @@ class DisplayConfig(BaseModel, frozen=True, extra='forbid'):
 
 class ServiceConfig(BaseModel, frozen=True, extra='forbid'):
     launcher_host: str = '0.0.0.0'  # 监听局域网以便平板连接
-    launcher_port: int = Field(default=7777, ge=1, le=65535)
+    launcher_port: int = Field(default=7900, ge=1, le=65535)
     enable_tts: bool = True  # 由 launcher 托管的语音播报开关
     debug: bool = False
 

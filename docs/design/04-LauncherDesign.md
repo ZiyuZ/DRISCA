@@ -38,7 +38,7 @@ FluentWindow (DRISCA Launcher)
      - 「保存实验数据（`RunSettings.save_data`）」总开关与「CARLA 录像（`RunSettings.enable_carla_recorder`）」选项。
    - 主控按钮与平板入口：
      - 「开始实验」/「结束实验」按钮（跟随 `ExperimentOrchestrator.state_changed` 信号切换状态）；
-     - 「平板 HUD 连接」按钮：点击弹出局域网 URL（如 `http://192.168.1.x:7777/`）及二维码，供平板扫码连接。
+     - 「平板 HUD 连接」按钮：点击弹出局域网 URL（如 `http://192.168.1.x:7900/`）及二维码，供平板扫码连接。
 2. 调试面板（运行期控制与标定，仅在 `running` 状态下激活）：
    - 集中放置运行期对 `simulator` 的全部实时干预与现场标定功能。操作者下发的所有控制命令（`LauncherCommand`）本身不直接写入事件表，由 `simulator` 收到并应用成功后上报对应的实验事件（`source='launcher'`），再由 `launcher` 写入 `event` 表：
      - 驾驶状态与环境控制：
@@ -124,7 +124,7 @@ FluentWindow (DRISCA Launcher)
 
 1. CARLA 连接设置（`CarlaConnectionConfig`）：服务端 IP、RPC 端口（默认 `2000`）、Traffic Manager 端口（默认 `8000`）、超时时间。
 2. 驾驶显示窗口设置（`DisplayConfig`）：窗口分辨率（建议宽度为 64 的倍数）、全屏模式开关、无边框窗口开关、显示目标帧率（`target_fps`，默认 `60`）。
-3. 本地服务与语音设置（`ServiceConfig`）：内置 HTTP/WebSocket 监听地址与端口（默认 `0.0.0.0:7777`）、数据库文件路径与录像目录、TTS 语音播报开关（`enable_tts`）、调试日志开关（`debug`）。
+3. 本地服务与语音设置（`ServiceConfig`）：内置 HTTP/WebSocket 监听地址与端口（默认 `0.0.0.0:7900`）、数据库文件路径与录像目录、TTS 语音播报开关（`enable_tts`）、调试日志开关（`debug`）。
 
 ## 远期扩展预留：场景导演与事件触发台（后续规划）
 
