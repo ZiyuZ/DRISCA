@@ -1,6 +1,6 @@
 # 模块职责与 API 规范
 
-> 文档定位：本文面向项目开发者，规定 DRISCA 的包目录结构、各模块内部文件划分以及跨模块调用的类与函数签名。具体的数据字段定义见 [核心数据结构与协议契约](./02-DataStructures.md)，桌面界面布局与交互流程见 [桌面管理端设计](./04-LauncherDesign.md)。
+> 文档定位：本文面向项目开发者，规定 DRISCA 的包目录结构、各模块内部文件划分以及跨模块调用的类与函数签名。具体的数据字段定义见 [核心数据结构与协议契约](./02-DataStructures.md)，管理端界面布局与交互流程见 [桌面管理端设计](./04-LauncherDesign.md)。
 
 ## 仓库源码目录
 
@@ -34,22 +34,13 @@ src/drisca/
 │   ├── input.py              # InputController：键盘与方向盘驾驶输入映射
 │   ├── wheel_device.py       # WheelDevice：方向盘设备读写与力反馈
 │   └── ws_client.py          # WorkerWSClient：后台同步 WebSocket 线程与 loguru sink
-├── launcher/                 # 桌面管理端与 Web HUD 宿主（唯一对外入口）
-│   ├── __init__.py
-│   ├── __main__.py           # 唯一用户入口 (drisca)：启动 Qt 主循环与后台 uvicorn
-│   ├── orchestrator.py       # ExperimentOrchestrator：预检、会话创建、QProcess 监管、同步模式复位
-│   ├── jobobject.py          # Windows Job Object：子进程随 launcher 退出
-│   ├── speech.py             # TTSSpeaker：操作者触发的语音播报
-│   ├── web.py                # FastAPI 宿主：/ws/worker/{role}、HUDHub、SSE /stream 与平板页面
-│   └── ui/                   # PySide6 + Fluent Widgets 桌面界面（详见 LauncherDesign.md）
-│       ├── __init__.py
-│       ├── main_window.py    # Fluent 主窗口导航（6 个一级页面）
-│       ├── run_page.py       # 实验控制台：预检、启停、调试面板（运行期控制、实时调相机、拾取出生点、覆盖或另存预设）、数据面板、日志与事件流
-│       ├── preset_page.py    # 预设页：静态读写 configs/presets/*.toml（地图天气、主车与出生点、四路相机参数）
-│       ├── session_page.py   # 历史数据：会话列表、事件时间线查看、导出 data.csv 与 events.csv
-│       ├── tools_page.py     # CARLA 工具：录像回放 (.rec) 与路网图生成
-│       ├── control_page.py   # 控制与按键：读写 control.toml（按键名称绑定、按键对照表）
-│       └── settings_page.py  # 系统设置：读写 machine.toml（CARLA 连接、显示器、服务端口、TTS）
+├── launcher/                 # Python 后端、Web 界面与桌面壳
+│   ├── __main__.py           # 启动服务与可选的 pywebview 无边框窗口
+│   ├── orchestrator.py       # 实验编排、subprocess 监管与正常停机
+│   ├── jobobject.py          # Windows Job Object
+│   ├── speech.py             # 管理端语音播放
+│   ├── web.py                # HTTP 接口、SSE 与子进程 WebSocket
+│   └── static/               # frontend/ 构建产物与被试 HUD 静态资源
 └── traffic/                  # 背景交通流子包（当前阶段仅保留占位；设计见 Architecture）
     └── __init__.py
 ```
@@ -106,7 +97,7 @@ def load_preset(name_or_path: str | Path) -> PresetConfig:
     """加载指定预设文件并校验为 PresetConfig"""
 
 def save_preset(name: str, preset: PresetConfig, presets_dir: Path = PRESETS_DIR) -> Path:
-    """保存预设到 configs/presets/<name>.toml（用于预设页保存、调试面板覆盖当前预设或另存为新预设）"""
+    """保存预设到 configs/presets/<name>.toml（用于预设页保存、辅助工具的画面布局与相机安装标签覆盖当前预设或另存为新预设）"""
 
 def write_run_config(run_config: RunConfig) -> Path:
     """将合成的 RunConfig 写入 cache/run/<session_id>.json 并返回路径"""
@@ -236,8 +227,8 @@ class StorageDB:
     def count_session_frames(self, session_id: str) -> int:
         """统计指定会话已落盘的帧数"""
 
-    def export_sessions(self, output_dir: Path) -> None:
-        """导出全部会话，生成 sessions.csv、data.csv 和 events.csv"""
+    def export_sessions(self, output_dir: Path, session_ids: list[str]) -> None:
+        """按所选会话导出三个 CSV，保持相同的会话范围"""
 ```
 
 ### 3.2 `storage/writer.py`
@@ -332,48 +323,17 @@ class SimulatorApp:
         """
 ```
 
-## `launcher` 模块 API 设计
+## `launcher` 模块职责
 
-### 5.1 `launcher/speech.py`
+管理端使用 Web 界面与 Python 后端。页面划分见[管理端设计](./04-LauncherDesign.md)，通信方式见[前后端通信](./10-LauncherWeb.md)。上面的管理端文件划分用于说明职责，具体接口随实现确定。
 
-```python
-class TTSSpeaker:
-    """后台单队列 SAPI 语音播报线程（仅在 launcher 进程内运行）"""
-    def __init__(self, enabled: bool = True) -> None: ...
-    def speak(self, text: str) -> None: ...
-    def close(self) -> None: ...
-```
+`orchestrator.py` 组合使用 CARLA 接入、配置与存储组件，负责预检、准备世界、生成会话编号、合成运行配置、启动模拟器、接收消息与实验收尾。实验状态依次为 `idle`、`starting`、`running`、`stopping`。
 
-### 5.2 `launcher/orchestrator.py`
+进程使用 `subprocess.Popen`，以 `sys.executable -m drisca.simulator --config <path>` 启动，捕获标准输出、错误输出和退出码，并加入 Job Object。正常结束时发送已有停止命令，等待数据和事件提交、子进程退出，再复位世界、清理场景并完成会话记录。停机超时则强制结束进程并标记会话异常。
 
-```python
-class ExperimentOrchestrator(QObject):
-    """管理一次实验从预检、启动子进程、运行期双向通信到停机清理的状态机"""
-    # Qt 信号：供界面实时绑定
-    state_changed = Signal(str)                     # 'idle' | 'starting' | 'running' | 'stopping'
-    telemetry_updated = Signal(object)              # TelemetrySnapshotEvent -> 驱动桌面数据面板与出生点拾取
-    log_received = Signal(object)                   # LogEvent -> 驱动日志视图
-    experiment_event_received = Signal(object)      # ExperimentEvent -> 驱动事件时间线视图
+`web.py` 提供配置读写、实验操作、数据查询与目录导出接口，通过 SSE 推送状态、遥测、日志和事件，沿用本地 WebSocket 接收模拟器消息。桌面窗口与浏览器访问同一服务。
 
-    def start_experiment(
-        self,
-        machine_cfg: MachineConfig,
-        control_cfg: ControlConfig,
-        preset_cfg: PresetConfig,
-        run_settings: RunSettings,
-    ) -> None:
-        """
-        1. 调用 CarlaSession.preflight_check() 与 prepare_world()
-        2. 生成 session_id 与 db_path，合成 RunConfig（含 run_settings），开启保存时调用 StorageDB.create_session() 并写入实验启动事件
-        3. 使用 QProcess 启动 `sys.executable -m drisca.simulator --config <path>`，绑定 stdout/stderr，并把子进程加入 Job Object
-        """
-
-    def send_command(self, cmd: LauncherCommand) -> None:
-        """向运行中的 simulator 子进程发送下行控制命令（切换自动驾驶、触发接管、改天气、实时调相机、开关后视镜、停机）。命令本身不写事件表，由 simulator 应用成功后上报对应的 ExperimentEvent"""
-
-    def stop_experiment(self) -> None:
-        """发送 StopCommand；子进程停止主循环、提交剩余数据并发送完日志与事件后退出。launcher 等待进程退出及已接收事件入库，再调用 CarlaSession.force_reset_after_experiment()，写入实验结束事件并更新 session 表；超时则 kill 并标记 aborted"""
-```
+`speech.py` 负责管理端的语音播放。pywebview 桥负责窗口最小化、最大化与关闭，关闭窗口使用编排器的正常停机流程。
 
 ## 配套约定
 
@@ -381,7 +341,7 @@ class ExperimentOrchestrator(QObject):
 
 `SimulatorApp` 每帧分别记录驾驶人输入和车辆实际控制，维护控制模式与接管请求。碰撞与压线从传感器回调生成事件，上报后由 launcher 统一写库。`WorkerWSClient` 沿用事件上报，命令错误通过关联命令编号的日志报告，消息字段见[进程通信](./07-Protocol.md)。
 
-导出通过 `export_sessions` 完成，一次导出全部会话。录像目录取机器配置的 `recorder_dir`，录像受保存总开关控制。
+管理端接入时，将现有 `export_sessions` 扩展为上述所选会话接口，三个 CSV 使用同一会话范围导出到配置目录。页面交互见[管理端设计](./04-LauncherDesign.md)。录像目录取机器配置的 `recorder_dir`，录像受保存总开关控制。
 
 关闭保存时，管理端跳过会话和事件数据库操作，驾驶端跳过存储线程与 Recorder 的启动。正常停机只关闭本次实际打开的资源，关闭保存时保留实时遥测、事件时间线和日志显示。
 
@@ -417,3 +377,7 @@ class ExperimentOrchestrator(QObject):
 | `logo` | Logo 键 | 24 |
 
 物理轴使用 `steering → 0`、`throttle → 1`、`brake → 2`。配置保存动作到按钮名称的关系，轴号与按钮编号由设备模块维护。按钮编号日志继续由 `show_button_key` 控制。
+
+## 前端源码
+
+正式前端位于仓库根目录 `frontend/`，使用 Bun、Vite、React、TypeScript、Tailwind CSS 与 shadcn/ui，构建到 `src/drisca/launcher/static/`。管理端以同源 HTTP 提供静态资源与业务接口。定稿原型位于 `prototypes/launcher/`，保留 Basecoat 与 Alpine.js，作为布局和交互依据。

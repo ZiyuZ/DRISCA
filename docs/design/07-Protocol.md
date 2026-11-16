@@ -7,7 +7,7 @@
 其中 `TelemetrySnapshotEvent`（遥测快照）包含 `simulator` 的实时运行状态，由 `launcher` 用于以下两处：
 
 1. 平板 HUD：`launcher` 从快照中取出子集（车速、限速、挡位、转向、驾驶模式），通过 SSE 推送给平板。
-2. `launcher` 数据面板与调试面板：以 20~30 Hz 显示遥测指标与控制条，并支持在调试面板中拾取快照里的主车当前坐标作为 `spawn_point`。
+2. `launcher` 数据面板与调试面板：以 20~30 Hz 显示遥测指标与控制条，并在实验配置页支持拾取快照里的主车当前坐标作为 `spawn_point`。
 
 ```python
 from enum import StrEnum
@@ -193,3 +193,5 @@ LauncherCommand = Annotated[
 `control_mode` 表示手动或自动驾驶，`takeover_requested` 表示接管提示状态。操作者可发出接管请求。被试执行接管动作时，直接关闭自动驾驶并进入人工驾驶，同时结束接管提示。键盘与方向盘的 `takeover` 绑定执行这一动作。
 
 碰撞与压线回调每发生一次生成一条事件，同一世界帧可有多条。事件携带发生时的世界帧号和时间戳。操作者打点使用实际时间戳并关联最新遥测帧。管理端收到事件后更新面板，开启保存时写入 event 表。
+
+相机命令中的 `CameraConfig.x/y/z` 使用车辆包围盒比例，由 simulator 在执行时转换为实际安装位置。管理端指令库中的按钮定义与下行命令分别由 launcher 编排和 core 协议表达。

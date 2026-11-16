@@ -2,7 +2,7 @@
 
 > 交通流（`traffic`）列入后续计划。本文保留其设计，实现安排见 [开发路线图](./06-Roadmap.md)。
 
-DRISCA 由一个父进程和若干子进程组成。桌面端 `launcher` 负责实验前后的准备、子进程的启动与监管、平板页面、数据面板、调试面板、按键说明，以及实验数据的读写。`simulator` 是模拟主循环，按固定频率推进 CARLA 世界、采集传感器并绘制驾驶画面。`traffic` 是背景交通流循环（计划中）。它们与 CARLA 服务端、同一个 SQLite 数据库协同工作。
+DRISCA 由一个父进程和若干子进程组成。管理端 `launcher` 通过 Web 界面负责实验前后的准备、子进程的启动与监管、平板页面、数据面板、调试面板、按键说明，以及实验数据的读写。`simulator` 是模拟主循环，按固定频率推进 CARLA 世界、采集传感器并绘制驾驶画面。`traffic` 是背景交通流循环（计划中）。它们与 CARLA 服务端、同一个 SQLite 数据库协同工作。
 
 `simulator` 按帧推进模拟，`launcher` 处理界面操作和网络消息。进程分离使模拟循环与界面事件各自运行。
 
@@ -12,7 +12,7 @@ DRISCA 由一个父进程和若干子进程组成。桌面端 `launcher` 负责�
 
 | 术语 | 含义 |
 | --- | --- |
-| 操作者（operator） | 在桌面端 `launcher` 上准备、监控和控制实验的人员 |
+| 操作者（operator） | 在管理端控制台上准备、监控和控制实验的人员 |
 | 被试（subject） | 在 `simulator` 驾驶台前参与实验的驾驶人 |
 | 子进程（worker） | 由 `launcher` 启动的 `simulator` 与 `traffic` |
 | 会话（session） | 一次实验，对应 `session` 表中的一行 |
@@ -21,19 +21,19 @@ DRISCA 由一个父进程和若干子进程组成。桌面端 `launcher` 负责�
 | 遥测快照（telemetry snapshot） | `simulator` 每隔数帧上报一次的运行状态 |
 | HUD 数据 | 从遥测快照中挑出、推送到平板的子集 |
 | 数据面板 | `launcher` 桌面端中实时显示遥测快照的区域 |
-| 调试面板 | `launcher` 实验控制台中供操作者在运行期下发控制命令、实时调整相机、拾取出生点并写回预设的区域 |
-| 按键说明 | `launcher` 桌面端中列出操作按键的页面 |
+| 调试面板 | `launcher` 中供操作者调整运行状态、相机和出生点的功能，按用途分布在实验控制、辅助工具与实验配置页 |
+| 按键说明 | `launcher` 系统设置中展示的操作按键对照表 |
 | 世界帧（frame） | CARLA 世界每推进一次的编号 |
 
 ## 进程与通信
 
 ```mermaid
 flowchart TD
-    tablet["平板浏览器"]
+    tablet["操作者浏览器 / 平板 HUD"]
     wheel["方向盘硬件"]
 
     subgraph host["实验主机 (Windows)"]
-        launcher["launcher<br/>Qt 界面 + HTTP/WS 服务"]
+        launcher["launcher<br/>Web 界面 + HTTP/WS 服务"]
         simulator["simulator<br/>60Hz 循环、渲染、外设"]
         traffic["traffic（计划中）<br/>交通流循环"]
         db[("SQLite")]
@@ -57,7 +57,7 @@ flowchart TD
     style traffic stroke-dasharray: 5 5
 ```
 
-`launcher` 是唯一的父进程，也是唯一的网络服务端。它在同一个 HTTP 服务中同时承载平板页面（HTTP 与 SSE）和子进程的本地 WebSocket 接入。`simulator` 与 `traffic` 不开放端口，由 `launcher` 以 `sys.executable -m` 启动，启动后主动连回 `launcher`。
+`launcher` 是唯一的父进程，也是唯一的网络服务端。它在同一个 HTTP 服务中承载操作者控制台、平板 HUD、页面接口与 SSE，以及子进程的本地 WebSocket 接入。`simulator` 与 `traffic` 不开放端口，由 `launcher` 以 `sys.executable -m` 启动，启动后主动连回 `launcher`。
 
 运行期的通道是本地 WebSocket，承载三类内容：下行的控制命令，上行的遥测快照、日志和状态，以及子进程在执行操作后上报的实验事件。相机画面等大流量数据不经过这条通道，只在 `simulator` 与 CARLA 之间传输。
 
@@ -99,7 +99,7 @@ flowchart TD
 
 `simulator` 内部把「世界与车辆状态」和「pygame 画面」分开。窗口模块只读取状态，不直接调用 CARLA 接口。方向盘的初始化、读取和力反馈都封装在 `simulator` 内部，其他模块不接触硬件。
 
-`launcher` 的主线程运行 Qt 事件循环，另有一个守护线程运行 HTTP 服务。两者通过线程安全的信号和队列交换数据。
+`launcher` 由 Python 后端与 Web 界面组成。后端承载 HTTP、SSE 和子进程 WebSocket；桌面使用 pywebview 无边框窗口加载同一套页面。实验编排使用标准库 `subprocess` 管理子进程，Windows Job Object 管理父子进程退出关系。前后端通信见[管理端前后端通信](./10-LauncherWeb.md)。
 
 模块被导入时不做任何外部操作：不连接 CARLA，不初始化方向盘，不打开数据库，不启动线程，不监听端口。这些动作只在入口函数被显式调用时发生。
 
@@ -113,7 +113,7 @@ flowchart TD
 | --- | --- | --- |
 | 机器配置（`MachineConfig`） | CARLA 地址与端口、显示器分辨率与全屏、服务端口、语音与调试开关、数据库与录像路径 | `configs/machine.toml`，每台机器设置一次 |
 | 控制配置（`ControlConfig`） | 键盘与方向盘的动作到按键名称绑定、方向盘硬件开关 | `configs/control.toml`，按外设方案保存，不同机器若方向盘相同可直接复用 |
-| 实验预设（`PresetConfig`） | 地图、天气、主车与出生点、四路相机的安装位置与视野、同步模式 | `configs/presets/*.toml`，在预设页中静态编辑；运行期也可通过调试面板调整并覆盖当前预设或另存为新预设 |
+| 实验预设（`PresetConfig`） | 地图、天气、主车与出生点、四路相机的安装位置与视野、同步模式 | `configs/presets/*.toml`，在实验配置与辅助工具的画面布局与相机安装标签编辑；运行期可应用相机调整，并覆盖当前预设或另存为新预设 |
 | 实验设置（`RunSettings`） | 被试编号、本次备注、保存总开关与 Recorder 选项 | 每次启动实验时在实验控制台中填写，不保存为预设 |
 | 模块常量 | 键盘响应系数、simulator 中的按键常量与方向盘轴号映射 | 代码中的具名常量 |
 
@@ -228,11 +228,11 @@ sequenceDiagram
 
 操作者在控制台触发语音、接管请求和其他现场操作。自动触发功能随具体实验需求加入。
 
-调试面板位于实验控制台，供操作者在运行期完成以下工作：向 `simulator` 发送控制命令（切换自动驾驶、触发接管、显隐后视镜、切换天气）；实时调整四路相机的位姿与视野；从遥测快照中拾取当前主车位置作为出生点。
+运行控制位于实验控制页，负责自动驾驶、接管、天气、语音和打点。辅助工具的画面布局与相机安装标签负责四路相机位姿、视野、后视镜布局与显隐。实验配置页负责预设管理，并支持从最新遥测拾取出生点。
 
 调整相机时，`launcher` 发送 `UpdateCameraCommand`，`simulator` 应用后上报 `UpdateCameraEvent`，再由 `launcher` 在开启保存时写入事件表。调好后，操作者可以覆盖当前预设，也可以另存为新预设，供后续实验使用。预设页只用于实验前的静态配置编辑。
 
-按键说明由 `launcher` 的控制与按键页提供。控制配置中的键盘按键与方向盘按钮，由 `launcher` 读取并展示为对照表，同时随运行配置交给 `simulator`。`simulator` 的窗口只显示驾驶画面。
+按键说明与控制绑定统一位于系统设置页。控制配置中的键盘按键与方向盘按钮，由 `launcher` 读取并展示为对照表，同时随运行配置交给 `simulator`。`simulator` 的窗口只显示驾驶画面。
 
 平板只连接 `launcher` 的一个地址。如果 `launcher` 没有收到快照超过设定时间，它会向平板广播重置状态，避免界面停留在旧数值上。
 
@@ -252,7 +252,7 @@ sequenceDiagram
 
 结构版本由 `PRAGMA user_version` 记录。启动时如果数据库版本与代码中的 `SCHEMA_VERSION` 不一致，程序直接报错退出，日志中说明处置方式（删除测试库，或运行一次性迁移脚本）。程序不会自动改表。
 
-事件表（`event`）记录实验中发生的事件，按会话编号、世界帧号和时间建立索引。数据库读取和导出由 `launcher` 完成，导出的 CSV 按数据库的列名与顺序输出，不另做格式转换。导出文件名由 `launcher` 按「被试编号-实验开始时间（年月日时分秒）」自动生成，导出时操作者可以修改。
+事件表（`event`）记录实验中发生的事件，按会话编号、世界帧号和时间建立索引。数据库读取和导出由 `launcher` 完成，导出的 CSV 按数据库的列名与顺序输出，不另做格式转换。管理端按所选会话编号导出 `sessions.csv`、`data.csv` 和 `events.csv`，通过 `session_id` 关联，文件写入实验主机配置的导出目录。
 
 `launcher` 负责写入会话表和事件表。数据行只由产生数据的子进程写入。
 

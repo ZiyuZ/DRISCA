@@ -2,12 +2,14 @@
 
 配置按职责划分为机器配置（`MachineConfig`）、控制配置（`ControlConfig`）、实验预设（`PresetConfig`）与单次实验设置（`RunSettings`），并在启动实验时由 `launcher` 合成为不可变的 `RunConfig`。
 
+相机安装界面以车辆包围盒中心和各轴半尺寸表示位置百分比，边界对应 ±100%。`CameraConfig.x`、`y`、`z` 保存比例坐标，1 对应 100%；simulator 使用实际车辆包围盒的中心、旋转和半尺寸换算安装坐标。旋转与 FOV 使用角度。恢复预设分别作用于当前相机安装参数或整套画面布局。地图出生点继续使用米制坐标。
+
 ## 相机安装与出生点
 
-车载四路相机（主视图 `front` + 三路后视镜 `rear_top` / `rear_left` / `rear_right`）的安装位置因车型而异。预设页提供静态编辑；实验运行期可通过实验控制台的调试面板发送 `UpdateCameraCommand` 实时微调相机，并选择覆盖当前预设或另存为新预设：
+车载四路相机（主视图 `front` + 三路后视镜 `rear_top` / `rear_left` / `rear_right`）的安装位置因车型而异。辅助工具的相机安装标签提供编辑，实验运行期通过同页发送 `UpdateCameraCommand` 实时微调相机，并选择覆盖当前预设或另存为新预设：
 
 ```python
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
 
 class SpawnPoint(BaseModel, frozen=True, extra='forbid'):
@@ -21,7 +23,7 @@ class SpawnPoint(BaseModel, frozen=True, extra='forbid'):
 
 
 class CameraConfig(BaseModel, frozen=True, extra='forbid'):
-    """单路相机的安装与画面配置"""
+    """单路相机；x/y/z 为比例，旋转和 FOV 为角度"""
     x: float = 0.0
     y: float = 0.0
     z: float = 0.0
@@ -34,32 +36,13 @@ class CameraConfig(BaseModel, frozen=True, extra='forbid'):
 
 
 class CameraRigConfig(BaseModel, frozen=True, extra='forbid'):
-    """主车四路相机组合配置（固定使用 sensor.camera.rgb）"""
+    """四路 RGB 相机；位置字段使用车身包围盒比例"""
     show_rearview: bool = True
-    front: CameraConfig = CameraConfig(
-        x=0.5, y=-0.35, z=1.35, pitch=5.8,
-        screen_position=(0.5, 0.5),
-        image_size=None,  # 运行时取窗口实际分辨率
-        fov=120.0,
-    )
-    rear_top: CameraConfig = CameraConfig(
-        x=0.34, y=0.0, z=1.27, pitch=5.8, yaw=180.0,
-        screen_position=(0.5, 0.1),
-        image_size=(320, 150),
-        fov=100.0,
-    )
-    rear_left: CameraConfig = CameraConfig(
-        x=0.4, y=-0.93, z=1.03, pitch=5.8, yaw=180.0,
-        screen_position=(0.12, 0.9),
-        image_size=(320, 150),
-        fov=100.0,
-    )
-    rear_right: CameraConfig = CameraConfig(
-        x=0.4, y=0.93, z=1.03, pitch=5.8, yaw=180.0,
-        screen_position=(0.88, 0.9),
-        image_size=(320, 150),
-        fov=100.0,
-    )
+    front: CameraConfig
+    rear_top: CameraConfig
+    rear_left: CameraConfig
+    rear_right: CameraConfig
+
 ```
 
 ## 机器配置（`MachineConfig` ↔ `configs/machine.toml`）
@@ -94,6 +77,7 @@ class MachineConfig(BaseModel, frozen=True, extra='forbid'):
     service: ServiceConfig = ServiceConfig()
     db_path: str = 'data/experiments.sqlite3'
     recorder_dir: str = 'data/recordings'
+    export_dir: str = 'data/exports'
 ```
 
 ## 控制配置（`ControlConfig` ↔ `configs/control.toml`）
@@ -200,7 +184,7 @@ class ControlConfig(BaseModel, frozen=True, extra='forbid'):
 
 ## 实验预设、单次实验设置与合成运行配置（`PresetConfig`、`RunSettings`、`RunConfig`）
 
-`PresetConfig` 对应 `configs/presets/*.toml`：
+`PresetConfig` 对应 `configs/presets/*.toml`。下列参数对象使用 Pydantic 的 `JsonValue` 表达 JSON 值：
 
 ```python
 class WeatherConfig(BaseModel, frozen=True, extra='forbid'):
@@ -238,10 +222,19 @@ class EgoVehicleConfig(BaseModel, frozen=True, extra='forbid'):
     init_autopilot: bool = False               # 启动后是否默认进入 CARLA 自动驾驶
 
 
+class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):
+    id: str
+    name: str
+    command: str
+    params: dict[str, JsonValue]
+
+
 class PresetConfig(BaseModel, frozen=True, extra='forbid'):
     world: WorldConfig = WorldConfig()
     ego: EgoVehicleConfig
-    cameras: CameraRigConfig = CameraRigConfig()
+    cameras: CameraRigConfig
+    instructions: tuple[ExperimentInstructionConfig, ...] = ()
+    markers: tuple[str, ...] = ()
 
 
 class RunSettings(BaseModel, frozen=True, extra='forbid'):
@@ -267,7 +260,7 @@ class RunConfig(BaseModel, frozen=True, extra='forbid'):
 
 ## 读取、保存与运行期修改
 
-文件位置与填写方法见[配置管理](../guide/05-Configuration.md)。配置字段名与 TOML 表对应，按业务分组定义模型。相机直接保存六个位姿字段；固定出生点通过 `SpawnPoint` 表达地图坐标，运行时在 CARLA 接入处构造原生对象。
+文件位置与填写方法见[配置管理](../guide/05-Configuration.md)。配置字段名与 TOML 表对应，按业务分组定义模型。相机保存三个比例位置和三个角度字段；固定出生点通过 `SpawnPoint` 表达地图坐标，运行时在 CARLA 接入处构造原生对象。
 
 方向盘输入直接读取 pygame 返回的轴值，转向使用 -1 至 1，踏板按设备方向转换为 CARLA 使用的 0 至 1。设备对应的方向转换放在输入模块中。配置保存按键名称绑定，键盘连续控制使用具名模块常量定义响应速度。
 
@@ -290,3 +283,11 @@ class RunConfig(BaseModel, frozen=True, extra='forbid'):
 操作者编辑机器配置、控制配置和实验预设，并在控制台填写 `RunSettings`。`launcher` 将这四部分组合为完整的 `RunConfig`，自动填入会话编号、数据库路径与回连地址，再交给 `simulator`。运行配置由程序生成，作为本次启动结果使用。
 
 保存总开关和 Recorder 选项统一属于 `RunSettings`。预设保存场景、车辆与相机设置。模型采用组合组织，类继承最多四层；事件采用公共基类与具体事件类两层结构。
+
+## 实验指令与打点
+
+预设的 `instructions` 保存按钮编号、名称、已知指令标识与参数，`markers` 保存打点名称。已知指令由 launcher 的 Python 代码显式声明，参数类型、约束和执行方式与定义放在一起。core 负责配置结构，launcher 读取后按已知指令定义校验参数。
+
+停止时编辑或添加当前预设的实验指令，运行时执行本次启动配置中的指令。请求接管可携带语音参数，一次执行完成接管提示与播报。纯打点生成自定义事件，保存总开关控制写库。
+
+相机比例坐标、导出目录和实验指令属于此次管理端设计确定的配置约定，接入实现时同步更新 `core/config.py`、配置示例和全部调用方。

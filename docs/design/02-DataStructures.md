@@ -164,4 +164,4 @@ class EventRow:
 
 ## 批量导出
 
-历史数据页提供“导出全部会话”。一次导出生成 `sessions.csv`、`data.csv` 和 `events.csv`，各表通过 `session_id` 关联。`sessions.csv` 包含原有启动配置字段，CSV 沿用表字段名称和内部单位。
+实验数据页默认显示最近 30 天的会话，表格内部滚动，支持勾选和选择当前筛选的全部会话。一次导出生成所选会话的 `sessions.csv`、`data.csv` 和 `events.csv`，各表通过 `session_id` 关联。`sessions.csv` 包含原有启动配置字段，CSV 沿用表字段名称和内部单位。文件保存到实验主机配置的导出目录，页面显示进度与完成路径。

@@ -13,9 +13,9 @@
   - 使用标准库 `sqlite3`（WAL 模式 + 后台队列批量短事务写入）。
   - 实现 Schema 版本校验（`PRAGMA user_version`），按实验会话（`session`）组织主车数据（`data`）与实验事件（`event`）。
 - 桌面管理端（`launcher`）与平板 HUD 整合
-  - 基于 `PySide6` + `PySide6-Fluent-Widgets` 构建唯一用户入口：集成 CARLA 预检、预设管理、子进程启停与监控、历史会话浏览与 CSV 导出。
+  - 采用 Web 控制台与 pywebview 无边框桌面壳，先制作 Basecoat + Alpine.js 静态原型，再连接 Python 后端：集成 CARLA 预检、预设管理、子进程启停与监控、历史会话浏览与 CSV 导出。
   - 内置轻量 `FastAPI` 服务：通过本地 WebSocket 接收 `simulator` 的日志、事件与遥测快照，并通过 SSE 驱动平板 HUD。
-  - 桌面端提供数据面板（完整遥测）、调试面板（运行期控制、相机调节、出生点拾取并写回预设）与控制按键说明页。
+  - 管理端按实验控制、实验配置、辅助工具、实验数据、系统设置五页组织。桌面与局域网浏览器共用页面和后端，进程管理使用标准库 subprocess。正式前端使用 Bun、Vite、React、TypeScript、Tailwind CSS 与 shadcn/ui，原型保存在 `prototypes/launcher/`。
 - 客户端渲染路径提速
   - 采用 `pygame.image.frombuffer(..., 'BGRA')` 直接消费 CARLA 原始图像缓冲，将 4 路相机合成耗时降至 `1.5 ms/帧`。
 
@@ -26,7 +26,7 @@
   - 完善 Constant Force / Friction / Spring / Damper / 转速 LED 封装。
   - 实现 `set_physical_angle` 闭环控制：在自动驾驶模式下使物理方向盘实时跟随虚拟车辆转向角同步转动，支持平滑的人机接管切换。
 - 场景导演与事件触发台（`launcher` 高级控制台，计划中）
-  - 在 `launcher` 中新增集成「2D 矢量路网实时态势图 + 预定义实验事件手动触发面板 + 背景车轨迹控制」的高级控制台（见 [桌面管理端设计：场景导演与事件触发台](./04-LauncherDesign.md)）。
+  - 在 `launcher` 中新增集成「2D 矢量路网实时态势图 + 预定义实验事件手动触发面板 + 背景车轨迹控制」的高级控制台（设计背景见本地开发记录中的管理端详细稿）。
   - 支持操作者在实验过程中根据现场情况手动触发预先定义的事件：包含子进程控制命令的事件在子进程执行后上报入库，纯打点标记事件由 `launcher` 关联当前帧号直接写入 `event` 表。
 - 背景交通流（`traffic`，计划中）
   - 当前阶段不实现。设计保留在 [系统架构](./01-Architecture.md) 中。
