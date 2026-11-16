@@ -58,6 +58,7 @@ class ActorState:
     Active: Any
 
 class VehicleLightState:
+    def __init__(self, value: int) -> None: ...
     NONE: Any
     Position: Any
     LowBeam: Any

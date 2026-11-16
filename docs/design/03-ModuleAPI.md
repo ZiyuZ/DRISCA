@@ -191,9 +191,9 @@ def replay_recorder(
 ) -> None:
     """在 CARLA 服务端触发录像回放"""
 
-def export_road_network_image(map_name: str, pickle_file: Path, output_dir: Path = MAP_ROOT) -> Path:
-    """将路网拓扑数据绘制成 PNG 与坐标 JSON"""
 ```
+
+路网导出与解析暂缓，接口和职责划分待后续确定。
 
 ## `storage` 模块 API 设计
 

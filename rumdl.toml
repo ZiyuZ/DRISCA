@@ -5,7 +5,7 @@
 
 # Global configuration options
 [global]
-cache-dir = ".cache/rumdl_cache"
+cache-dir = ".cache/rumdl"
 # List of rules to disable (uncomment and modify as needed)
 disable = ["MD013", "MD033", "MD036", "MD040", "MD041", "MD045"]
 
