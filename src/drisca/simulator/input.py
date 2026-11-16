@@ -7,8 +7,35 @@ import carla
 import pygame
 from loguru import logger
 
-from drisca.core.config import ControlConfig
-from drisca.simulator.wheel_device import G29WheelDevice
+from drisca.core.config import ControlConfig, KeyboardKey, WheelButton
+from drisca.simulator.wheel_device import WHEEL_BUTTONS, WheelDevice
+
+KEYBOARD_KEYS: dict[KeyboardKey, int] = {
+    KeyboardKey.ESCAPE: pygame.K_ESCAPE,
+    KeyboardKey.P: pygame.K_p,
+    KeyboardKey.BACKSLASH: pygame.K_BACKSLASH,
+    KeyboardKey.Q: pygame.K_q,
+    KeyboardKey.M: pygame.K_m,
+    KeyboardKey.PERIOD: pygame.K_PERIOD,
+    KeyboardKey.COMMA: pygame.K_COMMA,
+    KeyboardKey.SPACE: pygame.K_SPACE,
+    KeyboardKey.SEMICOLON: pygame.K_SEMICOLON,
+    KeyboardKey.K: pygame.K_k,
+    KeyboardKey.L: pygame.K_l,
+    KeyboardKey.Z: pygame.K_z,
+    KeyboardKey.X: pygame.K_x,
+    KeyboardKey.I: pygame.K_i,
+    KeyboardKey.UP: pygame.K_UP,
+    KeyboardKey.DOWN: pygame.K_DOWN,
+    KeyboardKey.LEFT: pygame.K_LEFT,
+    KeyboardKey.RIGHT: pygame.K_RIGHT,
+    KeyboardKey.W: pygame.K_w,
+    KeyboardKey.S: pygame.K_s,
+    KeyboardKey.A: pygame.K_a,
+    KeyboardKey.D: pygame.K_d,
+    KeyboardKey.KEYPAD_1: pygame.K_KP1,
+    KeyboardKey.KEYPAD_2: pygame.K_KP2,
+}
 
 
 @dataclass(slots=True, frozen=True)
@@ -23,8 +50,13 @@ class InputController:
         self.steer = 0.0
         self.wheel = None
         if config.wheel.enable_wheel:
-            self.wheel = G29WheelDevice(config.wheel)
-        self.keys = {name: tuple(pygame.key.key_code(key) for key in keys) for name, keys in config.keyboard}
+            self.wheel = WheelDevice(config.wheel)
+        self.keys = {name: KEYBOARD_KEYS[key] for name, key in config.keyboard if key != KeyboardKey.UNBOUND}
+        self.buttons = {
+            name: WHEEL_BUTTONS[button]
+            for name, button in config.wheel
+            if isinstance(button, WheelButton) and button != WheelButton.UNBOUND
+        }
 
     def read(self, delta: float) -> tuple[carla.VehicleControl, list[InputAction]]:
         actions: list[InputAction] = []
@@ -33,7 +65,7 @@ class InputController:
                 actions.append(InputAction('quit', 'keyboard'))
             elif event.type == pygame.KEYDOWN:
                 actions.extend(
-                    InputAction(name, 'keyboard') for name, keys in self.keys.items() if event.key in keys
+                    InputAction(name, 'keyboard') for name, key in self.keys.items() if event.key == key
                 )
             elif (
                 event.type == pygame.JOYBUTTONDOWN
@@ -44,13 +76,14 @@ class InputController:
                     logger.info('方向盘按钮编号：{}', event.button)
                 actions.extend(
                     InputAction(name, 'wheel')
-                    for name, buttons in self.config.wheel
-                    if isinstance(buttons, tuple) and event.button in buttons
+                    for name, button in self.buttons.items()
+                    if event.button == button
                 )
         pressed = pygame.key.get_pressed()
 
         def active(name: str) -> bool:
-            return any(pressed[key] for key in self.keys[name])
+            key = self.keys.get(name)
+            return key is not None and bool(pressed[key])
 
         if self.wheel is not None:
             steer, throttle, brake = self.wheel.read_axes()

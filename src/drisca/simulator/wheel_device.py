@@ -1,17 +1,38 @@
-"""G29 方向盘轴与按钮输入。"""
+"""方向盘轴与按钮输入。"""
 
 import ctypes
 from importlib.metadata import distribution
 
 import pygame
 
-from drisca.core.config import WheelControlConfig
+from drisca.core.config import WheelButton, WheelControlConfig
 
 SPRING_SATURATION = 40
 SPRING_COEFFICIENT = 40
+WHEEL_AXES = {'steering': 0, 'throttle': 1, 'brake': 2}
+WHEEL_BUTTONS: dict[WheelButton, int] = {
+    WheelButton.CROSS: 0,
+    WheelButton.SQUARE: 1,
+    WheelButton.CIRCLE: 2,
+    WheelButton.TRIANGLE: 3,
+    WheelButton.RIGHT_PADDLE: 4,
+    WheelButton.LEFT_PADDLE: 5,
+    WheelButton.R2: 6,
+    WheelButton.L2: 7,
+    WheelButton.SHARE: 8,
+    WheelButton.OPTIONS: 9,
+    WheelButton.R3: 10,
+    WheelButton.L3: 11,
+    WheelButton.PLUS: 19,
+    WheelButton.MINUS: 20,
+    WheelButton.DIAL_RIGHT: 21,
+    WheelButton.DIAL_LEFT: 22,
+    WheelButton.DIAL_PRESS: 23,
+    WheelButton.LOGO: 24,
+}
 
 
-class G29WheelDevice:
+class WheelDevice:
     def __init__(self, config: WheelControlConfig) -> None:
         self.config = config
         pygame.joystick.init()
@@ -54,9 +75,9 @@ class G29WheelDevice:
         if not self.sdk.LogiUpdate() or not self.sdk.LogiIsConnected(config.device_index):
             raise RuntimeError('方向盘连接中断')
         return (
-            self.joystick.get_axis(config.steering_axis),
-            (1.0 - self.joystick.get_axis(config.throttle_axis)) / 2.0,
-            (1.0 - self.joystick.get_axis(config.brake_axis)) / 2.0,
+            self.joystick.get_axis(WHEEL_AXES['steering']),
+            (1.0 - self.joystick.get_axis(WHEEL_AXES['throttle'])) / 2.0,
+            (1.0 - self.joystick.get_axis(WHEEL_AXES['brake'])) / 2.0,
         )
 
     def close(self) -> None:

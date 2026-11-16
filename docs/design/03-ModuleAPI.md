@@ -32,7 +32,7 @@ src/drisca/
 │   ├── sensors.py            # SensorSuite & CameraRig：传感器监听与四路相机管理
 │   ├── renderer.py           # ViewportRenderer：基于 frombuffer('BGRA') 的画面合成器
 │   ├── input.py              # InputController：键盘与方向盘驾驶输入映射
-│   ├── wheel_device.py       # G29WheelDevice：罗技 G29 设备读写与力反馈
+│   ├── wheel_device.py       # WheelDevice：方向盘设备读写与力反馈
 │   └── ws_client.py          # WorkerWSClient：后台同步 WebSocket 线程与 loguru sink
 ├── launcher/                 # 桌面管理端与 Web HUD 宿主（唯一对外入口）
 │   ├── __init__.py
@@ -48,7 +48,7 @@ src/drisca/
 │       ├── preset_page.py    # 预设页：静态读写 configs/presets/*.toml（地图天气、主车与出生点、四路相机参数）
 │       ├── session_page.py   # 历史数据：会话列表、事件时间线查看、导出 data.csv 与 events.csv
 │       ├── tools_page.py     # CARLA 工具：录像回放 (.rec) 与路网图生成
-│       ├── control_page.py   # 控制与按键：读写 control.toml（方向盘轴号、按钮映射、按键对照表）
+│       ├── control_page.py   # 控制与按键：读写 control.toml（按键名称绑定、按键对照表）
 │       └── settings_page.py  # 系统设置：读写 machine.toml（CARLA 连接、显示器、服务端口、TTS）
 └── traffic/                  # 背景交通流子包（当前阶段仅保留占位；设计见 Architecture）
     └── __init__.py
@@ -97,7 +97,7 @@ def load_control_config(path: Path = CONTROL_FILE) -> ControlConfig:
     """读取 control.toml；缺少文件时提示复制 control.example.toml"""
 
 def save_control_config(config: ControlConfig, path: Path = CONTROL_FILE) -> None:
-    """将 ControlConfig 写入 control.toml，按钮绑定按数组保存，空数组表示未绑定"""
+    """将 ControlConfig 写入 control.toml，按键绑定按枚举字符串保存，unbound 表示未绑定"""
 
 def list_presets(presets_dir: Path = PRESETS_DIR) -> list[str]:
     """列出 configs/presets/ 下实际预设的名称，按 .example.toml 后缀区分示例"""
@@ -385,4 +385,35 @@ class ExperimentOrchestrator(QObject):
 
 关闭保存时，管理端跳过会话和事件数据库操作，驾驶端跳过存储线程与 Recorder 的启动。正常停机只关闭本次实际打开的资源，关闭保存时保留实时遥测、事件时间线和日志显示。
 
-方向盘使用单个 `G29WheelDevice` 封装罗技 G29 的设备访问。输入模块组合使用该设备对象，方向盘随动配置保留，功能后续实现。
+方向盘使用单个 `WheelDevice` 封装 pygame 和罗技 SDK 的设备访问。输入模块组合使用该设备对象，方向盘随动配置保留，功能后续实现。
+
+## 按键与设备映射
+
+`core.config` 定义 `KeyboardKey`、`WheelButton`，以及名称到界面显示标签的纯数据表。配置字段使用单个枚举值。界面以枚举值保存选项，以标签显示名称。
+
+`simulator/input.py` 使用 `KEYBOARD_CODES` 将 `KeyboardKey` 映射到 pygame 常量，例如 `KeyboardKey.SPACE → pygame.K_SPACE`、`KeyboardKey.KEYPAD_1 → pygame.K_KP1`。输入处理将动作对应的单个按键与事件或按下状态直接比较。
+
+`simulator/wheel_device.py` 使用 `WHEEL_BUTTON_CODES` 和 `WHEEL_AXES` 保存按钮、物理轴的编号。当前设备布局如下，后续调整集中在该模块。
+
+| 按钮名称 | 界面标签 | 当前编号 |
+| --- | --- | --- |
+| `cross` | X 键 | 0 |
+| `square` | 方块键 | 1 |
+| `circle` | 圆圈键 | 2 |
+| `triangle` | 三角键 | 3 |
+| `right_paddle` | 右换挡拨片 | 4 |
+| `left_paddle` | 左换挡拨片 | 5 |
+| `r2` | R2 键 | 6 |
+| `l2` | L2 键 | 7 |
+| `share` | Share 键 | 8 |
+| `options` | Options 键 | 9 |
+| `r3` | R3 键 | 10 |
+| `l3` | L3 键 | 11 |
+| `plus` | 加号键 | 19 |
+| `minus` | 减号键 | 20 |
+| `dial_right` | 红旋钮右旋 | 21 |
+| `dial_left` | 红旋钮左旋 | 22 |
+| `dial_press` | 红旋钮确认 | 23 |
+| `logo` | Logo 键 | 24 |
+
+物理轴使用 `steering → 0`、`throttle → 1`、`brake → 2`。配置保存动作到按钮名称的关系，轴号与按钮编号由设备模块维护。按钮编号日志继续由 `show_button_key` 控制。

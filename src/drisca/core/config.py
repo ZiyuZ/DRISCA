@@ -3,6 +3,7 @@
 import json
 import tomllib
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 from uuid import uuid4
 
@@ -132,71 +133,144 @@ class MachineConfig(BaseModel, frozen=True, extra='forbid'):
     recorder_dir: str = 'data/recordings'
 
 
-# 罗技 G29 DirectInput 物理按钮编号与名称对照表（供 launcher 界面与按键说明展示）
-G29_BUTTON_NAMES: dict[int, str] = {
-    0: 'X 键 (Cross)',
-    1: '方块键 (Square)',
-    2: '圆圈键 (Circle)',
-    3: '三角键 (Triangle)',
-    4: '右换挡拨片 (R1)',
-    5: '左换挡拨片 (L1)',
-    6: 'R2 键',
-    7: 'L2 键',
-    8: 'Share 键',
-    9: 'Options 键',
-    10: 'R3 键',
-    11: 'L3 键',
-    19: '加号键 (+)',
-    20: '减号键 (-)',
-    21: '红旋钮右旋',
-    22: '红旋钮左旋',
-    23: '红旋钮确认键 (Enter)',
-    24: 'PS / Logo 键',
+class KeyboardKey(StrEnum):
+    UNBOUND = 'unbound'
+    ESCAPE = 'escape'
+    P = 'p'
+    BACKSLASH = 'backslash'
+    Q = 'q'
+    M = 'm'
+    PERIOD = 'period'
+    COMMA = 'comma'
+    SPACE = 'space'
+    SEMICOLON = 'semicolon'
+    K = 'k'
+    L = 'l'
+    Z = 'z'
+    X = 'x'
+    I = 'i'  # noqa: E741
+    UP = 'up'
+    DOWN = 'down'
+    LEFT = 'left'
+    RIGHT = 'right'
+    W = 'w'
+    S = 's'
+    A = 'a'
+    D = 'd'
+    KEYPAD_1 = 'keypad_1'
+    KEYPAD_2 = 'keypad_2'
+
+
+class WheelButton(StrEnum):
+    UNBOUND = 'unbound'
+    CROSS = 'cross'
+    SQUARE = 'square'
+    CIRCLE = 'circle'
+    TRIANGLE = 'triangle'
+    RIGHT_PADDLE = 'right_paddle'
+    LEFT_PADDLE = 'left_paddle'
+    R2 = 'r2'
+    L2 = 'l2'
+    SHARE = 'share'
+    OPTIONS = 'options'
+    R3 = 'r3'
+    L3 = 'l3'
+    PLUS = 'plus'
+    MINUS = 'minus'
+    DIAL_RIGHT = 'dial_right'
+    DIAL_LEFT = 'dial_left'
+    DIAL_PRESS = 'dial_press'
+    LOGO = 'logo'
+
+
+KEYBOARD_KEY_LABELS: dict[KeyboardKey, str] = {
+    KeyboardKey.UNBOUND: '未绑定',
+    KeyboardKey.ESCAPE: 'Esc',
+    KeyboardKey.P: 'P',
+    KeyboardKey.BACKSLASH: '反斜杠',
+    KeyboardKey.Q: 'Q',
+    KeyboardKey.M: 'M',
+    KeyboardKey.PERIOD: '句号',
+    KeyboardKey.COMMA: '逗号',
+    KeyboardKey.SPACE: '空格',
+    KeyboardKey.SEMICOLON: '分号',
+    KeyboardKey.K: 'K',
+    KeyboardKey.L: 'L',
+    KeyboardKey.Z: 'Z',
+    KeyboardKey.X: 'X',
+    KeyboardKey.I: 'I',
+    KeyboardKey.UP: '上',
+    KeyboardKey.DOWN: '下',
+    KeyboardKey.LEFT: '左',
+    KeyboardKey.RIGHT: '右',
+    KeyboardKey.W: 'W',
+    KeyboardKey.S: 'S',
+    KeyboardKey.A: 'A',
+    KeyboardKey.D: 'D',
+    KeyboardKey.KEYPAD_1: '小键盘 1',
+    KeyboardKey.KEYPAD_2: '小键盘 2',
+}
+
+WHEEL_BUTTON_LABELS: dict[WheelButton, str] = {
+    WheelButton.UNBOUND: '未绑定',
+    WheelButton.CROSS: 'X 键 (Cross)',
+    WheelButton.SQUARE: '方块键 (Square)',
+    WheelButton.CIRCLE: '圆圈键 (Circle)',
+    WheelButton.TRIANGLE: '三角键 (Triangle)',
+    WheelButton.RIGHT_PADDLE: '右换挡拨片 (R1)',
+    WheelButton.LEFT_PADDLE: '左换挡拨片 (L1)',
+    WheelButton.R2: 'R2 键',
+    WheelButton.L2: 'L2 键',
+    WheelButton.SHARE: 'Share 键',
+    WheelButton.OPTIONS: 'Options 键',
+    WheelButton.R3: 'R3 键',
+    WheelButton.L3: 'L3 键',
+    WheelButton.PLUS: '加号键 (+)',
+    WheelButton.MINUS: '减号键 (-)',
+    WheelButton.DIAL_RIGHT: '红旋钮右旋',
+    WheelButton.DIAL_LEFT: '红旋钮左旋',
+    WheelButton.DIAL_PRESS: '红旋钮确认键 (Enter)',
+    WheelButton.LOGO: 'PS / Logo 键',
 }
 
 
 class KeyboardControlConfig(BaseModel, frozen=True, extra='forbid'):
-    """键盘按键绑定（使用 pygame.key.name 名称，元组内任一按键均可触发）"""
+    """键盘动作与按键名称。"""
 
-    quit: tuple[str, ...] = ('escape',)
-    toggle_autopilot: tuple[str, ...] = ('p', 'keypad 1')
-    takeover: tuple[str, ...] = ('backslash', 'keypad 2')
-    toggle_reverse: tuple[str, ...] = ('q',)
-    toggle_manual_transmission: tuple[str, ...] = ('m',)
-    gear_up: tuple[str, ...] = ('period',)
-    gear_down: tuple[str, ...] = ('comma',)
-    toggle_handbrake: tuple[str, ...] = ('space',)
-    toggle_light_double_blinker: tuple[str, ...] = ('semicolon',)
-    toggle_light_low_beam: tuple[str, ...] = ('k',)
-    toggle_light_high_beam: tuple[str, ...] = ('l',)
-    toggle_light_left_blinker: tuple[str, ...] = ('z',)
-    toggle_light_right_blinker: tuple[str, ...] = ('x',)
-    toggle_light_interior: tuple[str, ...] = ('i',)
-    drive_forward: tuple[str, ...] = ('up', 'w')
-    drive_backward: tuple[str, ...] = ('down', 's')
-    drive_left: tuple[str, ...] = ('left', 'a')
-    drive_right: tuple[str, ...] = ('right', 'd')
+    quit: KeyboardKey = KeyboardKey.ESCAPE
+    toggle_autopilot: KeyboardKey = KeyboardKey.P
+    takeover: KeyboardKey = KeyboardKey.BACKSLASH
+    toggle_reverse: KeyboardKey = KeyboardKey.Q
+    toggle_manual_transmission: KeyboardKey = KeyboardKey.M
+    gear_up: KeyboardKey = KeyboardKey.PERIOD
+    gear_down: KeyboardKey = KeyboardKey.COMMA
+    toggle_handbrake: KeyboardKey = KeyboardKey.SPACE
+    toggle_light_double_blinker: KeyboardKey = KeyboardKey.SEMICOLON
+    toggle_light_low_beam: KeyboardKey = KeyboardKey.K
+    toggle_light_high_beam: KeyboardKey = KeyboardKey.L
+    toggle_light_left_blinker: KeyboardKey = KeyboardKey.Z
+    toggle_light_right_blinker: KeyboardKey = KeyboardKey.X
+    toggle_light_interior: KeyboardKey = KeyboardKey.I
+    drive_forward: KeyboardKey = KeyboardKey.UP
+    drive_backward: KeyboardKey = KeyboardKey.DOWN
+    drive_left: KeyboardKey = KeyboardKey.LEFT
+    drive_right: KeyboardKey = KeyboardKey.RIGHT
 
 
 class WheelControlConfig(BaseModel, frozen=True, extra='forbid'):
-    """方向盘硬件开关、轴号与按钮绑定（空元组表示未绑定）"""
+    """方向盘硬件开关与按钮绑定。"""
 
     enable_wheel: bool = True
     show_button_key: bool = False
     autopilot_wheel_sync: bool = False  # 自动驾驶方向盘随动，后续实现
     device_index: int = 0
-    # 轴序号
-    steering_axis: int = 0
-    throttle_axis: int = 1
-    brake_axis: int = 2
-    # 动作按钮绑定（TOML 使用数组，空数组表示未绑定）
-    toggle_autopilot: tuple[int, ...] = (23,)
-    takeover: tuple[int, ...] = (0,)
-    toggle_reverse: tuple[int, ...] = (5,)
-    toggle_handbrake: tuple[int, ...] = (4,)
-    toggle_light_left_blinker: tuple[int, ...] = (7,)
-    toggle_light_right_blinker: tuple[int, ...] = (6,)
-    toggle_light_double_blinker: tuple[int, ...] = (3,)
+    toggle_autopilot: WheelButton = WheelButton.DIAL_PRESS
+    takeover: WheelButton = WheelButton.CROSS
+    toggle_reverse: WheelButton = WheelButton.LEFT_PADDLE
+    toggle_handbrake: WheelButton = WheelButton.RIGHT_PADDLE
+    toggle_light_left_blinker: WheelButton = WheelButton.L2
+    toggle_light_right_blinker: WheelButton = WheelButton.R2
+    toggle_light_double_blinker: WheelButton = WheelButton.TRIANGLE
 
 
 class ControlConfig(BaseModel, frozen=True, extra='forbid'):
@@ -301,7 +375,7 @@ def _save(path: Path, model: BaseModel) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + '.tmp')
     with temporary.open('wb') as stream:
-        tomli_w.dump(model.model_dump(exclude_none=True), stream)
+        tomli_w.dump(model.model_dump(mode='json', exclude_none=True), stream)
     temporary.replace(path)
 
 
@@ -326,9 +400,7 @@ def save_control_config(config: ControlConfig, path: Path = CONTROL_FILE) -> Non
 
 
 def list_presets(presets_dir: Path = PRESETS_DIR) -> list[str]:
-    return sorted(
-        path.stem for path in presets_dir.glob('*.toml') if not path.name.endswith('.example.toml')
-    )
+    return sorted(path.stem for path in presets_dir.glob('*.toml') if not path.name.endswith('.example.toml'))
 
 
 def load_preset(name_or_path: str | Path) -> PresetConfig:

@@ -98,80 +98,105 @@ class MachineConfig(BaseModel, frozen=True, extra='forbid'):
 
 ## 控制配置（`ControlConfig` ↔ `configs/control.toml`）
 
-将键盘与方向盘的参数（开关、轴号、按钮映射）统一收归 `configs/control.toml`。项目使用罗技 G29，实验机器之间可复用相同的按钮与轴号配置。
+配置保存“动作名称 → 按键名称”，每个动作绑定一个键。`core` 使用 `KeyboardKey` 和 `WheelButton` 两个 `StrEnum` 定义名称，Pydantic 将 TOML 字符串解析为枚举值。界面通过纯数据名称表显示“空格”“右换挡拨片”等标签。
 
-`simulator` 负责面向被试的驾驶控制输入；运行期调试由操作者通过 `launcher` 界面完成。
+`simulator/input.py` 维护键盘名称到 pygame 常量的映射，`simulator/wheel_device.py` 维护方向盘按钮名称、轴名称到设备编号的映射。方向盘使用通用的 `WheelDevice` 名称，内部通过 pygame 和罗技 SDK 读写设备。映射表采用当前使用设备的布局。
 
 ```python
-# 罗技 G29 DirectInput 物理按钮编号与名称对照表（供 launcher 界面与按键说明展示）
-G29_BUTTON_NAMES: dict[int, str] = {
-    0: 'X 键 (Cross)',
-    1: '方块键 (Square)',
-    2: '圆圈键 (Circle)',
-    3: '三角键 (Triangle)',
-    4: '右换挡拨片 (R1)',
-    5: '左换挡拨片 (L1)',
-    6: 'R2 键',
-    7: 'L2 键',
-    8: 'Share 键',
-    9: 'Options 键',
-    10: 'R3 键',
-    11: 'L3 键',
-    19: '加号键 (+)',
-    20: '减号键 (-)',
-    21: '红旋钮右旋',
-    22: '红旋钮左旋',
-    23: '红旋钮确认键 (Enter)',
-    24: 'PS / Logo 键',
-}
+from enum import StrEnum
+
+
+class KeyboardKey(StrEnum):
+    UNBOUND = 'unbound'
+    ESCAPE = 'escape'
+    P = 'p'
+    BACKSLASH = 'backslash'
+    Q = 'q'
+    M = 'm'
+    PERIOD = 'period'
+    COMMA = 'comma'
+    SPACE = 'space'
+    SEMICOLON = 'semicolon'
+    K = 'k'
+    L = 'l'
+    Z = 'z'
+    X = 'x'
+    I = 'i'
+    UP = 'up'
+    DOWN = 'down'
+    LEFT = 'left'
+    RIGHT = 'right'
+    W = 'w'
+    S = 's'
+    A = 'a'
+    D = 'd'
+    KEYPAD_1 = 'keypad_1'
+    KEYPAD_2 = 'keypad_2'
+
+
+class WheelButton(StrEnum):
+    UNBOUND = 'unbound'
+    CROSS = 'cross'
+    SQUARE = 'square'
+    CIRCLE = 'circle'
+    TRIANGLE = 'triangle'
+    RIGHT_PADDLE = 'right_paddle'
+    LEFT_PADDLE = 'left_paddle'
+    R2 = 'r2'
+    L2 = 'l2'
+    SHARE = 'share'
+    OPTIONS = 'options'
+    R3 = 'r3'
+    L3 = 'l3'
+    PLUS = 'plus'
+    MINUS = 'minus'
+    DIAL_RIGHT = 'dial_right'
+    DIAL_LEFT = 'dial_left'
+    DIAL_PRESS = 'dial_press'
+    LOGO = 'logo'
 
 
 class KeyboardControlConfig(BaseModel, frozen=True, extra='forbid'):
-    """键盘按键绑定（使用 pygame.key.name 名称，元组内任一按键均可触发）"""
-    quit: tuple[str, ...] = ('escape',)
-    toggle_autopilot: tuple[str, ...] = ('p', 'keypad 1')
-    takeover: tuple[str, ...] = ('backslash', 'keypad 2')
-    toggle_reverse: tuple[str, ...] = ('q',)
-    toggle_manual_transmission: tuple[str, ...] = ('m',)
-    gear_up: tuple[str, ...] = ('period',)
-    gear_down: tuple[str, ...] = ('comma',)
-    toggle_handbrake: tuple[str, ...] = ('space',)
-    toggle_light_double_blinker: tuple[str, ...] = ('semicolon',)
-    toggle_light_low_beam: tuple[str, ...] = ('k',)
-    toggle_light_high_beam: tuple[str, ...] = ('l',)
-    toggle_light_left_blinker: tuple[str, ...] = ('z',)
-    toggle_light_right_blinker: tuple[str, ...] = ('x',)
-    toggle_light_interior: tuple[str, ...] = ('i',)
-    drive_forward: tuple[str, ...] = ('up', 'w')
-    drive_backward: tuple[str, ...] = ('down', 's')
-    drive_left: tuple[str, ...] = ('left', 'a')
-    drive_right: tuple[str, ...] = ('right', 'd')
+    quit: KeyboardKey = KeyboardKey.ESCAPE
+    toggle_autopilot: KeyboardKey = KeyboardKey.P
+    takeover: KeyboardKey = KeyboardKey.BACKSLASH
+    toggle_reverse: KeyboardKey = KeyboardKey.Q
+    toggle_manual_transmission: KeyboardKey = KeyboardKey.M
+    gear_up: KeyboardKey = KeyboardKey.PERIOD
+    gear_down: KeyboardKey = KeyboardKey.COMMA
+    toggle_handbrake: KeyboardKey = KeyboardKey.SPACE
+    toggle_light_double_blinker: KeyboardKey = KeyboardKey.SEMICOLON
+    toggle_light_low_beam: KeyboardKey = KeyboardKey.K
+    toggle_light_high_beam: KeyboardKey = KeyboardKey.L
+    toggle_light_left_blinker: KeyboardKey = KeyboardKey.Z
+    toggle_light_right_blinker: KeyboardKey = KeyboardKey.X
+    toggle_light_interior: KeyboardKey = KeyboardKey.I
+    drive_forward: KeyboardKey = KeyboardKey.UP
+    drive_backward: KeyboardKey = KeyboardKey.DOWN
+    drive_left: KeyboardKey = KeyboardKey.LEFT
+    drive_right: KeyboardKey = KeyboardKey.RIGHT
 
 
 class WheelControlConfig(BaseModel, frozen=True, extra='forbid'):
-    """方向盘硬件开关、轴号与按钮绑定（空元组表示未绑定）"""
     enable_wheel: bool = True
     show_button_key: bool = False
     autopilot_wheel_sync: bool = False  # 自动驾驶方向盘随动，后续实现
     device_index: int = 0
-    # 轴序号
-    steering_axis: int = 0
-    throttle_axis: int = 1
-    brake_axis: int = 2
-    # 动作按钮绑定（TOML 使用数组，空数组表示未绑定）
-    toggle_autopilot: tuple[int, ...] = (23,)
-    takeover: tuple[int, ...] = (0,)
-    toggle_reverse: tuple[int, ...] = (5,)
-    toggle_handbrake: tuple[int, ...] = (4,)
-    toggle_light_left_blinker: tuple[int, ...] = (7,)
-    toggle_light_right_blinker: tuple[int, ...] = (6,)
-    toggle_light_double_blinker: tuple[int, ...] = (3,)
+    toggle_autopilot: WheelButton = WheelButton.DIAL_PRESS
+    takeover: WheelButton = WheelButton.CROSS
+    toggle_reverse: WheelButton = WheelButton.LEFT_PADDLE
+    toggle_handbrake: WheelButton = WheelButton.RIGHT_PADDLE
+    toggle_light_left_blinker: WheelButton = WheelButton.L2
+    toggle_light_right_blinker: WheelButton = WheelButton.R2
+    toggle_light_double_blinker: WheelButton = WheelButton.TRIANGLE
 
 
 class ControlConfig(BaseModel, frozen=True, extra='forbid'):
     keyboard: KeyboardControlConfig = KeyboardControlConfig()
     wheel: WheelControlConfig = WheelControlConfig()
 ```
+
+`unbound` 表示该动作保持未绑定。键盘与方向盘的绑定字段均保存单个枚举值。按键显示标签属于 `core` 的纯数据，设备编号与 pygame 常量属于 `simulator`。
 
 ## 实验预设、单次实验设置与合成运行配置（`PresetConfig`、`RunSettings`、`RunConfig`）
 
@@ -244,15 +269,15 @@ class RunConfig(BaseModel, frozen=True, extra='forbid'):
 
 文件位置与填写方法见[配置管理](../guide/05-Configuration.md)。配置字段名与 TOML 表对应，按业务分组定义模型。相机直接保存六个位姿字段；固定出生点通过 `SpawnPoint` 表达地图坐标，运行时在 CARLA 接入处构造原生对象。
 
-方向盘输入直接读取 pygame 返回的轴值，转向使用 -1 至 1，踏板按设备方向转换为 CARLA 使用的 0 至 1。设备对应的方向转换放在输入模块中。配置保存轴号与按钮绑定，键盘连续控制使用具名模块常量定义响应速度。
+方向盘输入直接读取 pygame 返回的轴值，转向使用 -1 至 1，踏板按设备方向转换为 CARLA 使用的 0 至 1。设备对应的方向转换放在输入模块中。配置保存按键名称绑定，键盘连续控制使用具名模块常量定义响应速度。
 
-读取配置时校验字段名称、类型与有效范围，错误信息包含文件和字段位置。缺少实际设置文件时，提示复制对应示例。保存采用同目录临时文件替换。模型冻结覆盖嵌套集合，按键和按钮使用元组。
+读取配置时校验字段名称、类型与有效范围，错误信息包含文件和字段位置。缺少实际设置文件时，提示复制对应示例。保存采用同目录临时文件替换。按键和按钮使用单个枚举值。
 
 预设明确指定车辆和出生位姿。天气选择 CARLA 预设时，启动前展开为完整参数；选择 `Custom` 时使用文件中的自定义参数。启动配置保存本次采用的设置。
 
 系统设置和控制设置在下一次实验启动时生效。服务监听地址和端口在重启 launcher 后生效。运行期相机与天气调整保存在运行状态中，应用后记录事件。操作者点击覆盖或另存时，直接更新选定的预设文件。
 
-`world.load_map` 表示当前地图与预设相同时是否重载，地图不同时加载目标地图。保存函数在可空字段为 None 时省略对应 TOML 项，按钮空绑定写为空数组。
+`world.load_map` 表示当前地图与预设相同时是否重载，地图不同时加载目标地图。保存函数在可空字段为 None 时省略对应 TOML 项，未绑定按键写为 `unbound`。
 
 `SpawnPoint` 专门表达固定出生点，`CameraConfig` 将相机位姿平铺保存，两者在使用处转换为 CARLA 对象。开关事件共用 `EnabledPayload`，各事件继续通过名称区分。
 

@@ -19,7 +19,7 @@ FluentWindow (DRISCA Launcher)
 ├── 2. 预设页     (preset_page.py)    —— 静态编辑与管理 configs/presets/*.toml（地图天气、主车与出生点、四路相机参数）
 ├── 3. 历史数据   (session_page.py)   —— 浏览 session 表、查看事件时间线、导出 data.csv 与 events.csv
 ├── 4. CARLA 工具 (tools_page.py)     —— .rec 录像信息查看与回放、路网拓扑图生成
-├── 5. 控制与按键 (control_page.py)   —— 读写 configs/control.toml、方向盘轴号与按钮绑定、按键说明对照表
+├── 5. 控制与按键 (control_page.py)   —— 读写 configs/control.toml、按键名称绑定、按键说明对照表
 └── 6. 系统设置   (settings_page.py)  —— 读写 configs/machine.toml（CARLA 地址、显示器分辨率、服务端口、TTS 开关）
 ```
 
@@ -109,14 +109,14 @@ FluentWindow (DRISCA Launcher)
 
 管理 `configs/control.toml`，同时展示按键说明对照表：
 
-1. 方向盘硬件与轴号设置（`WheelControlConfig`）：
+1. 方向盘硬件设置（`WheelControlConfig`）：
    - 启用方向盘开关（`enable_wheel`）、调试打印按钮编号开关（`show_button_key`）；
-   - 转向、油门、刹车轴号设置（`0 / 1 / 2`）。
+   - 本机方向盘设备选择（`device_index`）。
 2. 方向盘动作按钮绑定：
    - 列出自动驾驶切换、接管、倒挡、手刹、左/右转向灯、双闪灯；
-   - 下拉框选项使用 `G29_BUTTON_NAMES` 展示物理按键名称（如 `4 - 右换挡拨片 (R1)`、`23 - 红旋钮确认键`，以及 “未绑定”）。
+   - 每个动作选择一个按钮，选项使用 `WheelButton` 的显示标签，例如“右换挡拨片”“红旋钮确认”和“未绑定”；保存对应的枚举字符串。
 3. 键盘按键绑定与说明表（`KeyboardControlConfig`）：
-   - 列出所有驾驶动作对应的键盘按键与方向盘按钮对照表，支持修改并保存到 `configs/control.toml`。
+   - 列出所有驾驶动作对应的键盘按键与方向盘按钮，每个动作在每种设备上绑定一个键；通过 `KeyboardKey` 与 `WheelButton` 的标签显示名称，并保存到 `configs/control.toml`。
 
 ### 3.6 系统设置页（`settings_page.py`）
 
