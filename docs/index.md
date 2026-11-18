@@ -31,7 +31,7 @@ features:
 
 ## 从这里开始
 
-DRISCA 当前处于实现阶段，基础契约层与驾驶模拟端已实现，管理端交互原型已定稿，位于 `prototypes/launcher/`；正式前端采用 React 与 shadcn/ui，桌面壳采用 pywebview 无边框窗口。[系统架构](./design/01-Architecture.md)介绍平台的组成与实验流程；[开发路线图](./design/06-Roadmap.md)记录阶段目标。
+DRISCA 当前处于实现与实验环境验证阶段。基础契约层、驾驶模拟端和管理端已有实现；管理端采用 React 与 shadcn/ui，桌面壳采用 pywebview 无边框窗口，交互原型保存在 `prototypes/launcher/`。[快速开始](./guide/01-QuickStart.md)提供环境准备与启动步骤；[系统架构](./design/01-Architecture.md)介绍平台的组成与实验流程；[开发路线图](./design/06-Roadmap.md)记录阶段目标。
 
 配置文件位置与填写示例见[配置管理](./guide/05-Configuration.md)。开发者可分别查阅[配置模型](./design/08-ConfigurationModels.md)、[进程通信](./design/07-Protocol.md)和[运行状态与实验数据](./design/02-DataStructures.md)。
 可从[快速开始](./guide/01-QuickStart.md)或 [CARLA 服务端](./guide/02-CarlaServer.md)进入。

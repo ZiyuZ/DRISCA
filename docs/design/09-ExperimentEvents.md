@@ -90,10 +90,10 @@ class ToggleLightEvent(ExperimentEventBase, frozen=True):
     payload: ToggleLightPayload
 
 
-class SetRearviewEvent(ExperimentEventBase, frozen=True):
+class UpdateLayoutEvent(ExperimentEventBase, frozen=True):
     kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
-    name: Literal['set_rearview'] = 'set_rearview'
-    payload: EnabledPayload
+    name: Literal['update_layout'] = 'update_layout'
+    payload: DisplayLayoutConfig
 
 
 class UpdateCameraEvent(ExperimentEventBase, frozen=True):
@@ -148,7 +148,7 @@ ExperimentEvent = Annotated[
     | ChangeGearEvent
     | ToggleHandbrakeEvent
     | ToggleLightEvent
-    | SetRearviewEvent
+    | UpdateLayoutEvent
     | UpdateCameraEvent
     | SetWeatherEvent
     | CollisionEvent

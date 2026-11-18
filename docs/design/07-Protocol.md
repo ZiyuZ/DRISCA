@@ -7,7 +7,7 @@
 其中 `TelemetrySnapshotEvent`（遥测快照）包含 `simulator` 的实时运行状态，由 `launcher` 用于以下两处：
 
 1. 平板 HUD：`launcher` 从快照中取出子集（车速、限速、挡位、转向、驾驶模式），通过 SSE 推送给平板。
-2. `launcher` 数据面板与调试面板：以 20~30 Hz 显示遥测指标与控制条，并在实验配置页支持拾取快照里的主车当前坐标作为 `spawn_point`。
+2. `launcher` 数据面板与调试面板：以 20~30 Hz 显示遥测指标与控制条，并在方案配置页支持拾取快照里的主车当前坐标作为 `spawn_point`。
 
 ```python
 from enum import StrEnum
@@ -48,6 +48,7 @@ class WorkerReadyEvent(BaseModel, frozen=True):
     role: WorkerRole = WorkerRole.SIMULATOR
     ego_actor_id: int
     ego_type_id: str
+    vehicle_box: dict[str, dict[str, float]]  # 包围盒 location、extent 与 rotation，供相机示意使用
 
 
 class WorkerStatusEvent(BaseModel, frozen=True):
@@ -154,11 +155,11 @@ class UpdateCameraCommand(BaseModel, frozen=True):
     mount: CameraConfig
 
 
-class SetRearviewCommand(BaseModel, frozen=True):
-    """由 launcher 远程显隐三路后视镜画面"""
+class UpdateLayoutCommand(BaseModel, frozen=True):
+    """由 launcher 更新后视镜画面布局"""
     command_id: str
-    type: Literal['set_rearview'] = 'set_rearview'
-    enabled: bool
+    type: Literal['update_layout'] = 'update_layout'
+    layout: DisplayLayoutConfig
 
 
 LauncherCommand = Annotated[
@@ -167,7 +168,7 @@ LauncherCommand = Annotated[
     | SetTakeoverCommand
     | SetWeatherCommand
     | UpdateCameraCommand
-    | SetRearviewCommand,
+    | UpdateLayoutCommand,
     Field(discriminator='type'),
 ]
 ```

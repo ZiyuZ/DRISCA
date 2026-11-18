@@ -1,12 +1,12 @@
 # 配置模型与读写约定
 
-配置按职责划分为机器配置（`MachineConfig`）、控制配置（`ControlConfig`）、实验预设（`PresetConfig`）与单次实验设置（`RunSettings`），并在启动实验时由 `launcher` 合成为不可变的 `RunConfig`。
+配置按职责划分为机器配置（`MachineConfig`）、输入配置（`ControlConfig`）、实验预设（`PresetConfig`）与单次实验设置（`RunSettings`），并在启动实验时由 `launcher` 合成为不可变的 `RunConfig`。
 
-相机安装界面以车辆包围盒中心和各轴半尺寸表示位置百分比，边界对应 ±100%。`CameraConfig.x`、`y`、`z` 保存比例坐标，1 对应 100%；simulator 使用实际车辆包围盒的中心、旋转和半尺寸换算安装坐标。旋转与 FOV 使用角度。恢复预设分别作用于当前相机安装参数或整套画面布局。地图出生点继续使用米制坐标。
+相机安装界面以车辆包围盒中心和各轴半尺寸表示位置百分比，边界对应 ±100%。`CameraConfig.x`、`y`、`z` 保存比例坐标，1 对应 100%；simulator 使用实际车辆包围盒的中心、旋转和半尺寸换算安装坐标。旋转与 FOV 使用角度。相机与布局页的撤销操作分别恢复进入本页时的当前相机参数或整套布局。地图出生点继续使用米制坐标。
 
 ## 相机安装与出生点
 
-车载四路相机（主视图 `front` + 三路后视镜 `rear_top` / `rear_left` / `rear_right`）的安装位置因车型而异。辅助工具的相机安装标签提供编辑，实验运行期通过同页发送 `UpdateCameraCommand` 实时微调相机，并选择覆盖当前预设或另存为新预设：
+车载四路相机（主视图 `front` + 三路后视镜 `rear_top` / `rear_left` / `rear_right`）的安装位置因车型而异。方案配置的相机安装标签提供编辑，实验运行期通过同页发送 `UpdateCameraCommand` 实时微调相机，并保存到当前预设：
 
 ```python
 from pydantic import BaseModel, JsonValue
@@ -30,14 +30,11 @@ class CameraConfig(BaseModel, frozen=True, extra='forbid'):
     pitch: float = 0.0
     yaw: float = 0.0
     roll: float = 0.0
-    screen_position: tuple[float, float] = (0.5, 0.5)  # 画面中心在窗口中的归一化坐标 (0~1)
-    image_size: tuple[int, int] | None = None          # None 表示自动跟随模拟器主窗口分辨率（用于 front）
     fov: float = 100.0
 
 
 class CameraRigConfig(BaseModel, frozen=True, extra='forbid'):
     """四路 RGB 相机；位置字段使用车身包围盒比例"""
-    show_rearview: bool = True
     front: CameraConfig
     rear_top: CameraConfig
     rear_left: CameraConfig
@@ -57,7 +54,20 @@ class CarlaConnectionConfig(BaseModel, frozen=True, extra='forbid'):
     timeout: float = 5.0
 
 
+class CameraViewportConfig(BaseModel, frozen=True, extra='forbid'):
+    screen_position: tuple[float, float]
+    image_size: tuple[int, int]
+
+
+class DisplayLayoutConfig(BaseModel, frozen=True, extra='forbid'):
+    show_rearview: bool = True
+    rear_top: CameraViewportConfig
+    rear_left: CameraViewportConfig
+    rear_right: CameraViewportConfig
+
+
 class DisplayConfig(BaseModel, frozen=True, extra='forbid'):
+    layout: DisplayLayoutConfig
     resolution: tuple[int, int] = (1600, 900)  # 宽度建议为 64 的倍数以避免 CARLA 相机画面撕裂
     fullscreen: bool = False
     borderless: bool = False
@@ -80,7 +90,7 @@ class MachineConfig(BaseModel, frozen=True, extra='forbid'):
     export_dir: str = 'data/exports'
 ```
 
-## 控制配置（`ControlConfig` ↔ `configs/control.toml`）
+## 输入配置（`ControlConfig` ↔ `configs/control.toml`）
 
 配置保存“动作名称 → 按键名称”，每个动作绑定一个键。`core` 使用 `KeyboardKey` 和 `WheelButton` 两个 `StrEnum` 定义名称，Pydantic 将 TOML 字符串解析为枚举值。界面通过纯数据名称表显示“空格”“右换挡拨片”等标签。
 
@@ -215,7 +225,7 @@ class WorldConfig(BaseModel, frozen=True, extra='forbid'):
 
 class EgoVehicleConfig(BaseModel, frozen=True, extra='forbid'):
     role_name: str = 'hero'
-    blueprint: str = 'vehicle.audi.a2'  # 本次使用的具体车辆蓝图
+    blueprint: str = ''  # 从已连接 CARLA 的车辆列表选择
     spawn_point: SpawnPoint                  # 预设指定的地图出生位姿
     default_speed_limit: float = 33.33         # 默认限速 (m/s，对应 120 km/h)
     dynamic_speed_limit: bool = False          # 开启时读取 actor.get_speed_limit() / 3.6 转为 m/s
@@ -238,7 +248,7 @@ class PresetConfig(BaseModel, frozen=True, extra='forbid'):
 
 
 class RunSettings(BaseModel, frozen=True, extra='forbid'):
-    """实验设置：每次实验启动时在 launcher 实验控制台中填写，随会话保存。
+    """实验设置：每次实验启动时在 launcher 控制台中填写，随会话保存。
     与预设合并得到本次实验的设置，最终随 RunConfig 一起写入会话。"""
     subject_id: str = ''  # 被试编号
     note: str = ''        # 本次实验备注
@@ -248,7 +258,7 @@ class RunSettings(BaseModel, frozen=True, extra='forbid'):
 
 class RunConfig(BaseModel, frozen=True, extra='forbid'):
     """实验启动时由 launcher 合成并写入 cache/run/<session_id>.json 的不可变配置。
-    由机器配置、控制配置、预设与实验设置四部分组成，运行期间的调整保存在运行状态中。"""
+    由机器配置、输入配置、预设与实验设置四部分组成，运行期间的调整保存在运行状态中。"""
     session_id: str
     db_path: str | None                 # 开启保存时使用的数据库绝对路径，调试运行时为空
     launcher_ws_url: str                # launcher 生成的本机回连地址
@@ -268,7 +278,7 @@ class RunConfig(BaseModel, frozen=True, extra='forbid'):
 
 预设明确指定车辆和出生位姿。天气选择 CARLA 预设时，启动前展开为完整参数；选择 `Custom` 时使用文件中的自定义参数。启动配置保存本次采用的设置。
 
-系统设置和控制设置在下一次实验启动时生效。服务监听地址和端口在重启 launcher 后生效。运行期相机与天气调整保存在运行状态中，应用后记录事件。操作者点击覆盖或另存时，直接更新选定的预设文件。
+主机配置和输入配置在下一次实验启动时生效。服务监听地址和端口在重启 launcher 后生效。运行期相机、画面布局与天气调整保存在运行状态中，应用后记录事件。方案配置页保存安装参数到预设文件；主机配置页保存画面布局到 machine.toml。
 
 `world.load_map` 表示当前地图与预设相同时是否重载，地图不同时加载目标地图。保存函数在可空字段为 None 时省略对应 TOML 项，未绑定按键写为 `unbound`。
 
@@ -280,7 +290,7 @@ class RunConfig(BaseModel, frozen=True, extra='forbid'):
 
 ## 组合生成运行配置
 
-操作者编辑机器配置、控制配置和实验预设，并在控制台填写 `RunSettings`。`launcher` 将这四部分组合为完整的 `RunConfig`，自动填入会话编号、数据库路径与回连地址，再交给 `simulator`。运行配置由程序生成，作为本次启动结果使用。
+操作者编辑机器配置、输入配置和实验预设，并在控制台填写 `RunSettings`。`launcher` 将这四部分组合为完整的 `RunConfig`，自动填入会话编号、数据库路径与回连地址，再交给 `simulator`。运行配置由程序生成，作为本次启动结果使用。
 
 保存总开关和 Recorder 选项统一属于 `RunSettings`。预设保存场景、车辆与相机设置。模型采用组合组织，类继承最多四层；事件采用公共基类与具体事件类两层结构。
 

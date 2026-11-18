@@ -15,7 +15,7 @@
 - 桌面管理端（`launcher`）与平板 HUD 整合
   - 采用 Web 控制台与 pywebview 无边框桌面壳，先制作 Basecoat + Alpine.js 静态原型，再连接 Python 后端：集成 CARLA 预检、预设管理、子进程启停与监控、历史会话浏览与 CSV 导出。
   - 内置轻量 `FastAPI` 服务：通过本地 WebSocket 接收 `simulator` 的日志、事件与遥测快照，并通过 SSE 驱动平板 HUD。
-  - 管理端按实验控制、实验配置、辅助工具、实验数据、系统设置五页组织。桌面与局域网浏览器共用页面和后端，进程管理使用标准库 subprocess。正式前端使用 Bun、Vite、React、TypeScript、Tailwind CSS 与 shadcn/ui，原型保存在 `prototypes/launcher/`。
+  - 管理端按控制台、方案配置、数据管理、主机配置、输入配置五页组织。桌面与局域网浏览器共用页面和后端，进程管理使用标准库 subprocess。正式前端使用 Bun、Vite、React、TypeScript、Tailwind CSS 与 shadcn/ui，原型保存在 `prototypes/launcher/`。
 - 客户端渲染路径提速
   - 采用 `pygame.image.frombuffer(..., 'BGRA')` 直接消费 CARLA 原始图像缓冲，将 4 路相机合成耗时降至 `1.5 ms/帧`。
 

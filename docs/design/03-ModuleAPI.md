@@ -36,10 +36,10 @@ src/drisca/
 │   └── ws_client.py          # WorkerWSClient：后台同步 WebSocket 线程与 loguru sink
 ├── launcher/                 # Python 后端、Web 界面与桌面壳
 │   ├── __main__.py           # 启动服务与可选的 pywebview 无边框窗口
-│   ├── orchestrator.py       # 实验编排、subprocess 监管与正常停机
-│   ├── jobobject.py          # Windows Job Object
-│   ├── speech.py             # 管理端语音播放
-│   ├── web.py                # HTTP 接口、SSE 与子进程 WebSocket
+│   ├── runtime.py            # 实验编排、Windows Job Object、语音与正常停机
+│   ├── commands.py           # 实验指令库与参数
+│   ├── dev.py                # Vite 开发服务启动与回收
+│   ├── server.py             # HTTP 接口、SSE 与子进程 WebSocket
 │   └── static/               # frontend/ 构建产物与被试 HUD 静态资源
 └── traffic/                  # 背景交通流子包（当前阶段仅保留占位；设计见 Architecture）
     └── __init__.py
@@ -97,7 +97,7 @@ def load_preset(name_or_path: str | Path) -> PresetConfig:
     """加载指定预设文件并校验为 PresetConfig"""
 
 def save_preset(name: str, preset: PresetConfig, presets_dir: Path = PRESETS_DIR) -> Path:
-    """保存预设到 configs/presets/<name>.toml（用于预设页保存、辅助工具的画面布局与相机安装标签覆盖当前预设或另存为新预设）"""
+    """保存预设到 configs/presets/<name>.toml（用于方案配置各标签共享的当前预设保存）"""
 
 def write_run_config(run_config: RunConfig) -> Path:
     """将合成的 RunConfig 写入 cache/run/<session_id>.json 并返回路径"""
@@ -211,6 +211,12 @@ class StorageDB:
     def finish_session(self, session_id: str, status: SessionStatus, finished_at: float) -> None:
         """实验结束或异常中止时更新 finished_at 与最终状态 ('committed' | 'aborted')"""
 
+    def update_session_note(self, session_id: str, note: str) -> None:
+        """保存操作者在结束实验时填写的会话备注"""
+
+    def delete_sessions(self, session_ids: list[str]) -> None:
+        """在同一事务中删除选中会话的逐帧数据、事件与会话记录"""
+
     def append_events(self, rows: list[EventRow]) -> None:
         """写入事件表。launcher 把子进程上报的 ExperimentEvent 与自身产生的生命周期/状态事件通过此方法写入"""
 
@@ -284,17 +290,14 @@ class WorkerWSClient:
 ```python
 class ViewportRenderer:
     """pygame-ce 窗口渲染器：合成主视图与三路后视镜，不渲染任何文字面板"""
-    def __init__(self, display_cfg: DisplayConfig, camera_rig_cfg: CameraRigConfig) -> None: ...
+    def __init__(self, display_cfg: DisplayConfig) -> None: ...
 
     @property
     def actual_resolution(self) -> tuple[int, int]:
         """返回窗口实际像素尺寸（全屏模式下为显示器真实分辨率），供主相机初始化使用"""
 
-    def set_rearview_visible(self, visible: bool) -> None:
-        """显隐三路后视镜"""
-
-    def update_camera_mount(self, camera_name: str, mount: CameraConfig) -> None:
-        """更新对应相机的屏幕归一化位置与显示尺寸"""
+    def update_layout(self, layout: DisplayLayoutConfig) -> None:
+        """更新后视镜显隐、屏幕归一化位置与显示尺寸"""
 
     def render_frame(self, images: dict[str, carla.Image | None]) -> None:
         """使用 pygame.image.frombuffer(raw_data, size, 'BGRA') 将四路画面合成并 flip 上屏"""
@@ -314,7 +317,7 @@ class SimulatorApp:
         1. 初始化窗口、方向盘、CARLA 连接、主车与传感器，开启保存时打开 RunConfig.db_path 对应的 BatchDataWriter
         2. 发送 WorkerReadyEvent(ego_actor_id, ego_type_id)
         3. 按世界帧运行驾驶循环，同步步长取预设 simulation_fps：
-           - poll_commands() 处理 Stop / SetAutopilot / SetTakeover / SetWeather / UpdateCamera / SetRearview，应用成功后上报对应的 ExperimentEvent 子类 (source='launcher')
+           - poll_commands() 处理 Stop / SetAutopilot / SetTakeover / SetWeather / UpdateCamera / UpdateLayout，应用成功后上报对应的 ExperimentEvent 子类 (source='launcher')
            - 采集键盘与方向盘驾驶输入，施加车辆控制；离散驾驶动作（自动驾驶、接管、倒挡、档位、手刹、车灯）应用后上报对应的 ExperimentEvent 子类 (source='wheel'|'keyboard')
            - 推进或等待世界帧，更新 DrivingState
            - render_frame() 合成画面上屏

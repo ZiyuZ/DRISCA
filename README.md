@@ -19,8 +19,7 @@
 
 ---
 
-> [!IMPORTANT]
-> DRISCA 当前处于设计阶段，仓库文档描述目标架构与接口，应用功能尚未实现。
+DRISCA 当前处于实现阶段。环境准备与启动操作见[快速开始](docs/guide/01-QuickStart.md)，功能与接口见项目设计文档。
 
 ## 项目目标
 
@@ -40,5 +39,5 @@ DRISCA 基于 CARLA，为驾驶行为研究提供实验环境。平台支持实�
 | [核心数据结构与协议契约](docs/design/02-DataStructures.md) | 配置、通信协议与数据模型 |
 | [模块职责与 API 规范](docs/design/03-ModuleAPI.md) | 模块职责与接口设计 |
 | [桌面管理端设计](docs/design/04-LauncherDesign.md) | 页面布局与操作流程 |
-| [渲染与画面传输链路](docs/design/05-RenderingPipeline.md) | 相机画面处理与渲染 |
+| [渲染与画面传输链路](docs/reference/RenderingPipeline.md) | 相机画面处理与渲染 |
 | [开发路线图](docs/design/06-Roadmap.md) | 阶段目标与规划 |
