@@ -5,9 +5,17 @@
 .idea/
 .vscode/
 AGENTS.md
+/cache/
+/data/
+/configs/machine.toml
+/configs/control.toml
+/configs/presets/*.toml
+!/configs/presets/*.example.toml
+*.tsbuildinfo
 
 # External Tools
 node_modules/
+src/drisca/launcher/static/
 
 # ---> Python
 # Byte-compiled / optimized / DLL files
@@ -27,6 +35,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+!frontend/src/lib/
+!frontend/src/lib/**
 lib64/
 parts/
 sdist/

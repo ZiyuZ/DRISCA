@@ -3,6 +3,7 @@
 import csv
 import sqlite3
 import time
+from collections.abc import Callable
 from dataclasses import astuple, fields
 from pathlib import Path
 
@@ -52,6 +53,18 @@ class StorageDB:
                 (status, finished_at, session_id),
             )
 
+    def update_session_note(self, session_id: str, note: str) -> None:
+        with self.connection:
+            self.connection.execute('UPDATE session SET note=? WHERE session_id=?', (note, session_id))
+
+    def delete_sessions(self, session_ids: list[str]) -> None:
+        placeholders = ','.join('?' for _ in session_ids)
+        with self.connection:
+            for table in ('data', 'event', 'session'):
+                self.connection.execute(
+                    f'DELETE FROM {table} WHERE session_id IN ({placeholders})', session_ids
+                )
+
     def append_events(self, rows: list[EventRow]) -> None:
         with self.connection:
             self.connection.executemany(
@@ -85,11 +98,20 @@ class StorageDB:
             'SELECT count(*) FROM data WHERE session_id=?', (session_id,)
         ).fetchone()[0]
 
-    def export_sessions(self, output_dir: Path) -> None:
+    def export_sessions(
+        self, output_dir: Path, session_ids: list[str], progress: Callable[[float], None] | None = None
+    ) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
-        for table, filename in (('session', 'sessions.csv'), ('data', 'data.csv'), ('event', 'events.csv')):
-            cursor = self.connection.execute(f'SELECT * FROM {table}')
+        placeholders = ','.join('?' for _ in session_ids)
+        for index, (table, filename) in enumerate(
+            (('session', 'sessions.csv'), ('data', 'data.csv'), ('event', 'events.csv')), start=1
+        ):
+            cursor = self.connection.execute(
+                f'SELECT * FROM {table} WHERE session_id IN ({placeholders})', session_ids
+            )
             with (output_dir / filename).open('w', encoding='utf-8', newline='') as stream:
                 writer = csv.writer(stream)
                 writer.writerow([column[0] for column in cursor.description])
                 writer.writerows(cursor)
+            if progress is not None:
+                progress(index / 3 * 100)

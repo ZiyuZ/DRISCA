@@ -9,12 +9,23 @@ default:
 #        开发
 # =====================
 rumdl *paths=".":
-    rumdl fmt {{ paths }}
-    rumdl check --fix {{ paths }}
+    rumdl check {{ paths }}
 lint:
-    uv run ruff format src
-    uv run ruff check --fix src
+    uv run ruff format --check src
+    uv run ruff check src
     uv run ty check src
+
+frontend-dev:
+    bun run --cwd frontend dev
+
+frontend-check:
+    bun run --cwd frontend typecheck
+
+frontend-build:
+    bun run --cwd frontend build
+
+launcher *args:
+    uv run -m drisca.launcher {{ args }}
 
 # =====================
 #        发布

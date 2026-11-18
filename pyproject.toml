@@ -7,13 +7,17 @@ requires-python = ">=3.14,<3.15"
 authors = [{ name = "ZiyuZ", email = "19648091+ZiyuZ@users.noreply.github.com" }]
 dependencies = [
   "carla==1.0",
+  "fastapi>=0.163.1",
   "logitech-steering-wheel>=1.0",
   "loguru>=0.8.0",
   "matplotlib>=3.10,<4",
   "networkx>=3.5,<4",
   "pydantic>=2.12,<3",
   "pygame-ce>=2.5.8",
+  "pywebview>=6.2.1",
+  "pywin32>=312",
   "tomli-w>=1.2,<2",
+  "uvicorn>=0.54.0",
   "websockets>=17.4",
 ]
 
