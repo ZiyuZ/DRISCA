@@ -16,3 +16,11 @@ def from_carla_weather(weather: carla.WeatherParameters, preset_name: str = 'Cus
         preset_name=preset_name,
         **{name: getattr(weather, name) for name in WeatherConfig.model_fields if name != 'preset_name'},
     )
+
+
+def list_weather_presets() -> dict[str, WeatherConfig]:
+    return {
+        name: from_carla_weather(value, name)
+        for name in dir(carla.WeatherParameters)
+        if isinstance(value := getattr(carla.WeatherParameters, name), carla.WeatherParameters)
+    }

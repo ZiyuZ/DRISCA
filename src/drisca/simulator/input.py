@@ -48,6 +48,8 @@ class InputController:
     def __init__(self, config: ControlConfig) -> None:
         self.config = config
         self.steer = 0.0
+        self.throttle = 0.0
+        self.brake = 0.0
         self.wheel = None
         if config.wheel.enable_wheel:
             self.wheel = WheelDevice(config.wheel)
@@ -89,11 +91,13 @@ class InputController:
             steer, throttle, brake = self.wheel.read_axes()
         else:
             target = float(active('drive_right')) - float(active('drive_left'))
-            change = 2.0 * delta
+            change = (0.7 if target else 1.4) * delta
             self.steer = max(self.steer - change, min(self.steer + change, target))
             steer = self.steer
-            throttle = float(active('drive_forward'))
-            brake = float(active('drive_backward'))
+            self.throttle = min(1.0, self.throttle + 1.5 * delta) if active('drive_forward') else 0.0
+            self.brake = min(1.0, self.brake + 4.0 * delta) if active('drive_backward') else 0.0
+            throttle = self.throttle
+            brake = self.brake
         return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake), actions
 
     def close(self) -> None:

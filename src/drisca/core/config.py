@@ -1,6 +1,7 @@
 """实验配置模型。"""
 
 import json
+import shutil
 import tomllib
 from datetime import datetime
 from enum import StrEnum
@@ -8,7 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import tomli_w
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, JsonValue, field_validator
 
 from drisca.core.paths import CONFIG_FILE, CONTROL_FILE, PRESETS_DIR, RUN_CONFIG_DIR, resolve_db_path
 
@@ -25,7 +26,7 @@ class SpawnPoint(BaseModel, frozen=True, extra='forbid'):
 
 
 class CameraConfig(BaseModel, frozen=True, extra='forbid'):
-    """单路相机的安装与画面配置"""
+    """单路相机的安装与视野配置"""
 
     x: float = 0.0
     y: float = 0.0
@@ -33,9 +34,12 @@ class CameraConfig(BaseModel, frozen=True, extra='forbid'):
     pitch: float = 0.0
     yaw: float = 0.0
     roll: float = 0.0
-    screen_position: tuple[float, float] = (0.5, 0.5)  # 画面中心在窗口中的归一化坐标 (0~1)
-    image_size: tuple[int, int] | None = None  # None 表示自动跟随模拟器主窗口分辨率（用于 front）
     fov: float = Field(default=100.0, gt=0, lt=180)
+
+
+class CameraViewportConfig(BaseModel, frozen=True, extra='forbid'):
+    screen_position: tuple[float, float]
+    image_size: tuple[int, int]
 
     @field_validator('screen_position')
     @classmethod
@@ -46,53 +50,53 @@ class CameraConfig(BaseModel, frozen=True, extra='forbid'):
 
     @field_validator('image_size')
     @classmethod
-    def validate_image_size(cls, value: tuple[int, int] | None) -> tuple[int, int] | None:
-        if value is not None and any(size <= 0 for size in value):
+    def validate_image_size(cls, value: tuple[int, int]) -> tuple[int, int]:
+        if any(size <= 0 for size in value):
             raise ValueError('画面尺寸必须为正数')
         return value
+
+
+class DisplayLayoutConfig(BaseModel, frozen=True, extra='forbid'):
+    show_rearview: bool = True
+    rear_top: CameraViewportConfig = CameraViewportConfig(screen_position=(0.5, 0.1), image_size=(320, 150))
+    rear_left: CameraViewportConfig = CameraViewportConfig(screen_position=(0.12, 0.9), image_size=(320, 150))
+    rear_right: CameraViewportConfig = CameraViewportConfig(
+        screen_position=(0.88, 0.9), image_size=(320, 150)
+    )
 
 
 class CameraRigConfig(BaseModel, frozen=True, extra='forbid'):
     """主车四路相机组合配置（固定使用 sensor.camera.rgb）"""
 
-    show_rearview: bool = True
     front: CameraConfig = CameraConfig(
         x=0.5,
         y=-0.35,
-        z=1.35,
+        z=0.8,
         pitch=5.8,
-        screen_position=(0.5, 0.5),
-        image_size=None,  # 运行时取窗口实际分辨率
         fov=120.0,
     )
     rear_top: CameraConfig = CameraConfig(
         x=0.34,
         y=0.0,
-        z=1.27,
+        z=0.7,
         pitch=5.8,
         yaw=180.0,
-        screen_position=(0.5, 0.1),
-        image_size=(320, 150),
         fov=100.0,
     )
     rear_left: CameraConfig = CameraConfig(
         x=0.4,
         y=-0.93,
-        z=1.03,
+        z=0.5,
         pitch=5.8,
         yaw=180.0,
-        screen_position=(0.12, 0.9),
-        image_size=(320, 150),
         fov=100.0,
     )
     rear_right: CameraConfig = CameraConfig(
         x=0.4,
         y=0.93,
-        z=1.03,
+        z=0.5,
         pitch=5.8,
         yaw=180.0,
-        screen_position=(0.88, 0.9),
-        image_size=(320, 150),
         fov=100.0,
     )
 
@@ -105,6 +109,7 @@ class CarlaConnectionConfig(BaseModel, frozen=True, extra='forbid'):
 
 
 class DisplayConfig(BaseModel, frozen=True, extra='forbid'):
+    layout: DisplayLayoutConfig = DisplayLayoutConfig()
     resolution: tuple[int, int] = (1600, 900)  # 宽度建议为 64 的倍数以避免 CARLA 相机画面撕裂
     fullscreen: bool = False
     borderless: bool = False
@@ -131,6 +136,7 @@ class MachineConfig(BaseModel, frozen=True, extra='forbid'):
     service: ServiceConfig = ServiceConfig()
     db_path: str = 'data/experiments.sqlite3'
     recorder_dir: str = 'data/recordings'
+    export_dir: str = 'data/exports'
 
 
 class KeyboardKey(StrEnum):
@@ -306,17 +312,26 @@ class WorldConfig(BaseModel, frozen=True, extra='forbid'):
 
 class EgoVehicleConfig(BaseModel, frozen=True, extra='forbid'):
     role_name: str = 'hero'
-    blueprint: str = 'vehicle.audi.a2'  # 本次使用的具体车辆蓝图
+    blueprint: str = ''  # 从已连接 CARLA 的车辆列表选择
     spawn_point: SpawnPoint  # 预设指定的地图出生位姿
     default_speed_limit: float = Field(default=33.33, ge=0)
     dynamic_speed_limit: bool = False  # 开启时读取 actor.get_speed_limit() / 3.6 转为 m/s
     init_autopilot: bool = False  # 启动后是否默认进入 CARLA 自动驾驶
 
 
+class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):
+    id: str
+    name: str
+    command: str
+    params: dict[str, JsonValue]
+
+
 class PresetConfig(BaseModel, frozen=True, extra='forbid'):
     world: WorldConfig = WorldConfig()
     ego: EgoVehicleConfig
     cameras: CameraRigConfig = CameraRigConfig()
+    instructions: tuple[ExperimentInstructionConfig, ...] = ()
+    markers: tuple[str, ...] = ('进入路段', '离开路段', '任务完成', '异常情况')
 
 
 class RunSettings(BaseModel, frozen=True, extra='forbid'):
@@ -377,6 +392,14 @@ def _save(path: Path, model: BaseModel) -> None:
     with temporary.open('wb') as stream:
         tomli_w.dump(model.model_dump(mode='json', exclude_none=True), stream)
     temporary.replace(path)
+
+
+def initialize_configs() -> None:
+    """启动时从示例创建缺少的实际配置。"""
+    for target in (CONFIG_FILE, CONTROL_FILE, PRESETS_DIR / 'basic.toml'):
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(target.with_suffix('.example.toml'), target)
 
 
 def load_machine_config(path: Path = CONFIG_FILE) -> MachineConfig:

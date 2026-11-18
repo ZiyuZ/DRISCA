@@ -3,7 +3,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter
 
-from .config import CameraConfig, WeatherConfig
+from .config import CameraConfig, DisplayLayoutConfig, WeatherConfig
 
 
 class WorkerRole(StrEnum):
@@ -115,10 +115,10 @@ class ToggleLightEvent(ExperimentEventBase, frozen=True):
     payload: ToggleLightPayload
 
 
-class SetRearviewEvent(ExperimentEventBase, frozen=True):
+class UpdateLayoutEvent(ExperimentEventBase, frozen=True):
     kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
-    name: Literal['set_rearview'] = 'set_rearview'
-    payload: EnabledPayload
+    name: Literal['update_layout'] = 'update_layout'
+    payload: DisplayLayoutConfig
 
 
 class UpdateCameraEvent(ExperimentEventBase, frozen=True):
@@ -173,7 +173,7 @@ ExperimentEvent = Annotated[
     | ChangeGearEvent
     | ToggleHandbrakeEvent
     | ToggleLightEvent
-    | SetRearviewEvent
+    | UpdateLayoutEvent
     | UpdateCameraEvent
     | SetWeatherEvent
     | CollisionEvent
@@ -193,6 +193,7 @@ class WorkerReadyEvent(BaseModel, frozen=True):
     role: WorkerRole = WorkerRole.SIMULATOR
     ego_actor_id: int
     ego_type_id: str
+    vehicle_box: dict[str, dict[str, float]]
 
 
 class WorkerStatusEvent(BaseModel, frozen=True):
@@ -304,12 +305,12 @@ class UpdateCameraCommand(BaseModel, frozen=True):
     mount: CameraConfig
 
 
-class SetRearviewCommand(BaseModel, frozen=True):
-    """由 launcher 远程显隐三路后视镜画面"""
+class UpdateLayoutCommand(BaseModel, frozen=True):
+    """由 launcher 更新后视镜画面布局"""
 
     command_id: str
-    type: Literal['set_rearview'] = 'set_rearview'
-    enabled: bool
+    type: Literal['update_layout'] = 'update_layout'
+    layout: DisplayLayoutConfig
 
 
 LauncherCommand = Annotated[
@@ -318,7 +319,7 @@ LauncherCommand = Annotated[
     | SetTakeoverCommand
     | SetWeatherCommand
     | UpdateCameraCommand
-    | SetRearviewCommand,
+    | UpdateLayoutCommand,
     Field(discriminator='type'),
 ]
 

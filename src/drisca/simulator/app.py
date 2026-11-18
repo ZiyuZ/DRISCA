@@ -18,8 +18,6 @@ from drisca.core.protocol import (
     ControlMode,
     EnabledPayload,
     SetAutopilotCommand,
-    SetRearviewCommand,
-    SetRearviewEvent,
     SetTakeoverCommand,
     SetWeatherCommand,
     SetWeatherEvent,
@@ -35,6 +33,8 @@ from drisca.core.protocol import (
     UpdateCameraCommand,
     UpdateCameraEvent,
     UpdateCameraPayload,
+    UpdateLayoutCommand,
+    UpdateLayoutEvent,
     WorkerReadyEvent,
     WorkerRole,
     WorkerState,
@@ -71,7 +71,7 @@ class SimulatorApp:
             channel = WorkerWSClient(cfg.launcher_ws_url)
             channel.start()
             stack.callback(channel.close)
-            renderer = ViewportRenderer(cfg.machine.display, cfg.preset.cameras)
+            renderer = ViewportRenderer(cfg.machine.display)
             stack.callback(renderer.close)
             inputs = InputController(cfg.control)
             stack.callback(inputs.close)
@@ -82,7 +82,13 @@ class SimulatorApp:
             stack.callback(vehicle.close)
             sensors = SensorSuite(session.world, vehicle.actor, channel.send_event)
             stack.callback(sensors.close)
-            cameras = CameraRig(session.world, vehicle.actor, cfg.preset.cameras, renderer.actual_resolution)
+            cameras = CameraRig(
+                session.world,
+                vehicle.actor,
+                cfg.preset.cameras,
+                renderer.actual_resolution,
+                cfg.machine.display.layout,
+            )
             stack.callback(cameras.close)
             if cfg.run.save_data and cfg.run.enable_carla_recorder:
                 recorder_dir = Path(cfg.machine.recorder_dir).resolve()
@@ -95,8 +101,21 @@ class SimulatorApp:
                 writer = BatchDataWriter(Path(cfg.db_path))
                 writer.start()
                 stack.callback(writer.close)
+            box = vehicle.actor.bounding_box
             channel.send_event(
-                WorkerReadyEvent(ego_actor_id=vehicle.actor.id, ego_type_id=vehicle.actor.type_id)
+                WorkerReadyEvent(
+                    ego_actor_id=vehicle.actor.id,
+                    ego_type_id=vehicle.actor.type_id,
+                    vehicle_box={
+                        'location': {'x': box.location.x, 'y': box.location.y, 'z': box.location.z},
+                        'extent': {'x': box.extent.x, 'y': box.extent.y, 'z': box.extent.z},
+                        'rotation': {
+                            'pitch': box.rotation.pitch,
+                            'yaw': box.rotation.yaw,
+                            'roll': box.rotation.roll,
+                        },
+                    },
+                )
             )
             channel.send_event(WorkerStatusEvent(role=WorkerRole.SIMULATOR, state=WorkerState.RUNNING))
             clock = pygame.time.Clock()
@@ -106,19 +125,22 @@ class SimulatorApp:
             render_interval = 1 / cfg.machine.display.target_fps
             next_render = time.monotonic()
             road_map = session.map
+            timings = dict(input=0.0, world=0.0, sensors=0.0, render=0.0, sample=0.0)
+            measured_frames = 0
             while self.running:
+                frame_started = time.perf_counter()
                 sensors.check()
                 loop_fps = cfg.preset.world.simulation_fps if cfg.preset.world.sync_mode else 0
                 delta = clock.tick(loop_fps) / 1000.0
                 for command in channel.poll_commands():
                     try:
                         self._command(command, session, vehicle, cameras, renderer, channel)
-                        if isinstance(command, UpdateCameraCommand):
+                        if isinstance(command, (UpdateCameraCommand, UpdateLayoutCommand)):
                             last_camera_frame = time.monotonic()
                     except Exception:
                         logger.bind(command_id=command.command_id).exception('命令执行失败')
                         if not isinstance(
-                            command, (UpdateCameraCommand, SetRearviewCommand, SetWeatherCommand)
+                            command, (UpdateCameraCommand, UpdateLayoutCommand, SetWeatherCommand)
                         ):
                             raise
                 input_control, actions = inputs.read(delta)
@@ -130,15 +152,18 @@ class SimulatorApp:
                 self.control.steer = input_control.steer
                 self.control.brake = input_control.brake
                 vehicle.apply_control(self.control)
+                before_tick = time.perf_counter()
                 if cfg.preset.world.sync_mode:
                     frame_no = session.world.tick()
                     snapshot = session.world.get_snapshot()
                 else:
                     snapshot = session.world.wait_for_tick(cfg.machine.carla.timeout)
                     frame_no = snapshot.frame
+                after_tick = time.perf_counter()
                 self.frame_no = frame_no
                 imu = cast(carla.IMUMeasurement, self._frame(sensors.continuous['imu'], frame_no))
                 gnss = cast(carla.GnssMeasurement, self._frame(sensors.continuous['gnss'], frame_no))
+                after_sensors = time.perf_counter()
                 images = cameras.read_aligned()
                 if images is not None:
                     last_camera_frame = time.monotonic()
@@ -149,6 +174,7 @@ class SimulatorApp:
                             next_render = last_camera_frame + render_interval
                 elif time.monotonic() - last_camera_frame > cfg.machine.carla.timeout:
                     raise RuntimeError('相机图像接收或帧对齐超时')
+                after_render = time.perf_counter()
                 transform = vehicle.actor.get_transform()
                 waypoint = road_map.get_waypoint(transform.location)
                 if waypoint is None:
@@ -186,6 +212,23 @@ class SimulatorApp:
                     channel.publish_telemetry(state.to_telemetry_snapshot(sequence))
                     sequence += 1
                     last_telemetry = time.monotonic()
+                timings['input'] += before_tick - frame_started
+                timings['world'] += after_tick - before_tick
+                timings['sensors'] += after_sensors - after_tick
+                timings['render'] += after_render - after_sensors
+                timings['sample'] += time.perf_counter() - after_render
+                measured_frames += 1
+            if measured_frames:
+                average = {name: elapsed * 1000 / measured_frames for name, elapsed in timings.items()}
+                logger.info(
+                    '平均每帧耗时：输入与限速 {:.1f}ms，世界推进 {:.1f}ms，'
+                    '传感器等待 {:.1f}ms，画面合成 {:.1f}ms，状态采样与入队 {:.1f}ms',
+                    average['input'],
+                    average['world'],
+                    average['sensors'],
+                    average['render'],
+                    average['sample'],
+                )
             channel.send_event(WorkerStatusEvent(role=WorkerRole.SIMULATOR, state=WorkerState.STOPPING))
 
     def _frame(self, channel: queue.Queue, frame_no: int) -> carla.SensorData:
@@ -225,16 +268,16 @@ class SimulatorApp:
             channel.send_event(SetWeatherEvent(**common, payload=SetWeatherPayload(weather=command.weather)))
         elif isinstance(command, UpdateCameraCommand):
             cameras.update(command.camera_name, command.mount)
-            renderer.update_camera_mount(command.camera_name, command.mount)
             channel.send_event(
                 UpdateCameraEvent(
                     **common,
                     payload=UpdateCameraPayload(camera_name=command.camera_name, mount=command.mount),
                 )
             )
-        elif isinstance(command, SetRearviewCommand):
-            renderer.set_rearview_visible(command.enabled)
-            channel.send_event(SetRearviewEvent(**common, payload=EnabledPayload(enabled=command.enabled)))
+        elif isinstance(command, UpdateLayoutCommand):
+            cameras.update_layout(command.layout)
+            renderer.update_layout(command.layout)
+            channel.send_event(UpdateLayoutEvent(**common, payload=command.layout))
 
     def _set_autopilot(
         self, enabled: bool, vehicle: EgoVehicle, channel: WorkerWSClient, common: EventContext

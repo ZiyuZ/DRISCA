@@ -7,7 +7,7 @@ from typing import cast
 
 import carla
 
-from drisca.core.config import CameraConfig, CameraRigConfig
+from drisca.core.config import CameraConfig, CameraRigConfig, DisplayLayoutConfig
 from drisca.core.protocol import (
     CollisionEvent,
     CollisionPayload,
@@ -17,9 +17,13 @@ from drisca.core.protocol import (
 )
 
 
-def camera_transform(config: CameraConfig) -> carla.Transform:
+def camera_transform(config: CameraConfig, box: carla.BoundingBox) -> carla.Transform:
+    location = carla.Location(x=config.x * box.extent.x, y=config.y * box.extent.y, z=config.z * box.extent.z)
+    location = carla.Transform(carla.Location(), box.rotation).transform(location)
     return carla.Transform(
-        carla.Location(x=config.x, y=config.y, z=config.z),
+        carla.Location(
+            x=location.x + box.location.x, y=location.y + box.location.y, z=location.z + box.location.z
+        ),
         carla.Rotation(pitch=config.pitch, yaw=config.yaw, roll=config.roll),
     )
 
@@ -111,11 +115,20 @@ class SensorSuite:
 
 class CameraRig:
     def __init__(
-        self, world: carla.World, vehicle: carla.Vehicle, config: CameraRigConfig, resolution: tuple[int, int]
+        self,
+        world: carla.World,
+        vehicle: carla.Vehicle,
+        config: CameraRigConfig,
+        resolution: tuple[int, int],
+        layout: DisplayLayoutConfig,
     ) -> None:
         self.world = world
         self.vehicle = vehicle
         self.resolution = resolution
+        self.layout = layout
+        self.mounts = {
+            name: getattr(config, name) for name in ('front', 'rear_top', 'rear_left', 'rear_right')
+        }
         self.sensors: dict[str, carla.Sensor] = {}
         self.frames: dict[str, queue.Queue[carla.Image]] = {}
         self.pending: dict[str, dict[int, carla.Image]] = {}
@@ -129,7 +142,8 @@ class CameraRig:
 
     def update(self, name: str, config: CameraConfig) -> None:
         blueprint = self.world.get_blueprint_library().find('sensor.camera.rgb')
-        width, height = config.image_size or self.resolution
+        width, height = self.resolution if name == 'front' else getattr(self.layout, name).image_size
+        self.mounts[name] = config
         blueprint.set_attribute('image_size_x', str(width))
         blueprint.set_attribute('image_size_y', str(height))
         blueprint.set_attribute('fov', str(config.fov))
@@ -138,7 +152,7 @@ class CameraRig:
             carla.Sensor,
             self.world.spawn_actor(
                 blueprint,
-                camera_transform(config),
+                camera_transform(config, self.vehicle.bounding_box),
                 attach_to=self.vehicle,
                 attachment_type=carla.AttachmentType.Rigid,
             ),
@@ -162,6 +176,13 @@ class CameraRig:
         self.sensors[name] = sensor
         self.frames[name] = channel
         self.pending = {camera: {} for camera in self.frames}
+
+    def update_layout(self, layout: DisplayLayoutConfig) -> None:
+        previous = self.layout
+        self.layout = layout
+        for name in ('rear_top', 'rear_left', 'rear_right'):
+            if getattr(previous, name).image_size != getattr(layout, name).image_size:
+                self.update(name, self.mounts[name])
 
     def read_aligned(self) -> dict[str, carla.Image] | None:
         """在世界继续推进时收集各相机同一帧的图像。"""

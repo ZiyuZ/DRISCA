@@ -1,4 +1,11 @@
 # 另存为 basic.toml，按实验环境调整地图、车辆与相机。
+markers = ["进入路段", "离开路段", "任务完成", "异常情况"]
+
+[[instructions]]
+id = "takeover"
+name = "请求接管"
+command = "takeover"
+params = { enabled = true, speech = "请接管车辆" }
 
 [world]
 map_name = "Town10HD_Opt"
@@ -25,7 +32,7 @@ rayleigh_scattering_scale = 0.0331
 
 [ego]
 role_name = "hero"
-blueprint = "vehicle.audi.a2"
+blueprint = ""
 default_speed_limit = 33.33
 dynamic_speed_limit = false
 init_autopilot = false
@@ -40,47 +47,39 @@ yaw = 90.0
 roll = 0.0
 
 [cameras]
-show_rearview = true
 
 [cameras.front]
 x = 0.5
 y = -0.35
-z = 1.35
+z = 0.8
 pitch = 5.8
 yaw = 0.0
 roll = 0.0
-screen_position = [0.5, 0.5]
 fov = 120.0
 
 [cameras.rear_top]
 x = 0.34
 y = 0.0
-z = 1.27
+z = 0.7
 pitch = 5.8
 yaw = 180.0
 roll = 0.0
-screen_position = [0.5, 0.1]
-image_size = [320, 150]
 fov = 100.0
 
 [cameras.rear_left]
 x = 0.4
 y = -0.93
-z = 1.03
+z = 0.5
 pitch = 5.8
 yaw = 180.0
 roll = 0.0
-screen_position = [0.12, 0.9]
-image_size = [320, 150]
 fov = 100.0
 
 [cameras.rear_right]
 x = 0.4
 y = 0.93
-z = 1.03
+z = 0.5
 pitch = 5.8
 yaw = 180.0
 roll = 0.0
-screen_position = [0.88, 0.9]
-image_size = [320, 150]
 fov = 100.0
