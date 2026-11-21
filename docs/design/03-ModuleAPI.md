@@ -58,7 +58,7 @@ from pathlib import Path
 
 PACKAGE_ROOT: Path
 PROJECT_ROOT: Path
-CACHE_ROOT: Path        # PROJECT_ROOT / 'cache'
+CACHE_ROOT: Path        # PROJECT_ROOT / '.cache'
 RUN_CONFIG_DIR: Path    # CACHE_ROOT / 'run'
 RECORDER_ROOT: Path     # PROJECT_ROOT / 'data' / 'recordings'
 MAP_ROOT: Path          # CACHE_ROOT / 'map'
@@ -70,7 +70,7 @@ def resolve_db_path(configured_path: str) -> Path:
     """将机器配置中的数据库路径解析为绝对路径（供 launcher 生成 RunConfig.db_path）"""
 
 def ensure_runtime_dirs() -> None:
-    """确保 cache/, cache/run/, configs/, configs/presets/, data/ 等运行目录存在"""
+    """确保 .cache/, .cache/run/, configs/, configs/presets/, data/ 等运行目录存在"""
 ```
 
 ### 2.2 `core/config.py`
@@ -100,7 +100,7 @@ def save_preset(name: str, preset: PresetConfig, presets_dir: Path = PRESETS_DIR
     """保存预设到 configs/presets/<name>.toml（用于方案配置各标签共享的当前预设保存）"""
 
 def write_run_config(run_config: RunConfig) -> Path:
-    """将合成的 RunConfig 写入 cache/run/<session_id>.json 并返回路径"""
+    """将合成的 RunConfig 写入 .cache/run/<session_id>.json 并返回路径"""
 
 def load_run_config(path: Path) -> RunConfig:
     """子进程启动时从 --config 路径加载不可变 RunConfig"""

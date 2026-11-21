@@ -66,6 +66,10 @@ class MapRequest(BaseModel, frozen=True):
     map_name: str
 
 
+class CarlaStartRequest(BaseModel, frozen=True):
+    kind: Literal['editor', 'packaged'] | None = None
+
+
 class SessionSelectionRequest(BaseModel, frozen=True):
     session_ids: list[str]
 
@@ -148,12 +152,50 @@ def create_app() -> FastAPI:
             'urls': {'console': base, 'hud': base + '/hud'},
         }
 
+    @app.get('/api/status')
+    def status():
+        return rt().state
+
+    @app.get('/api/logs')
+    def logs():
+        return list(rt().logs)
+
+    @app.post('/api/carla/start')
+    async def start_carla(request: CarlaStartRequest):
+        ensure_idle()
+        if rt().state['unreal']['phase'] in ('starting', 'running', 'stopping'):
+            raise HTTPException(409, 'Unreal 已启动或正在处理进程操作')
+        if rt().state['carla_connecting'] or rt().state['carla_connected']:
+            raise HTTPException(409, '请先关闭已连接的 CARLA，再启动本机程序')
+        kind = request.kind or rt().machine.carla_runtime.kind
+        rt().carla_closed.clear()
+        rt().update(
+            unreal={'phase': 'starting', 'pid': None, 'kind': kind},
+            carla_connecting=True,
+            error=None,
+        )
+        rt().background(rt().start_carla, kind)
+        return {'ok': True, 'unreal': rt().state['unreal']}
+
+    @app.post('/api/carla/stop')
+    async def stop_carla():
+        ensure_idle()
+        if rt().carla_process is None or rt().state['unreal']['phase'] not in ('starting', 'running'):
+            raise HTTPException(409, 'Launcher 当前没有可关闭的 Unreal 进程')
+        rt().update(unreal={**rt().state['unreal'], 'phase': 'stopping'})
+        rt().background(rt().stop_carla)
+        return {'ok': True}
+
     @app.put('/api/config/machine')
     def machine(config: MachineConfig):
         ensure_idle()
         if rt().state['carla_connecting']:
             raise HTTPException(409, '正在连接 CARLA')
         connection_changed = rt().machine.carla != config.carla
+        if rt().carla_process is not None and (
+            connection_changed or rt().machine.driving_view != config.driving_view
+        ):
+            raise HTTPException(409, '请先关闭 Unreal，再修改 CARLA 与驾驶接口连接参数')
         save_machine_config(config)
         rt().machine = config
         if connection_changed:

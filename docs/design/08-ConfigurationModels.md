@@ -44,7 +44,7 @@ class CameraRigConfig(BaseModel, frozen=True, extra='forbid'):
 
 ## 机器配置（`MachineConfig` ↔ `configs/machine.toml`）
 
-存放与运行主机网络、显示器及本地服务绑定的环境参数，每台实验机器配置一次：
+存放与运行主机网络、Unreal 程序、显示器及本地服务绑定的环境参数，每台实验机器配置一次。`carla_runtime` 分别保存 UE 编辑器、CARLA 工程与打包程序路径，由 `kind` 选择启动方式。Launcher 为一组实验启动一次 Unreal，每次实验单独创建和释放实验对象。
 
 ```python
 class CarlaConnectionConfig(BaseModel, frozen=True, extra='forbid'):
@@ -61,6 +61,8 @@ class CameraViewportConfig(BaseModel, frozen=True, extra='forbid'):
 
 class DisplayLayoutConfig(BaseModel, frozen=True, extra='forbid'):
     show_rearview: bool = True
+    border_width: int = 0  # 后视镜边框宽度（视口像素），0 表示不画
+    border_color: str = '#000000'  # 后视镜边框颜色 #RRGGBB 或 #RRGGBBAA
     rear_top: CameraViewportConfig
     rear_left: CameraViewportConfig
     rear_right: CameraViewportConfig
@@ -69,6 +71,7 @@ class DisplayLayoutConfig(BaseModel, frozen=True, extra='forbid'):
 class DisplayConfig(BaseModel, frozen=True, extra='forbid'):
     layout: DisplayLayoutConfig
     resolution: tuple[int, int] = (1600, 900)  # 宽度建议为 64 的倍数以避免 CARLA 相机画面撕裂
+    position: tuple[int, int] = (0, 0)
     fullscreen: bool = False
     borderless: bool = False
     target_fps: int = 60  # 窗口显示目标帧率
@@ -81,8 +84,18 @@ class ServiceConfig(BaseModel, frozen=True, extra='forbid'):
     debug: bool = False
 
 
+class CarlaRuntimeConfig(BaseModel, frozen=True, extra='forbid'):
+    kind: Literal['editor', 'packaged'] = 'editor'
+    editor_executable: str = ''
+    project: str = ''
+    packaged_executable: str = ''
+    quality: Literal['Low', 'Medium', 'High', 'Epic'] = 'Medium'
+    startup_timeout: float = Field(default=120, gt=0)
+
+
 class MachineConfig(BaseModel, frozen=True, extra='forbid'):
     carla: CarlaConnectionConfig = CarlaConnectionConfig()
+    carla_runtime: CarlaRuntimeConfig = CarlaRuntimeConfig()
     display: DisplayConfig = DisplayConfig()
     service: ServiceConfig = ServiceConfig()
     db_path: str = 'data/experiments.sqlite3'
@@ -257,7 +270,7 @@ class RunSettings(BaseModel, frozen=True, extra='forbid'):
 
 
 class RunConfig(BaseModel, frozen=True, extra='forbid'):
-    """实验启动时由 launcher 合成并写入 cache/run/<session_id>.json 的不可变配置。
+    """实验启动时由 launcher 合成并写入 .cache/run/<session_id>.json 的不可变配置。
     由机器配置、输入配置、预设与实验设置四部分组成，运行期间的调整保存在运行状态中。"""
     session_id: str
     db_path: str | None                 # 开启保存时使用的数据库绝对路径，调试运行时为空

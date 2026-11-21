@@ -1,26 +1,20 @@
 """管理端桌面与服务入口。"""
 
-import argparse
+from __future__ import annotations
+
 import socket
 import threading
 import time
 from contextlib import ExitStack
-from typing import Any, cast
-
-import uvicorn
-import webview
+from typing import TYPE_CHECKING, Any, cast
 
 from drisca.core.config import initialize_configs, load_machine_config
 from drisca.core.paths import PROJECT_ROOT
+from drisca.launcher.cli import execute, parser
 from drisca.launcher.dev import frontend_dev_server
-from drisca.launcher.server import create_app
 
-
-class LauncherServer(uvicorn.Server):
-    async def shutdown(self, sockets=None) -> None:
-        runtime = cast(Any, self.config.app).state.runtime
-        await runtime.shutdown()
-        await super().shutdown(sockets=sockets)
+if TYPE_CHECKING:
+    import uvicorn
 
 
 class WindowBridge:
@@ -58,12 +52,21 @@ class WindowBridge:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='DRISCA 实验管理端')
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument('--web', action='store_true', help='仅启动 Web 服务')
-    mode.add_argument('--dev', action='store_true', help='启动 Vite，启用前端热更新')
-    args = parser.parse_args()
+    args = parser().parse_args()
     initialize_configs()
+    if args.command:
+        raise SystemExit(execute(args))
+    import uvicorn
+    import webview
+
+    from drisca.launcher.server import create_app
+
+    class LauncherServer(uvicorn.Server):
+        async def shutdown(self, sockets=None) -> None:
+            runtime = cast(Any, self.config.app).state.runtime
+            await runtime.shutdown()
+            await super().shutdown(sockets=sockets)
+
     config = load_machine_config()
     app = create_app()
     server = LauncherServer(

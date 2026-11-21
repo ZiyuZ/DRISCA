@@ -2,13 +2,14 @@
 
 import asyncio
 import json
+import socket
 import subprocess
 import sys
 import threading
 import time
 from collections import deque
 from importlib.metadata import version
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 import win32api  # ty: ignore[import-not-found]
@@ -39,6 +40,7 @@ from drisca.core.protocol import (
 )
 from drisca.core.weather import from_carla_weather, to_carla_weather
 from drisca.launcher.commands import MODELS
+from drisca.launcher.unreal import launch_arguments
 from drisca.storage.db import StorageDB
 from drisca.storage.models import SCHEMA_VERSION, EventRow, SessionRow, SessionStatus
 
@@ -53,6 +55,9 @@ class Runtime:
         self.carla: CarlaSession | None = None
         self.run_config = None
         self.process: subprocess.Popen | None = None
+        self.carla_process: subprocess.Popen | None = None
+        self.carla_closed = threading.Event()
+        self.carla_closed.set()
         self.worker: asyncio.Queue[str] | None = None
         self.worker_closed = threading.Event()
         self.stop_requested = threading.Event()
@@ -64,6 +69,7 @@ class Runtime:
             'carla_connected': False,
             'carla_connecting': False,
             'world_loading': False,
+            'unreal': {'phase': 'stopped', 'pid': None, 'kind': None},
             'clients': {'console': 0, 'hud': 0},
             'carla_detail': '',
             'worker_state': 'stopped',
@@ -130,7 +136,112 @@ class Runtime:
         path.parent.mkdir(parents=True, exist_ok=True)
         return StorageDB(path)
 
-    def connect(self) -> None:
+    def assign_process(self, process: subprocess.Popen) -> None:
+        handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, False, process.pid)
+        try:
+            win32job.AssignProcessToJobObject(self.job, handle)
+        finally:
+            handle.Close()
+
+    def start_carla(self, kind: Literal['editor', 'packaged']) -> None:
+        process = None
+        expected_stop = False
+        try:
+            args, directory = launch_arguments(self.machine, kind)
+            if self.state['unreal']['phase'] == 'stopping':
+                expected_stop = True
+                return
+            ports = (self.machine.carla.port, self.machine.carla.port + 1, self.machine.driving_view.port)
+            if len(set(ports)) != len(ports):
+                raise ValueError('CARLA RPC、流传输与驾驶接口端口应各不相同')
+            for port in ports:
+                with socket.socket() as probe:
+                    probe.bind(('127.0.0.1', port))
+            process = subprocess.Popen(
+                args,
+                cwd=directory,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            self.carla_process = process
+            self.assign_process(process)
+            self.update(unreal={'phase': 'starting', 'pid': process.pid, 'kind': kind})
+            deadline = time.monotonic() + self.machine.carla_runtime.startup_timeout
+            while True:
+                if self.state['unreal']['phase'] == 'stopping':
+                    expected_stop = True
+                    break
+                if process.poll() is not None:
+                    raise RuntimeError(
+                        f'Unreal 启动期间退出：{process.returncode}，请查看 .cache/logs/carla-unreal.log'
+                    )
+                ready = True
+                for port in (self.machine.carla.port, self.machine.driving_view.port):
+                    try:
+                        with socket.create_connection(('127.0.0.1', port), timeout=0.2):
+                            pass
+                    except OSError:
+                        ready = False
+                        break
+                if ready:
+                    # RPC 端口先于世界就绪开放，地图加载期间连接会超时，按截止时间重试。
+                    try:
+                        self.connect(starting_unreal=True)
+                    except Exception:
+                        if time.monotonic() >= deadline:
+                            raise
+                    else:
+                        self.update(
+                            unreal={'phase': 'running', 'pid': process.pid, 'kind': kind},
+                            carla_connecting=False,
+                        )
+                        self.log(f'CARLA Unreal 已就绪：PID {process.pid}')
+                        break
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('Unreal 启动超时，请查看 .cache/logs/carla-unreal.log')
+                time.sleep(0.25)
+            code = process.wait()
+            expected_stop = expected_stop or self.state['unreal']['phase'] == 'stopping'
+            if not expected_stop:
+                raise RuntimeError(f'CARLA Unreal 已退出：{code}')
+        except Exception:
+            if process is not None and process.poll() is None:
+                self._terminate_carla(process)
+            self.update(unreal={'phase': 'error', 'pid': None, 'kind': kind})
+            raise
+        finally:
+            self.carla_process = None
+            self.carla = None
+            changes: dict[str, Any] = {
+                'carla_connected': False,
+                'carla_connecting': False,
+                'catalog': {'maps': [], 'vehicles': [], 'map_name': None, 'spawn_points': []},
+            }
+            if expected_stop:
+                changes['unreal'] = {'phase': 'stopped', 'pid': None, 'kind': kind}
+            self.update(**changes)
+            self.carla_closed.set()
+
+    def _terminate_carla(self, process: subprocess.Popen) -> None:
+        subprocess.run(
+            ['taskkill', '/PID', str(process.pid), '/T', '/F'],
+            check=True,
+            capture_output=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        process.wait()
+
+    def stop_carla(self) -> None:
+        process = self.carla_process
+        self.carla = None
+        self.update(carla_connected=False, carla_detail='')
+        if process is not None and process.poll() is None:
+            self._terminate_carla(process)
+        if not self.carla_closed.wait(timeout=10):
+            raise TimeoutError('Unreal 进程监视尚未结束')
+
+    def connect(self, *, starting_unreal: bool = False) -> None:
         try:
             session = CarlaSession(self.machine.carla)
             session.connect()
@@ -146,10 +257,12 @@ class Runtime:
             )
         except Exception:
             self.carla = None
-            self.update(carla_connected=False, carla_detail='连接失败')
+            if not starting_unreal:
+                self.update(carla_connected=False, carla_detail='连接失败')
             raise
         finally:
-            self.update(carla_connecting=False)
+            if not starting_unreal:
+                self.update(carla_connecting=False)
 
     def refresh_world(self) -> None:
         assert self.carla is not None
@@ -192,6 +305,9 @@ class Runtime:
             await asyncio.to_thread(self.stop)
             while self.state['phase'] != 'idle':
                 await asyncio.sleep(0.05)
+        if self.state['unreal']['phase'] in ('starting', 'running', 'stopping'):
+            self.update(unreal={**self.state['unreal'], 'phase': 'stopping'})
+            await asyncio.to_thread(self.stop_carla)
 
     def client_connected(self, role: str, delta: int) -> None:
         clients = dict(self.state['clients'])
@@ -303,11 +419,7 @@ class Runtime:
                 encoding='utf-8',
                 errors='replace',
             )
-            handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, False, self.process.pid)
-            try:
-                win32job.AssignProcessToJobObject(self.job, handle)
-            finally:
-                handle.Close()
+            self.assign_process(self.process)
             self.background(self.read_output, self.process)
             if self.stop_requested.is_set():
                 self.background(self.stop)
@@ -315,11 +427,17 @@ class Runtime:
             drained = True
             if self.worker is not None:
                 drained = self.worker_closed.wait(timeout=15)
-            normal = code == 0 and drained
-            if not normal:
-                self.log(f'驾驶端异常退出：{code}', 'ERROR')
-            self.finish(normal)
-        except Exception:
+            if code != 0:
+                raise RuntimeError(f'驾驶端异常退出，退出码：{code}')
+            if not drained:
+                raise TimeoutError('驾驶端消息收尾超时')
+            if not self.stop_requested.is_set():
+                raise RuntimeError('驾驶端在实验停止请求前退出')
+            if not self.state['carla_connected']:
+                raise RuntimeError('实验期间 CARLA 连接已结束')
+            self.finish(True)
+        except Exception as exc:
+            self.update(error=str(exc))
             if self.process is not None and self.process.poll() is None:
                 self.process.terminate()
                 self.process.wait()
@@ -340,7 +458,11 @@ class Runtime:
         cfg = self.run_config
         reset_error: Exception | None = None
         try:
-            if self.carla is not None:
+            if (
+                self.carla is not None
+                and self.state['carla_connected']
+                and (self.carla_process is None or self.carla_process.poll() is None)
+            ):
                 try:
                     self.carla.force_reset_after_experiment()
                 except Exception as exc:

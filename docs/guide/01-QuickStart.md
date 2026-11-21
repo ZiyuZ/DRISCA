@@ -2,6 +2,8 @@
 
 DRISCA 在 Windows、Python 3.14 与 CARLA 环境中运行。桌面窗口使用 Edge WebView2，网页和平板通过实验主机的服务地址访问同一套控制台。
 
+左下角的 Unreal 入口按主机配置启动编辑器版或打包版 CARLA。一个管理端可连续开展多次实验，实验结束后保留 Unreal。命令行也能启动程序和控制实验，详见[管理端命令行](./06-LauncherCLI.md)。
+
 ## 准备环境
 
 安装 uv、Bun 和 just，准备项目所用的 CARLA 服务端及仓库配置的客户端 wheel。Windows 安装 Edge WebView2 Runtime，方向盘连接与驱动按实验设备准备。

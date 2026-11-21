@@ -63,6 +63,18 @@ class SensorSuite:
         if self.error is not None:
             raise RuntimeError('传感器回调失败') from self.error
 
+    def read_latest(self, name: str) -> carla.SensorData | None:
+        """异步模式下取该通道最新一帧，不等待世界帧。"""
+        channel = self.continuous.get(name)
+        if channel is None:
+            return None
+        latest: carla.SensorData | None = None
+        while True:
+            try:
+                latest = channel.get_nowait()
+            except queue.Empty:
+                return latest
+
     def _spawn(self, blueprint_id: str) -> carla.Sensor:
         blueprint = self.world.get_blueprint_library().find(blueprint_id)
         sensor = cast(
@@ -131,7 +143,7 @@ class CameraRig:
         }
         self.sensors: dict[str, carla.Sensor] = {}
         self.frames: dict[str, queue.Queue[carla.Image]] = {}
-        self.pending: dict[str, dict[int, carla.Image]] = {}
+        self.latest: dict[str, carla.Image | None] = {}
         self.error: Exception | None = None
         try:
             for name in ('front', 'rear_top', 'rear_left', 'rear_right'):
@@ -175,7 +187,7 @@ class CameraRig:
             old_sensor.destroy()
         self.sensors[name] = sensor
         self.frames[name] = channel
-        self.pending = {camera: {} for camera in self.frames}
+        self.latest[name] = None
 
     def update_layout(self, layout: DisplayLayoutConfig) -> None:
         previous = self.layout
@@ -184,31 +196,23 @@ class CameraRig:
             if getattr(previous, name).image_size != getattr(layout, name).image_size:
                 self.update(name, self.mounts[name])
 
-    def read_aligned(self) -> dict[str, carla.Image] | None:
-        """在世界继续推进时收集各相机同一帧的图像。"""
+    def read_latest(self) -> dict[str, carla.Image | None] | None:
+        """主视图更新时交付各路最新图像。"""
         if self.error is not None:
             raise RuntimeError('相机回调失败') from self.error
+        previous_front = self.latest['front']
         for name, channel in self.frames.items():
             while True:
                 try:
                     image = channel.get_nowait()
                 except queue.Empty:
                     break
-                self.pending[name][image.frame] = image
-                if len(self.pending[name]) > 256:
-                    raise RuntimeError(f'相机帧未能对齐：{name}')
-        if any(not frames for frames in self.pending.values()):
+                latest = self.latest[name]
+                if latest is None or image.frame > latest.frame:
+                    self.latest[name] = image
+        if self.latest['front'] is previous_front:
             return None
-        common = set.intersection(*(set(frames) for frames in self.pending.values()))
-        if not common:
-            return None
-        frame = max(common)
-        images = {name: frames[frame] for name, frames in self.pending.items()}
-        for frames in self.pending.values():
-            for old_frame in tuple(frames):
-                if old_frame <= frame:
-                    del frames[old_frame]
-        return images
+        return self.latest.copy()
 
     def close(self) -> None:
         for sensor in self.sensors.values():

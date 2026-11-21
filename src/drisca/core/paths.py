@@ -4,7 +4,7 @@ from pathlib import Path
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = PACKAGE_ROOT.parent.parent
-CACHE_ROOT = PROJECT_ROOT / 'cache'
+CACHE_ROOT = PROJECT_ROOT / '.cache'
 RUN_CONFIG_DIR = CACHE_ROOT / 'run'
 RECORDER_ROOT = PROJECT_ROOT / 'data' / 'recordings'
 MAP_ROOT = CACHE_ROOT / 'map'

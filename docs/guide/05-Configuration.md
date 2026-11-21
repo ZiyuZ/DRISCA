@@ -17,7 +17,7 @@ configs/
 
 管理端启动时，将缺少的机器和输入配置从示例复制为同目录下的 `machine.toml`、`control.toml`，并从预设示例生成缺少的 `basic.toml`。已有配置继续保留。预设列表按 `.example.toml` 后缀区分示例和实际配置。
 
-配置中的相对路径以项目根目录为起点。开启保存时，数据库默认写入 `data/experiments.sqlite3`，CARLA 录像默认写入 `data/recordings/`，导出默认写入 `data/exports/`。`cache/run/` 保存传给驾驶端的本次运行配置，路网等可重新生成的文件也放在 `cache/`。
+配置中的相对路径以项目根目录为起点。开启保存时，数据库默认写入 `data/experiments.sqlite3`，CARLA 录像默认写入 `data/recordings/`，导出默认写入 `data/exports/`。`.cache/run/` 保存传给驾驶端的本次运行配置，路网等可重新生成的文件也放在 `.cache/`。
 
 ## 主机配置
 
@@ -28,7 +28,7 @@ configs/
 | `db_path`、`recorder_dir`、`export_dir` | 数据库、录像与导出目录 |
 | `[carla]` | `host`、`port`、`tm_port` 与连接超时 `timeout`，超时单位为秒 |
 | `[display]` | 窗口 `resolution`、`fullscreen`、`borderless` 和显示目标帧率 `target_fps` |
-| `[display.layout]` 与三个后视镜子表 | 后视镜初始显隐、屏幕中心位置与图像尺寸 |
+| `[display.layout]` 与三个后视镜子表 | 后视镜初始显隐、边框、屏幕中心位置与图像尺寸 |
 | `[service]` | `launcher_host`、`launcher_port`、语音开关 `enable_tts`、调试日志 `debug` |
 
 CARLA 在本机运行时，`host` 填写 `127.0.0.1`。服务监听地址 `0.0.0.0` 用于接受平板连接，平板通过实验主机的局域网 IP 和服务端口访问 HUD。
@@ -111,7 +111,7 @@ roll = 0.0
 
 四路名称为 `front`、`rear_top`、`rear_left`、`rear_right`。每路直接填写 `x/y/z/pitch/yaw/roll` 与 `fov`。安装位置使用车辆包围盒比例，X 向前、Y 向右、Z 向上，0 表示包围盒中心，±1 表示相应边界；界面显示为 ±100%。simulator 按实际车辆尺寸换算安装坐标，姿态与水平视野单位为 deg。
 
-`machine.toml` 的 `[display.layout]` 保存后视镜显隐，`[display.layout.rear_top]` 等子表用 `screen_position = [0.5, 0.1]` 表示归一化画面中心，用 `image_size = [320, 150]` 指定像素尺寸。布局在主机配置的驾驶显示标签编辑；主视图采用窗口实际大小。四路镜头统一采用刚性安装，随车辆保持固定位置。
+`machine.toml` 的 `[display.layout]` 保存后视镜显隐，`[display.layout.rear_top]` 等子表用 `screen_position = [0.5, 0.1]` 表示归一化画面中心，用 `image_size = [320, 150]` 指定像素尺寸。`border_width` 为边框宽度（视口像素，0 表示不画），`border_color` 为边框颜色（`#RRGGBB` 或 `#RRGGBBAA`），深色边框便于在明亮场景中分辨镜面边界。布局在主机配置的驾驶显示标签编辑；主视图采用窗口实际大小。四路镜头统一采用刚性安装，随车辆保持固定位置。
 
 换车型后在方案配置的相机安装标签微调驾驶位与后视镜，修改自动保存到当前方案，点击应用观察本次实验中的实际效果。
 

@@ -57,6 +57,17 @@ class CarlaSession:
         self.world.apply_settings(settings)
         self.client.get_trafficmanager(self.conn_cfg.tm_port).set_synchronous_mode(enabled)
 
+    def set_async_mode(self, simulation_fps: int = 60) -> None:
+        """由 CARLA 引擎自行推进，固定物理子步长，避免依赖客户端 tick。"""
+        settings = self.world.get_settings()
+        settings.synchronous_mode = False
+        settings.fixed_delta_seconds = 0.0
+        settings.substepping = True
+        settings.max_substep_delta_time = 1.0 / simulation_fps
+        settings.max_substeps = 1
+        self.world.apply_settings(settings)
+        self.client.get_trafficmanager(self.conn_cfg.tm_port).set_synchronous_mode(False)
+
     def force_reset_after_experiment(self, clear_actors: bool = True) -> None:
         self.set_sync_mode(False)
         if clear_actors:

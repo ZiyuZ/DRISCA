@@ -6,6 +6,7 @@ import tomllib
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 import tomli_w
@@ -58,6 +59,19 @@ class CameraViewportConfig(BaseModel, frozen=True, extra='forbid'):
 
 class DisplayLayoutConfig(BaseModel, frozen=True, extra='forbid'):
     show_rearview: bool = True
+    border_width: int = Field(default=0, ge=0, le=32, description='后视镜边框宽度（视口像素，0 表示不画）')
+    border_color: str = Field(default='#000000', description='后视镜边框颜色 #RRGGBB 或 #RRGGBBAA')
+
+    @field_validator('border_color')
+    @classmethod
+    def validate_border_color(cls, value: str) -> str:
+        text = value.strip().upper()
+        if len(text) not in (7, 9) or not text.startswith('#'):
+            raise ValueError('边框颜色必须是 #RRGGBB 或 #RRGGBBAA')
+        if any(character not in '0123456789ABCDEF' for character in text[1:]):
+            raise ValueError('边框颜色只能包含十六进制字符')
+        return text
+
     rear_top: CameraViewportConfig = CameraViewportConfig(screen_position=(0.5, 0.1), image_size=(320, 150))
     rear_left: CameraViewportConfig = CameraViewportConfig(screen_position=(0.12, 0.9), image_size=(320, 150))
     rear_right: CameraViewportConfig = CameraViewportConfig(
@@ -108,8 +122,17 @@ class CarlaConnectionConfig(BaseModel, frozen=True, extra='forbid'):
     timeout: float = Field(default=5.0, gt=0)
 
 
+class DrivingViewConfig(BaseModel, frozen=True, extra='forbid'):
+    """Unreal 原生驾驶视图的本机 RPC 连接。"""
+
+    host: str = '127.0.0.1'
+    port: int = Field(default=7910, gt=1024, le=65535)
+    timeout: float = Field(default=5.0, gt=0)
+
+
 class DisplayConfig(BaseModel, frozen=True, extra='forbid'):
     layout: DisplayLayoutConfig = DisplayLayoutConfig()
+    position: tuple[int, int] = (0, 0)
     resolution: tuple[int, int] = (1600, 900)  # 宽度建议为 64 的倍数以避免 CARLA 相机画面撕裂
     fullscreen: bool = False
     borderless: bool = False
@@ -130,8 +153,19 @@ class ServiceConfig(BaseModel, frozen=True, extra='forbid'):
     debug: bool = False
 
 
+class CarlaRuntimeConfig(BaseModel, frozen=True, extra='forbid'):
+    kind: Literal['editor', 'packaged'] = 'editor'
+    editor_executable: str = ''
+    project: str = ''
+    packaged_executable: str = ''
+    quality: Literal['Low', 'Medium', 'High', 'Epic'] = 'Medium'
+    startup_timeout: float = Field(default=120.0, gt=0)
+
+
 class MachineConfig(BaseModel, frozen=True, extra='forbid'):
     carla: CarlaConnectionConfig = CarlaConnectionConfig()
+    driving_view: DrivingViewConfig = DrivingViewConfig()
+    carla_runtime: CarlaRuntimeConfig = CarlaRuntimeConfig()
     display: DisplayConfig = DisplayConfig()
     service: ServiceConfig = ServiceConfig()
     db_path: str = 'data/experiments.sqlite3'
@@ -345,7 +379,7 @@ class RunSettings(BaseModel, frozen=True, extra='forbid'):
 
 
 class RunConfig(BaseModel, frozen=True, extra='forbid'):
-    """实验启动时由 launcher 合成并写入 cache/run/<session_id>.json 的不可变配置。
+    """实验启动时由 launcher 合成并写入 .cache/run/<session_id>.json 的不可变配置。
     由机器配置、控制配置、预设与实验设置四部分组成，运行期间的调整保存在运行状态中。"""
 
     session_id: str

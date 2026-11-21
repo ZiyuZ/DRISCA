@@ -9,7 +9,21 @@ port = 2000
 tm_port = 8000
 timeout = 5.0
 
+[driving_view]
+host = "127.0.0.1"
+port = 7910
+timeout = 5.0
+
+[carla_runtime]
+kind = "editor" # editor 或 packaged
+editor_executable = "" # UnrealEditor.exe 的路径
+project = "" # CarlaUnreal.uproject 的路径
+packaged_executable = "" # 打包版 CarlaUnreal.exe 的路径
+quality = "Medium"
+startup_timeout = 120.0
+
 [display]
+position = [0, 0]
 resolution = [1600, 900]
 fullscreen = false
 borderless = false
@@ -17,6 +31,8 @@ target_fps = 60
 
 [display.layout]
 show_rearview = true
+border_width = 2
+border_color = "#000000"
 
 [display.layout.rear_top]
 screen_position = [0.5, 0.1]
