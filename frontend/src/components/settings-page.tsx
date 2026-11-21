@@ -1,3 +1,4 @@
+import { NumberInput } from "./number-input";
 import { RotateCcw } from "lucide-react";
 import { useRef } from "react";
 import type { Bootstrap, ControlConfig, MachineConfig } from "../types/api";
@@ -9,7 +10,6 @@ import { Card } from "./ui/card";
 import { Checkbox } from "./ui/checkbox";
 import { Input } from "./ui/input";
 import { Switch } from "./ui/switch";
-import { TabsTrigger } from "./ui/tabs";
 
 type Props = {
   page: "machine" | "control";
@@ -50,42 +50,56 @@ export function SettingsPage({
   ) => (
     <label className="dr-field">
       <span>{label}</span>
-      <Input
+      {type === "number" ? <NumberInput
+        className="input mono"
+        value={Number(value)}
+        onValueChange={value => updateMachine(path, value)}
+      /> : <Input
         className="input mono"
         type={type}
         value={value}
         onChange={(e) =>
           updateMachine(
             path,
-            type === "number" ? Number(e.target.value) : e.target.value,
+            e.target.value,
           )
         }
-      />
+      />}
     </label>
   );
   const wheel = (key: string, value: string | number | boolean) =>
     setControl({ ...control, wheel: { ...control.wheel, [key]: value } });
   return (
-    <section className="tabbed-page tabs">
-      <PageTabs value={tab} onValueChange={setTab} actions={toolbar}>
-        {page === "machine" ? (
-          <>
-            <TabsTrigger value="connection">连接与服务</TabsTrigger>
-            <TabsTrigger value="display">驾驶显示</TabsTrigger>
-            <TabsTrigger value="storage">数据存储</TabsTrigger>
-          </>
-        ) : (
-          <>
-            <TabsTrigger value="keyboard">键盘</TabsTrigger>
-            <TabsTrigger value="wheel">方向盘</TabsTrigger>
-          </>
-        )}
-      </PageTabs>
+    <PageTabs value={tab} onValueChange={setTab} actions={toolbar}
+      items={page === "machine"
+        ? [["connection", "连接与服务"], ["display", "驾驶显示"], ["storage", "数据存储"]]
+        : [["keyboard", "键盘"], ["wheel", "方向盘"]]}>
       <div className="tab-scroll">
         {page === "machine" ? (
           <div className="stack">
             {tab === "connection" && (
               <fieldset disabled={disabled} className="settings-fields grid2 equal">
+                <Card className="dr-card gap-0">
+                  <div className="card-head"><h2>Unreal 运行程序</h2></div>
+                  <div className="form">
+                    <label className="dr-field"><span>运行版本</span>
+                      <SharedSelect value={machine.carla_runtime.kind}
+                        options={[["editor", "UE 编辑器版"], ["packaged", "CARLA 打包版"]]}
+                        onValueChange={value => updateMachine(["carla_runtime", "kind"], value)} />
+                    </label>
+                    {machine.carla_runtime.kind === "editor" ? <>
+                      {field("UE 编辑器路径", machine.carla_runtime.editor_executable, ["carla_runtime", "editor_executable"])}
+                      {field("CARLA 工程路径", machine.carla_runtime.project, ["carla_runtime", "project"])}
+                    </> : field("CARLA 程序路径", machine.carla_runtime.packaged_executable, ["carla_runtime", "packaged_executable"])}
+                    <label className="dr-field"><span>画质</span>
+                      <SharedSelect value={machine.carla_runtime.quality}
+                        options={[["Low", "低"], ["Medium", "中"], ["High", "高"], ["Epic", "极高"]]}
+                        onValueChange={value => updateMachine(["carla_runtime", "quality"], value)} />
+                    </label>
+                    {field("启动等待 · 秒", machine.carla_runtime.startup_timeout, ["carla_runtime", "startup_timeout"], "number")}
+                    {field("驾驶接口端口", machine.driving_view.port, ["driving_view", "port"], "number")}
+                  </div>
+                </Card>
                 <Card className="dr-card gap-0">
                   <div className="card-head">
                     <h2>模拟服务连接</h2>
@@ -173,6 +187,8 @@ export function SettingsPage({
                     <h2>驾驶显示窗口</h2>
                   </div>
                   <div className="three">
+                    {field("窗口位置 X", machine.display.position[0], ["display", "position", "0"], "number")}
+                    {field("窗口位置 Y", machine.display.position[1], ["display", "position", "1"], "number")}
                     {field(
                       "显示目标帧率",
                       machine.display.target_fps,
@@ -238,12 +254,12 @@ export function SettingsPage({
                 <div className="row settings-checks">
                   <label className="dr-field">
                     <span>设备编号</span>
-                    <Input
+                    <NumberInput
                       className="input mono"
-                      type="number"
+                      
                       value={Number(control.wheel.device_index)}
-                      onChange={(e) =>
-                        wheel("device_index", Number(e.target.value))
+                      onValueChange={(value) =>
+                        wheel("device_index", value)
                       }
                     />
                   </label>
@@ -305,6 +321,6 @@ export function SettingsPage({
           </fieldset>
         )}
       </div>
-    </section>
+    </PageTabs>
   );
 }

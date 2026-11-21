@@ -8,8 +8,8 @@ import { QR } from "./components/qr";
 import { Button } from "./components/ui/button";
 import { LoaderCircle } from "lucide-react";
 import { SceneControl } from "./components/scene-control";
+import { UnrealControl } from "./components/unreal-control";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./components/ui/dialog";
-import { TabsTrigger } from "./components/ui/tabs";
 
 import {
   TooltipProvider
@@ -29,11 +29,13 @@ import { Toaster } from "./components/ui/sonner";
 import { WeatherEditor } from "./components/weather-editor";
 import { useConfig } from "./hooks/use-config";
 import { useRuntime } from "./hooks/use-runtime";
+import { useScrollbars } from "./hooks/use-scrollbars";
 import { api } from "./lib/api";
 import "./style.css";
 
 const clone = <T,>(value: T): T => structuredClone(value);
 function App() {
+  useScrollbars();
   const { boot, setBoot, state, logs, events, setLogs, setEvents, online, error: loadError } = useRuntime();
   const initialized = useRef(false);
   const [page, setPage] = useState("控制台"),
@@ -101,6 +103,7 @@ function App() {
           onConnect={() => {
             setModal("connect");
           }}
+          onUnreal={() => setModal("unreal")}
           onShare={() => setModal("urls")}
           presetAction={<PresetManager
             open={modal === "presets"}
@@ -180,16 +183,12 @@ function App() {
             </div>
           )}
           {page === "方案配置" && preset && (
-            <section className="tabbed-page tabs">
-              <PageTabs
+            <PageTabs
                 value={configTab}
                 onValueChange={setConfigTab}
+                items={[["scene", "场景与车辆"], ["camera", "相机安装"], ["actions", "指令与标记"]]}
                 actions={<span className="save-status" role="status">{presetSave.status}</span>}
               >
-                <TabsTrigger value="scene">场景与车辆</TabsTrigger>
-                <TabsTrigger value="camera">相机安装</TabsTrigger>
-                <TabsTrigger value="actions">指令与标记</TabsTrigger>
-              </PageTabs>
               <div className="tab-scroll">
                 {configTab === "scene" && (
                   <ExperimentConfig
@@ -219,7 +218,7 @@ function App() {
                   />
                 )}
               </div>
-            </section>
+            </PageTabs>
           )}
           {page === "数据管理" && (
             <DataManager state={state} online={online} />
@@ -253,6 +252,15 @@ function App() {
             </>
           )}
         </AppShell>
+        {modal === "unreal" && <UnrealControl
+          machine={machine} state={state} online={online} onClose={() => setModal("")}
+          onStart={() => call(async () => {
+            await machineSave.flush();
+            await api("/api/carla/start", "POST", {});
+          })}
+          onStop={() => call(() => api("/api/carla/stop", "POST"))}
+          onConfigure={() => { setModal(""); setPage("主机配置"); setMachineTab("connection"); }}
+        />}
         {modal === "connect" && <SceneControl
           state={state} online={online} host={machine.carla.host} port={machine.carla.port}
           weatherPresets={boot.weather_presets} onClose={() => setModal("")}

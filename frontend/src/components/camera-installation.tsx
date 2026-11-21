@@ -5,7 +5,7 @@ import { Hint } from "./hint";
 import { IconAction } from "./icon-action";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
-import { Input } from "./ui/input";
+import { NumberInput } from "./number-input";
 import { Slider } from "./ui/slider";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 
@@ -39,6 +39,7 @@ export function CameraInstallation({ cameras, applied, extent = { x: 2, y: 1, z:
     return p.matrixTransform(svg.getScreenCTM()!.inverse());
   };
   const startDrag = (e: PointerEvent<SVGCircleElement>, name: CameraName) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     setCamera(name);
@@ -246,12 +247,11 @@ export function CameraInstallation({ cameras, applied, extent = { x: 2, y: 1, z:
                     value={[Math.max(min, Math.min(max, value))]}
                     onValueChange={([v]) => change(v)}
                   />
-                  <Input
+                  <NumberInput
                     className="input mono"
-                    type="number"
                     step="0.1"
                     value={value}
-                    onChange={(e) => change(Number(e.target.value))}
+                    onValueChange={change}
                   />
                 </div>
               </label>

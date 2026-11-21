@@ -1,3 +1,4 @@
+import { NumberInput } from "./number-input";
 import { ChevronDown } from "lucide-react";
 import type { Weather } from "../types/api";
 import { SharedSelect } from "./shared-select";
@@ -7,7 +8,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "./ui/collapsible";
-import { Input } from "./ui/input";
 import { Slider } from "./ui/slider";
 
 type Props = {
@@ -92,12 +92,11 @@ export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
                 value={[Math.max(min, Math.min(max, value))]}
                 onValueChange={([v]) => change(key, v)}
               />
-              <Input
-                type="number"
+              <NumberInput
                 value={value}
                 min={min}
                 max={max}
-                onChange={(e) => change(key, Number(e.target.value))}
+                onValueChange={(value) => change(key, value)}
               />
             </div>
           </label>
@@ -114,11 +113,10 @@ export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
           {extra.map(([key, label]) => (
             <label className="weather-field" key={key}>
               <span>{label}</span>
-              <Input
-                type="number"
+              <NumberInput
                 step="0.01"
                 value={Number(weather[key])}
-                onChange={(e) => change(key, Number(e.target.value))}
+                onValueChange={(value) => change(key, value)}
               />
             </label>
           ))}

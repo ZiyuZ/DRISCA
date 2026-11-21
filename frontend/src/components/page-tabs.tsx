@@ -1,23 +1,30 @@
 import type { ReactNode } from "react";
-import { Tabs, TabsList } from "./ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 export function PageTabs({
   value,
   onValueChange,
   children,
   actions,
+  items,
 }: {
   value: string;
   onValueChange: (value: string) => void;
   children: ReactNode;
   actions?: ReactNode;
+  items: readonly (readonly [string, string])[];
 }) {
   return (
-    <div className="page-tabs-row">
-      <Tabs value={value} onValueChange={onValueChange}>
-        <TabsList className="dr-tabs">{children}</TabsList>
-      </Tabs>
-      {actions}
-    </div>
+    <Tabs value={value} onValueChange={onValueChange} className="tabbed-page tabs">
+      <div className="page-tabs-row">
+        <TabsList className="dr-tabs" aria-label="页面选项">
+          {items.map(([value, label]) => <TabsTrigger key={value} value={value}>{label}</TabsTrigger>)}
+        </TabsList>
+        {actions}
+      </div>
+      {items.map(([panel]) => <TabsContent key={panel} value={panel} className="page-tab-panel">
+        {panel === value ? children : null}
+      </TabsContent>)}
+    </Tabs>
   );
 }

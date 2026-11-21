@@ -1,3 +1,4 @@
+import { NumberInput } from "./number-input";
 import { IconAction } from "./icon-action";
 import { FilePlus2, Trash2, CopyPlus, LocateFixed } from "lucide-react";
 import { Card } from "./ui/card";
@@ -60,13 +61,13 @@ export function ExperimentConfig({ preset, state, update, onWeather }: Props) {
             </label>
             <label className="dr-field">
               <span>同步推进频率 · Hz</span>
-              <Input
+              <NumberInput
                 className="input"
-                type="number"
+                
                 min="1"
                 value={preset.world.simulation_fps}
-                onChange={(e) =>
-                  update(["world", "simulation_fps"], Number(e.target.value))
+                onValueChange={(value) =>
+                  update(["world", "simulation_fps"], value)
                 }
               />
             </label>
@@ -131,16 +132,16 @@ export function ExperimentConfig({ preset, state, update, onWeather }: Props) {
                     update(["ego", "default_speed_limit"], value / 3.6)
                   }
                 />
-                <Input
+                <NumberInput
                   className="input mono"
-                  type="number"
+                  
                   min="0"
                   max="180"
                   value={Math.round(preset.ego.default_speed_limit * 3.6)}
-                  onChange={(e) =>
+                  onValueChange={(value) =>
                     update(
                       ["ego", "default_speed_limit"],
-                      Number(e.target.value) / 3.6,
+                      value / 3.6,
                     )
                   }
                 />
@@ -217,13 +218,13 @@ export function ExperimentConfig({ preset, state, update, onWeather }: Props) {
             (key) => (
               <label className="dr-field" key={key}>
                 <span>{spawnLabels[key]}</span>
-                <Input
+                <NumberInput
                   className="input mono"
-                  type="number"
+                  
                   step="0.1"
                   value={preset.ego.spawn_point[key]}
-                  onChange={(e) =>
-                    update(["ego", "spawn_point", key], Number(e.target.value))
+                  onValueChange={(value) =>
+                    update(["ego", "spawn_point", key], value)
                   }
                 />
               </label>

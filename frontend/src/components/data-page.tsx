@@ -1,3 +1,4 @@
+import { NumberInput } from "./number-input";
 import { Download, ListX, Play, Trash2 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import type { RuntimeState } from "../types/api";
@@ -18,7 +19,6 @@ import {
   TableHeader,
   TableRow,
 } from "./ui/table";
-import { TabsTrigger } from "./ui/tabs";
 
 export type Session = {
   session_id: string;
@@ -81,11 +81,8 @@ export function DataPage(p: Props) {
     p.sessions.length > 0 &&
     p.sessions.every((s) => p.selected.includes(s.session_id));
   return (
-    <section className="tabbed-page tabs">
-      <PageTabs value={p.tab} onValueChange={p.setTab}>
-        <TabsTrigger value="sessions">会话记录</TabsTrigger>
-        <TabsTrigger value="recordings">录像回放</TabsTrigger>
-      </PageTabs>
+    <PageTabs value={p.tab} onValueChange={p.setTab}
+      items={[["sessions", "会话记录"], ["recordings", "录像回放"]]}>
       {p.tab === "sessions" ? (
         <div className="data-page">
           <Card className="dr-card table-card gap-0">
@@ -386,14 +383,14 @@ export function DataPage(p: Props) {
               ).map(([key, label]) => (
                 <label className="dr-field" key={key}>
                   <span>{label}</span>
-                  <Input
+                  <NumberInput
                     className="input mono"
-                    type="number"
+                    
                     value={p.replay[key]}
-                    onChange={(e) =>
+                    onValueChange={(value) =>
                       p.setReplay({
                         ...p.replay,
-                        [key]: Number(e.target.value),
+                        [key]: value,
                       })
                     }
                   />
@@ -434,6 +431,6 @@ export function DataPage(p: Props) {
           </Card>
         </div>
       )}
-    </section>
+    </PageTabs>
   );
 }

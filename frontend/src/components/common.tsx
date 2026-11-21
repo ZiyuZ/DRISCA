@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "./ui/command";
 import { DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, Dialog as DialogRoot, DialogTitle } from "./ui/dialog";
 import { Input } from "./ui/input";
+import { NumberInput } from "./number-input";
 export function Modal({ title, open, onClose, children, footer }: {
   title: string; open: boolean; onClose: () => void; children: ReactNode; footer?: ReactNode;
 }) {
@@ -87,7 +88,9 @@ export function Field<T extends string | number>({ label, value, onChange, type 
     <SharedSelect value={String(value)} disabled={disabled}
       options={options.map(option => typeof option === "string" ? [option, option] : [option.value, option.label])}
       onValueChange={value => onChange(value as T)} />
-    : <Input type={type} disabled={disabled} step={step ?? "any"} value={value}
-      onChange={event => onChange((type === "number" ? Number(event.target.value) : event.target.value) as T)} />}
+    : type === "number" ? <NumberInput disabled={disabled} step={step} value={Number(value)}
+      onValueChange={value => onChange(value as T)} />
+    : <Input type={type} disabled={disabled} value={value}
+      onChange={event => onChange(event.target.value as T)} />}
   </label>;
 }

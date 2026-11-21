@@ -33,7 +33,17 @@ export type SpawnPoint = {
 };
 export type MachineConfig = {
   carla: { host: string; port: number; tm_port: number; timeout: number; };
+  driving_view: { host: string; port: number; timeout: number; };
+  carla_runtime: {
+    kind: "editor" | "packaged";
+    editor_executable: string;
+    project: string;
+    packaged_executable: string;
+    quality: "Low" | "Medium" | "High" | "Epic";
+    startup_timeout: number;
+  };
   display: {
+    position: [number, number];
     resolution: [number, number];
     fullscreen: boolean;
     borderless: boolean;
@@ -112,6 +122,7 @@ export type RuntimeState = {
   carla_connected: boolean;
   carla_connecting: boolean;
   world_loading: boolean;
+  unreal: { phase: "stopped" | "starting" | "running" | "stopping" | "error"; pid: number | null; kind: "editor" | "packaged" | null; };
   clients: { console: number; hud: number; };
   carla_detail: string;
   worker_state: string;

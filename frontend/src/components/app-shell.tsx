@@ -28,6 +28,7 @@ type Props = {
   onBeforeClose: () => Promise<void>;
   serviceOnline: boolean;
   onConnect: () => void;
+  onUnreal: () => void;
   onShare: () => void;
   presetAction: React.ReactNode;
   children: React.ReactNode;
@@ -44,6 +45,7 @@ export function AppShell({
   onBeforeClose,
   serviceOnline,
   onConnect,
+  onUnreal,
   onShare,
   presetAction,
   children,
@@ -176,6 +178,12 @@ export function AppShell({
               ))}
             </nav>
             <div className="host-status">
+              <Hint text="Unreal 运行程序" enabled={collapsed} side="right">
+                <Button variant="ghost" className="host-label host-status-button" onClick={onUnreal}>
+                  <span className={`dot${["starting", "stopping"].includes(state.unreal.phase) ? " connecting" : state.unreal.phase === "running" ? "" : " idle"}`} />
+                  {!collapsed && <span className="connection-label">Unreal {state.unreal.phase === "starting" ? "正在启动" : state.unreal.phase === "stopping" ? "正在关闭" : state.unreal.phase === "running" ? "运行中" : state.unreal.phase === "error" ? "运行异常" : "未启动"}</span>}
+                </Button>
+              </Hint>
               <div className="host-connection">
                 <Hint
                   text={`CARLA ${state.carla_connecting ? "连接中" : state.carla_connected ? "已连接" : "未连接"} · ${carlaAddress}`}

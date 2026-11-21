@@ -431,7 +431,7 @@ pre {
     animation: none;
   }
 }
-.prototype-shell .page-tabs-row > [data-slot="tabs"] {
+.prototype-shell .page-tabs-row > .dr-tabs {
   flex: 1;
   min-width: 0;
   overflow-x: auto;
@@ -441,11 +441,85 @@ pre {
   margin-bottom: 4px;
 }
 .prototype-shell .tabbed-page .page-tabs-row .dr-tabs {
-  width: max-content;
+  display: flex;
+  width: auto;
   max-width: none;
+  height: auto;
+  justify-content: flex-start;
   margin: 0;
+  padding: 0;
+  gap: 16px;
+  border-radius: 0;
   border-bottom: 0;
-  overflow: visible;
+  background: transparent;
+  overflow-x: auto;
+}
+.prototype-shell .tabbed-page {
+  gap: 0;
+}
+.prototype-shell .tabbed-page .dr-tabs [role="tab"] {
+  flex: none;
+  min-height: 32px;
+  padding: 0 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+.prototype-shell .tabbed-page .dr-tabs [role="tab"][data-state="active"] {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+.prototype-shell .page-tab-panel[data-state="active"] {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.prototype-shell .page-tab-panel[hidden] {
+  display: none;
+}
+.prototype-shell .page-tab-panel:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover,
+*:focus-within,
+*[data-scrolling] {
+  scrollbar-color: var(--muted-foreground) transparent;
+}
+*::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+*::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background-clip: padding-box;
+}
+*:hover::-webkit-scrollbar-thumb,
+*:focus-within::-webkit-scrollbar-thumb,
+*[data-scrolling]::-webkit-scrollbar-thumb {
+  background-color: var(--muted-foreground);
 }
 .prototype-shell .driving-card {
   display: flex;

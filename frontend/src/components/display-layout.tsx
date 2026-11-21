@@ -1,3 +1,4 @@
+import { NumberInput } from "./number-input";
 import { CircleHelp, Eye, EyeOff, RotateCcw } from "lucide-react";
 import { useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import type { CameraViewport, DisplayLayout } from "../types/api";
@@ -7,7 +8,6 @@ import { SharedSelect } from "./shared-select";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Input } from "./ui/input";
 
 type MirrorName = keyof Omit<DisplayLayout, "show_rearview">;
 const names: Record<MirrorName, string> = { rear_top: "中央后视镜", rear_left: "左后视镜", rear_right: "右后视镜" };
@@ -31,6 +31,7 @@ export function DisplayLayoutEditor({ layout, applied, resolution, running, onCh
   const pending = running && JSON.stringify(layout) !== JSON.stringify(applied);
   const drag = useRef<{ name: MirrorName; original: CameraViewport; x: number; y: number; rect: DOMRect; resize: boolean; } | null>(null);
   const startDrag = (e: PointerEvent, name: MirrorName, resize: boolean) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -197,9 +198,8 @@ export function DisplayLayoutEditor({ layout, applied, resolution, running, onCh
               (label, i) => (
                 <label className="dr-field" key={label}>
                   <span>{label}</span>
-                  <Input
+                  <NumberInput
                     className="input mono"
-                    type="number"
                     value={
                       i < 2
                         ? Math.round(
@@ -207,7 +207,7 @@ export function DisplayLayoutEditor({ layout, applied, resolution, running, onCh
                         )
                         : mirror.image_size![i - 2]
                     }
-                    onChange={(e) => {
+                    onValueChange={(value) => {
                       const values = [
                         ...(i < 2
                           ? mirror.screen_position
@@ -215,8 +215,8 @@ export function DisplayLayoutEditor({ layout, applied, resolution, running, onCh
                       ];
                       values[i < 2 ? i : i - 2] =
                         i < 2
-                          ? Number(e.target.value) / resolution[i]
-                          : Number(e.target.value);
+                          ? value / resolution[i]
+                          : value;
                       const key = i < 2 ? "screen_position" : "image_size";
                       onChange({ ...layout, [selected]: { ...mirror, [key]: values } });
                     }}
@@ -248,8 +248,8 @@ export function DisplayLayoutEditor({ layout, applied, resolution, running, onCh
           <div className="grid grid-cols-2 gap-3">
             {(["宽度 · px", "高度 · px"] as const).map((label, i) => (
               <label className="field" key={label}><span>{label}</span>
-                <Input type="number" min={1} step={1} value={customSize[i]}
-                  onChange={(e) => setCustomSize((old) => i === 0 ? [Number(e.target.value), old[1]] : [old[0], Number(e.target.value)])} />
+                <NumberInput  min={1} step={1} value={customSize[i]}
+                  onValueChange={(value) => setCustomSize((old) => i === 0 ? [value, old[1]] : [old[0], value])} />
               </label>
             ))}
           </div>
