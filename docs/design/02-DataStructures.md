@@ -30,8 +30,8 @@
    `DrivingState` 在 `simulator` 进程内部直接保存 `carla.Vector3D`、`carla.Transform`、`carla.Waypoint | None` 等 C++ 绑定对象。计算车速标量（`velocity.length()`）、计算车道横向偏移（`road_direction.cross(location_vector)` 与 `location.distance_2d(...)`）、计算碰撞冲量强度（`collision_impulse.length()`）均直接调用 C++ 方法。
 2. 移除全局车辆轮询：
    `simulator` 采集与控制主车（Ego Vehicle）自身的状态。多车状态维护归属后续的 `traffic` 模块。
-3. 相机画面直接保存 `carla.Image` / `pygame.Surface`：
-   传感器回调直接缓存最新到达的传感器帧对象，渲染时通过 `pygame.image.frombuffer(image.raw_data, (w, h), 'BGRA')` 映射上屏。
+3. 原生画面与研究数据分别处理：
+   Unreal 直接渲染主视图与三路后视镜，PostPhysics 汇总最新驾驶状态。Python 按世界帧号读取新状态，结合道路与 IMU/GNSS 数据生成记录；相机图像留在原生渲染链路。
 4. 显式投影方法：
    `DrivingState` 提供两个无反射的显式转换方法：
    - `to_frame_row(session_id: str) -> FrameRow`：将当前帧的 C++ 对象属性提取为扁平标量结构，送入 `storage` 写入队列。

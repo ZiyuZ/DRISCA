@@ -2,9 +2,9 @@
 
 > 交通流（`traffic`）列入后续计划。本文保留其设计，实现安排见 [开发路线图](./06-Roadmap.md)。
 
-DRISCA 由一个父进程和若干子进程组成。管理端 `launcher` 通过 Web 界面负责实验前后的准备、子进程的启动与监管、平板页面、数据面板、调试面板、按键说明，以及实验数据的读写。`simulator` 是模拟主循环，按固定频率推进 CARLA 世界、采集传感器并绘制驾驶画面。`traffic` 是背景交通流循环（计划中）。它们与 CARLA 服务端、同一个 SQLite 数据库协同工作。
+DRISCA 由一个父进程和若干子进程组成。管理端 `launcher` 通过 Web 界面负责实验前后的准备、子进程的启动与监管、平板页面、数据面板、调试面板、按键说明，以及实验数据的读写。`simulator` 是实验采样子进程，管理主车与传感器，并通过原生驾驶接口读取状态。Unreal 异步推进世界、处理键盘连续控制并直接渲染画面。`traffic` 是背景交通流循环（计划中）。它们与 CARLA 服务端、同一个 SQLite 数据库协同工作。
 
-`simulator` 按帧推进模拟，`launcher` 处理界面操作和网络消息。进程分离使模拟循环与界面事件各自运行。
+`simulator` 按世界帧号采集新状态，`launcher` 处理界面操作和网络消息。Unreal 的驾驶输入与画面更新独立运行。
 
 ## 术语
 
@@ -34,20 +34,20 @@ flowchart TD
 
     subgraph host["实验主机 (Windows)"]
         launcher["launcher<br/>Web 界面 + HTTP/WS 服务"]
-        simulator["simulator<br/>60Hz 循环、渲染、外设"]
+        simulator["simulator<br/>实验对象、传感器与状态采样"]
         traffic["traffic（计划中）<br/>交通流循环"]
         db[("SQLite")]
     end
 
-    carla[("CARLA 服务端")]
+    carla[("CARLA Unreal<br/>世界、键盘、原生画面")]
 
     tablet <-->|"HTTP 页面 + SSE"| launcher
-    wheel <-->|"USB / DirectInput"| simulator
+    wheel <-.->|"设备封装保留，接入后置"| simulator
     launcher <-->|"本地 WebSocket"| simulator
     launcher <-.->|"本地 WebSocket"| traffic
 
     launcher -->|"预检、地图、天气、清理"| carla
-    simulator <-->|"推进世界、主车、传感器"| carla
+    simulator <-->|"CARLA RPC + 原生驾驶 TCP JSON"| carla
     traffic <-.->|"读取世界、控制背景车"| carla
 
     simulator -->|"写入数据行"| db
@@ -57,9 +57,9 @@ flowchart TD
     style traffic stroke-dasharray: 5 5
 ```
 
-`launcher` 是唯一的父进程，也是唯一的网络服务端。它在同一个 HTTP 服务中承载操作者控制台、平板 HUD、页面接口与 SSE，以及子进程的本地 WebSocket 接入。`simulator` 与 `traffic` 不开放端口，由 `launcher` 以 `sys.executable -m` 启动，启动后主动连回 `launcher`。
+`launcher` 管理 Unreal 与实验子进程，并提供操作者页面和业务接口。它在同一个 HTTP 服务中承载操作者控制台、平板 HUD、页面接口与 SSE，以及子进程的本地 WebSocket 接入。`simulator` 与 `traffic` 不开放端口，由 `launcher` 以 `sys.executable -m` 启动，启动后主动连回 `launcher`。
 
-运行期的通道是本地 WebSocket，承载三类内容：下行的控制命令，上行的遥测快照、日志和状态，以及子进程在执行操作后上报的实验事件。相机画面等大流量数据不经过这条通道，只在 `simulator` 与 CARLA 之间传输。
+运行期的通道是本地 WebSocket，承载三类内容：下行的控制命令，上行的遥测快照、日志和状态，以及子进程在执行操作后上报的实验事件。主视图与后视镜画面保留在 Unreal 内。worker 另行连接原生驾驶 TCP JSON 接口，读取最新状态并调整视图。
 
 `launcher` 同时通过操作系统的 `stdout` 与 `stderr` 管道捕获子进程的输出和退出码。子进程即使在连上 WebSocket 之前因底层扩展或环境问题崩溃，错误输出也能保留下来。
 
@@ -72,7 +72,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     launcher["launcher<br/>界面、进程编排、HTTP 服务、数据浏览"]
-    simulator["simulator<br/>主循环、车辆控制、方向盘、pygame 渲染"]
+    simulator["simulator<br/>实验主车、传感器、状态采样、方向盘设备占位"]
     traffic["traffic（计划中）<br/>背景交通流"]
 
     core["core<br/>CARLA 封装、配置模型、通道消息"]
@@ -97,7 +97,7 @@ flowchart TD
 
 `storage` 是数据库的唯一入口，负责表结构、版本校验、批量写入、查询和导出。它只依赖标准库 `sqlite3`，不导入 `carla`、硬件或界面框架。CARLA 的原生对象要先投影成扁平的行结构，才能交给 `storage`。
 
-`simulator` 内部把「世界与车辆状态」和「pygame 画面」分开。窗口模块只读取状态，不直接调用 CARLA 接口。方向盘的初始化、读取和力反馈都封装在 `simulator` 内部，其他模块不接触硬件。
+`simulator` 组合原生驾驶状态、道路信息与最新传感器数据，生成数据行和遥测快照。键盘及画面由 Unreal 处理；`wheel_device.py` 保留方向盘设备访问与回正力，硬件接入后继续由 simulator 管理。
 
 `launcher` 由 Python 后端与 Web 界面组成。后端承载 HTTP、SSE 和子进程 WebSocket；桌面使用 pywebview 无边框窗口加载同一套页面。实验编排使用标准库 `subprocess` 管理子进程，Windows Job Object 管理父子进程退出关系。前后端通信见[管理端前后端通信](./10-LauncherWeb.md)。
 
@@ -115,7 +115,7 @@ flowchart TD
 | 输入配置（`ControlConfig`） | 键盘与方向盘的动作到按键名称绑定、方向盘硬件开关 | `configs/control.toml`，按外设方案保存，不同机器若方向盘相同可直接复用 |
 | 实验预设（`PresetConfig`） | 地图、天气、主车与出生点、四路相机的安装位置与视野、同步模式 | `configs/presets/*.toml`，在方案配置的场景与车辆、相机安装、指令与打点标签编辑；运行期可应用相机调整，并保存到当前预设 |
 | 实验设置（`RunSettings`） | 被试编号、本次备注、保存总开关与 Recorder 选项 | 被试编号在控制台填写，保存选项在预设对话框设置，备注在结束实验时填写 |
-| 模块常量 | 键盘响应系数、simulator 中的按键常量与方向盘轴号映射 | 代码中的具名常量 |
+| 模块常量 | Unreal 中的键盘响应系数、core 中的 FKey 映射与 simulator 中的方向盘轴号映射 | 代码中的具名常量 |
 
 启动实验时，`launcher` 读取机器配置、输入配置和所选预设，并结合本次填写的实验设置，合并、校验后生成不可变的 `RunConfig`，其中包含本次会话的 `session_id` 与数据库文件绝对路径 `db_path`。`RunConfig` 有两个去处：开启保存时以 JSON 文本存入 `session` 表，同时写到 `.cache/run/<session_id>.json` 交给子进程；调试运行只使用临时传递文件。子进程通过 `--config` 读取这份文件，并把它反序列化为冻结的对象，显式传给各个子模块。
 
@@ -140,7 +140,7 @@ sequenceDiagram
     L->>L: 生成 session_id，合成 RunConfig
     L->>D: 开启保存时创建会话记录（status = running）
     L->>S: 启动子进程，传入 RunConfig
-    S->>C: 连接，开启同步模式，生成主车与传感器
+    S->>C: 连接，设置异步推进，生成主车与传感器，绑定原生视图
     S-->>L: 上报就绪（主车 ID 与蓝图）
     L->>D: 开启保存时回填主车信息
 
@@ -151,7 +151,7 @@ sequenceDiagram
     end
 
     par simulator 循环
-        S->>C: 施加主车控制，推进世界，读取传感器
+        S->>C: 处理管理命令，读取原生驾驶状态与传感器
         S->>D: 开启保存时批量写入数据行
         S-->>L: 遥测快照、日志与已应用的实验事件
         L->>D: 开启保存时将实验事件写入 event 表
@@ -166,7 +166,8 @@ sequenceDiagram
     L->>T: 发送停止命令（超时后强制结束）
     L->>S: 发送停止命令（超时后强制结束）
     S->>D: 开启保存时写入剩余批次
-    L->>C: 复位 synchronous_mode，清理车辆与行人
+    S->>C: 停止驾驶视图，恢复自由视角，释放实验对象
+    L->>C: 复位世界设置，清理车辆与行人，保留 Unreal
     L->>D: 开启保存时写入结束时间与最终状态
 ```
 
@@ -184,17 +185,17 @@ sequenceDiagram
 
 正常停机时，子进程先停止主循环，等待存储线程提交剩余数据，再发送完剩余日志与事件并关闭 WebSocket 后退出。`launcher` 等待子进程退出及已接收事件入库，复位 CARLA 世界并清理对象，最后写入实验结束事件，将会话标记为 `committed`。
 
-停机时顺序固定：先停 `traffic`，再停 `simulator`。若先停 `simulator`，世界不再推进，仍在循环中的 `traffic` 会一直等待下一帧，直到超时。
+一组实验结束时，Launcher 先完成实验子进程和数据库收尾，再关闭本次持有的 Unreal。单次实验结束保留 Unreal，供下一次实验重新创建车辆和绑定驾驶视图。
 
 最终状态分为两种。正常结束时写为 `committed`。子进程异常退出或实验被中止时写为 `aborted`。`launcher` 启动时还会把上次遗留的 `running` 会话统一标记为 `aborted`，因此不会出现长期停留在运行中的记录。
 
-同步模式有一个特殊的风险。`simulator` 停止调用 `world.tick()` 后，同步世界等待后续推进；等待世界帧的调用可能阻塞至超时。实验结束或 `simulator` 崩溃时，`launcher` 都要在回收子进程后，第一时间把 `synchronous_mode` 复位为 `False`，然后再清理残留对象。
+控制连接意外断开时，Unreal 停止驾驶视图并恢复默认自由视角，Python 按实验异常退出，Launcher 将会话记为 `aborted`。普通调参连接断开只释放对应连接。
 
 ## 世界推进与帧对齐
 
-显示目标帧率由机器配置的 `target_fps` 指定，同步世界步长由预设中的 `simulation_fps` 决定。采样单位为世界帧，每帧保存一次。帧与事件保存发生时的时间戳，会话记录开始和结束时间，具体字段见[运行状态与实验数据](./02-DataStructures.md)。
+显示目标帧率由机器配置的 `target_fps` 指定，Unreal 异步推进世界。Python 读取最新状态，每个采到的世界帧最多保存一行。帧与事件保存发生时的时间戳，会话记录开始和结束时间，具体字段见[运行状态与实验数据](./02-DataStructures.md)。
 
-只有 `simulator` 推进世界。同步模式下，它在每个循环里调用 `world.tick()`，并读取对应世界帧的 IMU 与 GNSS 数据。相机图像可能延迟数帧到达，显示采用最新主视图和各后视镜最新图像，主视图独立于后视镜更新。世界持续推进，相机帧号用于识别新旧图像。异步模式下它不调用 `tick()`，读取最新到达的传感器数据。世界推进方式在启动时由预设确定，并由 `simulator` 应用。
+驾驶状态在 Unreal 的 PostPhysics 汇总，帧号、世界时间、墙钟时间、位姿和速度来自同一次采样。Python 按 `frame_no` 丢弃重复读取，结合最新 IMU 与 GNSS 数据保存。主视图与后视镜由原生渲染链路更新。
 
 `traffic` 从不推进世界，只通过 `wait_for_tick()` 或读取世界状态来跟随。它与 `simulator` 是两个进程，没有共享的调度。因此，`traffic` 的控制作用在哪一帧，取决于两个进程的调度时机，不一定固定为下一帧。
 
@@ -205,8 +206,8 @@ sequenceDiagram
     participant T as traffic（计划中）
 
     par simulator 循环
-        S->>W: 推进到第 N 帧
-        W-->>S: 返回第 N 帧的传感器数据
+        S->>W: 读取最新 PostPhysics 驾驶状态
+        W-->>S: 返回帧号、时间与车辆状态
     and traffic 循环
         T->>W: 读取当前世界
         T->>W: 发送控制
@@ -232,7 +233,7 @@ sequenceDiagram
 
 调整相机时，`launcher` 发送 `UpdateCameraCommand`，`simulator` 应用后上报 `UpdateCameraEvent`，再由 `launcher` 在开启保存时写入事件表。调好后，操作者可以保存到当前预设，供后续实验使用。预设页只用于实验前的静态配置编辑。
 
-按键说明与控制绑定统一位于输入配置页。输入配置中的键盘按键与方向盘按钮，由 `launcher` 读取并展示为对照表，同时随运行配置交给 `simulator`。`simulator` 的窗口只显示驾驶画面。
+按键说明与控制绑定统一位于输入配置页。输入配置中的键盘按键与方向盘按钮，由 `launcher` 读取并展示为对照表，同时随运行配置交给 `simulator`。Unreal 窗口负责显示驾驶画面。
 
 平板只连接 `launcher` 的一个地址。如果 `launcher` 没有收到快照超过设定时间，它会向平板广播重置状态，避免界面停留在旧数值上。
 

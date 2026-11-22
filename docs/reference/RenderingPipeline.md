@@ -1,6 +1,6 @@
 # 渲染与画面传输参考
 
-本文作为渲染专题参考，保留画面传输图、已有测量和技术路线分析。主线设计采用 CARLA 相机取图与 pygame-ce 合成，实施顺序见[开发路线图](../design/06-Roadmap.md)。以下测量用于解释选型背景，实际表现随实验环境检查。
+本文保留旧 Python 相机取图与 pygame-ce 合成方案的传输图、测量和技术分析，作为原生方案的选型背景。当前主线由 Unreal 直接渲染主视图与三路后视镜，原生接口与实施安排见[研究平台方案](../research-platform/README.md)。下文源码索引与调用流程属于历史方案。
 
 ## 核心结论
 
@@ -108,4 +108,4 @@ CARLA 采用跨机器通用的客户端与服务端架构，传感器模块（`S
 | `Unreal/CarlaUE4/Plugins/Carla/Source/Carla/Sensor/SceneCaptureCamera.cpp` | CARLA C++ 相机传感器入口，每物理帧后触发 `SendPixelsInRenderThread` |
 | `Unreal/CarlaUE4/Plugins/Carla/Source/Carla/Sensor/PixelReader.h` | 服务端 RHI 像素回读、D3D12 逐行去对齐拷贝、头部序列化与 Socket 发送实现 |
 | `src/drisca/simulator/sensors.py` | 客户端接收 `carla.Image` 并缓存最新的传感器帧 |
-| `src/drisca/simulator/renderer.py` | 客户端用 `frombuffer` 合成主视图与后视镜并上屏 |
+| 旧客户端画面合成器（已移除） | 历史方案使用 `frombuffer` 合成主视图与后视镜并上屏 |

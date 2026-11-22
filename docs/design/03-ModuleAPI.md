@@ -16,6 +16,7 @@ src/drisca/
 │   ├── config.py             # MachineConfig / ControlConfig / PresetConfig / RunSettings / RunConfig 与读写函数
 │   ├── protocol.py           # WorkerEvent / LauncherCommand 判别联合类型与序列化
 │   ├── client.py             # CarlaSession：显式生命周期的 CARLA 客户端封装
+│   ├── driving_view.py       # 原生驾驶视图 JSON 客户端、状态与键盘 FKey 映射
 │   ├── weather.py            # WeatherConfig <-> carla.WeatherParameters 转换与预设
 │   └── tools.py              # 录像回放 (replay_recorder) 与路网拓扑导出/绘图静态工具
 ├── storage/                  # SQLite 单库持久化层
@@ -23,15 +24,14 @@ src/drisca/
 │   ├── models.py             # SCHEMA_VERSION（由存储层维护）, SessionRow, FrameRow, EventRow, DDL 定义
 │   ├── db.py                 # StorageDB：连接校验、会话与事件读写、查询与 CSV 导出
 │   └── writer.py             # BatchDataWriter：后台队列 + BEGIN IMMEDIATE 批量写线程
-├── simulator/                # 逐帧驾驶模拟子进程（画面合成 + 外设输入 + 物理推进）
+├── simulator/                # 实验子进程（主车、传感器、原生驾驶视图接入与采样）
 │   ├── __init__.py
 │   ├── __main__.py           # 子进程入口：解析 --config，运行 SimulatorApp
 │   ├── app.py                # SimulatorApp：主循环编排、命令消费、生命周期管理
 │   ├── state.py              # DrivingState：C++ 几何计算与 FrameRow/Telemetry 投影
 │   ├── vehicle.py            # EgoVehicle：主车生成、手动/自动驾驶控制、车灯管理
 │   ├── sensors.py            # SensorSuite & CameraRig：传感器监听与四路相机管理
-│   ├── renderer.py           # ViewportRenderer：基于 frombuffer('BGRA') 的画面合成器
-│   ├── input.py              # InputController：键盘与方向盘驾驶输入映射
+│   ├── wheel_device.py       # 保留的方向盘设备封装，硬件到位后接入
 │   ├── wheel_device.py       # WheelDevice：方向盘设备读写与力反馈
 │   └── ws_client.py          # WorkerWSClient：后台同步 WebSocket 线程与 loguru sink
 ├── launcher/                 # Python 后端、Web 界面与桌面壳
@@ -257,7 +257,7 @@ class BatchDataWriter:
 
 ## `simulator` 模块 API 设计
 
-`simulator` 是模拟与画面合成子进程，不包含 Pygame 文字图层、不包含 TTS 语音合成、不包含实验剧本钩子、不轮询全图背景车辆。
+`simulator` 管理实验主车、传感器、数据采样与原生驾驶视图连接。Unreal 负责异步世界推进、键盘连续控制和原生画面，Launcher 负责语音与实验操作。
 
 ### 4.1 `simulator/ws_client.py`
 
@@ -283,27 +283,20 @@ class WorkerWSClient:
         """发送完剩余日志与事件后关闭 WebSocket，并等待收发线程结束"""
 ```
 
-### 4.2 `simulator/renderer.py`
+### 4.2 原生驾驶视图（`core/driving_view.py`）
 
-负责相机画面合成：
+`DrivingViewClient` 由 simulator 使用，通过本机换行分隔的 TCP JSON 请求响应连接 Unreal。键盘映射由 `keyboard_mapping()` 转换为 Unreal `FKey` 名称，在实验开始时传入。
 
-```python
-class ViewportRenderer:
-    """pygame-ce 窗口渲染器：合成主视图与三路后视镜，不渲染任何文字面板"""
-    def __init__(self, display_cfg: DisplayConfig) -> None: ...
+| 方法 | 职责 |
+| --- | --- |
+| `start()` | 绑定实验车辆、相机、布局、键盘与驾驶模式，当前连接持有活动视图 |
+| `update()` | 更新相机安装与后视镜布局 |
+| `get_state()` | 读取 PostPhysics 汇总的最新状态，由 Python 按 `frame_no` 去重 |
+| `get_config()` | 读取原生端实际生效的视图配置 |
+| `set_mode()` | 更新原生视图驾驶模式，与车辆自动驾驶切换由 worker 统一调用 |
+| `stop()` | 停止驾驶视图并释放控制连接，Unreal 恢复默认自由视角 |
 
-    @property
-    def actual_resolution(self) -> tuple[int, int]:
-        """返回窗口实际像素尺寸（全屏模式下为显示器真实分辨率），供主相机初始化使用"""
-
-    def update_layout(self, layout: DisplayLayoutConfig) -> None:
-        """更新后视镜显隐、屏幕归一化位置与显示尺寸"""
-
-    def render_frame(self, images: dict[str, carla.Image | None]) -> None:
-        """使用 pygame.image.frombuffer(raw_data, size, 'BGRA') 将四路画面合成并 flip 上屏"""
-
-    def close(self) -> None: ...
-```
+活动视图的连接归属、异常断开与重复启动规则见[原生驾驶接口](../research-platform/02-Architecture.md)。画面由 Unreal 直接渲染，Python 保存驾驶数据并发送遥测。
 
 ### 4.3 `simulator/app.py`
 
@@ -314,15 +307,14 @@ class SimulatorApp:
 
     def run(self) -> None:
         """
-        1. 初始化窗口、方向盘、CARLA 连接、主车与传感器，开启保存时打开 RunConfig.db_path 对应的 BatchDataWriter
-        2. 发送 WorkerReadyEvent(ego_actor_id, ego_type_id)
-        3. 按世界帧运行驾驶循环，同步步长取预设 simulation_fps：
-           - poll_commands() 处理 Stop / SetAutopilot / SetTakeover / SetWeather / UpdateCamera / UpdateLayout，应用成功后上报对应的 ExperimentEvent 子类 (source='launcher')
-           - 采集键盘与方向盘驾驶输入，施加车辆控制；离散驾驶动作（自动驾驶、接管、倒挡、档位、手刹、车灯）应用后上报对应的 ExperimentEvent 子类 (source='wheel'|'keyboard')
-           - 推进或等待世界帧，更新 DrivingState
-           - render_frame() 合成画面上屏
-           - 按 save_data 选择是否 enqueue(to_frame_row())，按实际经过时间约 20 至 30 Hz publish_telemetry()
-        4. 退出时按顺序 Flush 数据库、停止 CARLA Recorder、销毁传感器与主车、关闭窗口
+        1. 建立 CARLA 连接并设置异步推进，创建主车与传感器，绑定原生驾驶视图
+        2. 开启保存时启动存储线程和所选 Recorder，发送 WorkerReadyEvent
+        3. 持续处理管理端命令并读取原生驾驶状态：
+           - 应用驾驶模式、天气、相机与布局调整，成功后上报对应实验事件
+           - 接收原生键盘的自动驾驶与主动接管请求，统一切换驾驶模式并记录事件
+           - 按世界帧号丢弃重复快照，组合道路与最新传感器数据生成 DrivingState
+           - 开启保存时写入数据行，遥测单独发布最新快照
+        4. 停止后完成数据与录像收尾、停止驾驶视图、销毁传感器与主车，最后关闭消息通道
         """
 ```
 
@@ -348,15 +340,15 @@ class SimulatorApp:
 
 关闭保存时，管理端跳过会话和事件数据库操作，驾驶端跳过存储线程与 Recorder 的启动。正常停机只关闭本次实际打开的资源，关闭保存时保留实时遥测、事件时间线和日志显示。
 
-方向盘使用单个 `WheelDevice` 封装 pygame 和罗技 SDK 的设备访问。输入模块组合使用该设备对象，方向盘随动配置保留，功能后续实现。
+方向盘使用单个 `WheelDevice` 保留 pygame 和罗技 SDK 的设备访问、轴与按钮映射及基础回正力。设备层原位保留，硬件接入整体后置；当前 `enable_wheel = false` 表示使用原生键盘驾驶。
 
 ## 按键与设备映射
 
 `core.config` 定义 `KeyboardKey`、`WheelButton`，以及名称到界面显示标签的纯数据表。配置字段使用单个枚举值。界面以枚举值保存选项，以标签显示名称。
 
-`simulator/input.py` 使用 `KEYBOARD_CODES` 将 `KeyboardKey` 映射到 pygame 常量，例如 `KeyboardKey.SPACE → pygame.K_SPACE`、`KeyboardKey.KEYPAD_1 → pygame.K_KP1`。输入处理将动作对应的单个按键与事件或按下状态直接比较。
+`core/driving_view.py` 的 `KEYBOARD_FKEYS` 将 `KeyboardKey` 映射为 Unreal 键名，例如 `KeyboardKey.SPACE → SpaceBar`、`KeyboardKey.KEYPAD_1 → NumPadOne`。`DrivingViewPawn` 在原生窗口处理键盘连续控制与离散动作。
 
-`simulator/wheel_device.py` 使用 `WHEEL_BUTTON_CODES` 和 `WHEEL_AXES` 保存按钮、物理轴的编号。当前设备布局如下，后续调整集中在该模块。
+`simulator/wheel_device.py` 使用 `WHEEL_BUTTONS` 和 `WHEEL_AXES` 保存按钮、物理轴的编号。当前设备布局如下，后续调整集中在该模块。
 
 | 按钮名称 | 界面标签 | 当前编号 |
 | --- | --- | --- |

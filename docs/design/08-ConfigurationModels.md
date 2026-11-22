@@ -107,7 +107,7 @@ class MachineConfig(BaseModel, frozen=True, extra='forbid'):
 
 配置保存“动作名称 → 按键名称”，每个动作绑定一个键。`core` 使用 `KeyboardKey` 和 `WheelButton` 两个 `StrEnum` 定义名称，Pydantic 将 TOML 字符串解析为枚举值。界面通过纯数据名称表显示“空格”“右换挡拨片”等标签。
 
-`simulator/input.py` 维护键盘名称到 pygame 常量的映射，`simulator/wheel_device.py` 维护方向盘按钮名称、轴名称到设备编号的映射。方向盘使用通用的 `WheelDevice` 名称，内部通过 pygame 和罗技 SDK 读写设备。映射表采用当前使用设备的布局。
+`core/driving_view.py` 将键盘名称映射为 Unreal `FKey` 名称，每次实验开始时传给原生驾驶视图，由 `DrivingViewPawn` 处理键盘与连续控制。`simulator/wheel_device.py` 保留方向盘轴号、按钮编号以及 pygame 和罗技 SDK 的设备封装，硬件接入后继续使用当前设备布局。
 
 ```python
 from enum import StrEnum
@@ -203,7 +203,7 @@ class ControlConfig(BaseModel, frozen=True, extra='forbid'):
     wheel: WheelControlConfig = WheelControlConfig()
 ```
 
-`unbound` 表示该动作保持未绑定。键盘与方向盘的绑定字段均保存单个枚举值。按键显示标签属于 `core` 的纯数据，设备编号与 pygame 常量属于 `simulator`。
+`unbound` 表示该动作保持未绑定。键盘与方向盘的绑定字段均保存单个枚举值。按键显示标签与 Unreal 键盘映射属于 `core`，方向盘设备编号属于 `simulator/wheel_device.py`。
 
 ## 实验预设、单次实验设置与合成运行配置（`PresetConfig`、`RunSettings`、`RunConfig`）
 
@@ -285,7 +285,7 @@ class RunConfig(BaseModel, frozen=True, extra='forbid'):
 
 文件位置与填写方法见[配置管理](../guide/05-Configuration.md)。配置字段名与 TOML 表对应，按业务分组定义模型。相机保存三个比例位置和三个角度字段；固定出生点通过 `SpawnPoint` 表达地图坐标，运行时在 CARLA 接入处构造原生对象。
 
-方向盘输入直接读取 pygame 返回的轴值，转向使用 -1 至 1，踏板按设备方向转换为 CARLA 使用的 0 至 1。设备对应的方向转换放在输入模块中。配置保存按键名称绑定，键盘连续控制使用具名模块常量定义响应速度。
+键盘连续控制由 Unreal 原生驾驶视图按实际更新时间处理。保留的方向盘设备层读取 pygame 轴值，转向使用 -1 至 1，踏板按设备方向转换为 0 至 1。方向盘接入后继续使用这些轴与按钮约定；当前 `enable_wheel = false` 表示使用键盘，启动实验时只初始化当前驾驶链路。
 
 读取配置时校验字段名称、类型与有效范围，错误信息包含文件和字段位置。缺少实际设置文件时，提示复制对应示例。保存采用同目录临时文件替换。按键和按钮使用单个枚举值。
 
