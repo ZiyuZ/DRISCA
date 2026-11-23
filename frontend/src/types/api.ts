@@ -13,6 +13,7 @@ export type TrafficConfig = {
   seed: number;
   speed_factor: number;
   enable_lane_change: boolean;
+  style: "balanced" | "aggressive" | "conservative" | "sluggish" | "mixed";
 };
 export type CameraViewport = {
   screen_position: [number, number];

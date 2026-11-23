@@ -7,12 +7,26 @@ from .lateral import PurePursuitController
 from .longitudinal import SpeedPIDController
 from .manager import TrafficManager
 from .planner import LocalRoutePlanner, RoutePath
+from .profiles import (
+    AGGRESSIVE_PROFILE,
+    BALANCED_PROFILE,
+    CONSERVATIVE_PROFILE,
+    SLUGGISH_PROFILE,
+    DrivingProfile,
+    DrivingStyle,
+    resolve_profile,
+)
 from .road_graph import LaneNode, LaneProjection, RoadGraph
 from .scene import TrafficScene
 from .signals import SignalStopEntry, SignalTracker
 
 __all__ = [
+    'AGGRESSIVE_PROFILE',
     'AutopilotController',
+    'BALANCED_PROFILE',
+    'CONSERVATIVE_PROFILE',
+    'DrivingProfile',
+    'DrivingStyle',
     'IDMModel',
     'LaneChangeDecider',
     'LaneNode',
@@ -22,10 +36,12 @@ __all__ = [
     'PurePursuitController',
     'RoadGraph',
     'RoutePath',
+    'SLUGGISH_PROFILE',
     'SignalStopEntry',
     'SignalTracker',
     'SpeedPIDController',
     'TrafficManager',
     'TrafficScene',
     'VehicleControl',
+    'resolve_profile',
 ]

@@ -422,6 +422,7 @@ class TrafficConfig(BaseModel, frozen=True, extra='forbid'):
     seed: int = 42
     speed_factor: float = Field(default=1.0, ge=0.3, le=1.5)
     enable_lane_change: bool = True
+    style: Literal['balanced', 'aggressive', 'conservative', 'sluggish', 'mixed'] = 'balanced'
 
 
 class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):

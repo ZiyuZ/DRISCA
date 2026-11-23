@@ -21,6 +21,13 @@ type Props = {
   onMapChange: (mapName: string) => void;
   onPickSpawn: () => void;
 };
+const trafficStyles = [
+  ["balanced", "均衡"],
+  ["aggressive", "激进"],
+  ["conservative", "保守"],
+  ["sluggish", "反应迟钝"],
+  ["mixed", "混合（多风格）"],
+] as const;
 
 export function ExperimentConfig({ preset, state, update, onWeather, onMapChange, onPickSpawn }: Props) {
   const telemetry = state.telemetry;
@@ -196,6 +203,15 @@ export function ExperimentConfig({ preset, state, update, onWeather, onMapChange
               }
             />
             启用背景交通流
+          </label>
+          <label className="dr-field">
+            <span>驾驶风格</span>
+            <SharedSelect
+              value={preset.traffic.style}
+              disabled={!preset.traffic.enabled}
+              options={trafficStyles}
+              onValueChange={(value) => update(["traffic", "style"], value)}
+            />
           </label>
           <div className="three">
             <label className="dr-field">

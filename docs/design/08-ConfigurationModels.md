@@ -288,6 +288,7 @@ class TrafficConfig(BaseModel, frozen=True, extra='forbid'):
     seed: int = 42                             # 车型、出生点与分岔选路的可复现随机种子
     speed_factor: float = Field(default=1.0, ge=0.3, le=1.5)
     enable_lane_change: bool = True            # 是否允许安全间隙换道
+    style: Literal['balanced', 'aggressive', 'conservative', 'sluggish', 'mixed'] = 'balanced'
 
 
 class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):

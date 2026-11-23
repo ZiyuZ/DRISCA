@@ -1,15 +1,17 @@
-"""单车自动驾驶组合控制器（支持跟驰与安全换道）。"""
+"""单车自动驾驶组合控制器（支持驾驶风格、IDM 跟驰、感知延迟与安全换道）。"""
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
-from .idm import IDMModel
+from .idm import IDMModel, LeadVehicle
 from .lane_change import LaneChangeDecider
 from .lateral import PurePursuitController
 from .longitudinal import SpeedPIDController
 from .planner import LocalRoutePlanner
+from .profiles import BALANCED_PROFILE, DrivingProfile
 from .road_graph import RoadGraph
 from .scene import TrafficScene
 from .signals import SignalTracker
@@ -56,18 +58,41 @@ class AutopilotController:
         dynamic_speed_limit: bool = False,
         speed_factor: float = 1.0,
         enable_lane_change: bool = False,
+        profile: DrivingProfile = BALANCED_PROFILE,
         random_seed: int | None = None,
     ) -> None:
         self._graph = graph
+        self._profile = profile
         self._planner = LocalRoutePlanner(graph, random_seed=random_seed)
-        self._lateral = PurePursuitController()
-        self._longitudinal = SpeedPIDController()
-        self._idm = IDMModel()
-        self._lane_change = LaneChangeDecider() if enable_lane_change else None
+        self._lateral = PurePursuitController(max_steer_rate=profile.max_steer_rate)
+        self._longitudinal = SpeedPIDController(
+            max_lateral_accel=profile.max_lateral_accel,
+            comfort_decel=profile.comfort_decel,
+            max_throttle=profile.max_throttle,
+            max_brake=profile.max_brake,
+        )
+        self._idm = IDMModel(
+            min_gap_m=profile.min_gap_m,
+            time_headway_s=profile.time_headway_s,
+            max_accel=profile.max_accel,
+            comfort_decel=profile.comfort_decel,
+        )
+        self._lane_change = (
+            LaneChangeDecider(
+                cooldown_s=profile.lane_change_cooldown_s,
+                min_front_gap_m=profile.min_front_gap_m,
+                min_rear_gap_m=profile.min_rear_gap_m,
+                slow_ratio=profile.slow_lead_ratio,
+            )
+            if enable_lane_change
+            else None
+        )
         self._signals = signals
         self._default_speed_limit_mps = default_speed_limit_mps
         self._dynamic_speed_limit = dynamic_speed_limit
-        self._speed_factor = speed_factor
+        self._speed_factor = speed_factor * profile.speed_multiplier
+        self._elapsed_s = 0.0
+        self._perception_buffer: deque[tuple[float, LeadVehicle | None, float | None]] = deque()
 
     def reset(self) -> None:
         self._planner.reset()
@@ -75,6 +100,28 @@ class AutopilotController:
         self._longitudinal.reset()
         if self._lane_change is not None:
             self._lane_change.reset()
+        self._elapsed_s = 0.0
+        self._perception_buffer.clear()
+
+    def _apply_reaction_delay(
+        self,
+        dt: float,
+        lead: LeadVehicle | None,
+        stop_distance: float | None,
+    ) -> tuple[LeadVehicle | None, float | None]:
+        delay = self._profile.reaction_delay_s
+        if delay <= 0.0:
+            return lead, stop_distance
+        self._elapsed_s += max(dt, 0.0)
+        self._perception_buffer.append((self._elapsed_s, lead, stop_distance))
+        cutoff = self._elapsed_s - delay
+        delayed_lead: LeadVehicle | None = None
+        delayed_stop: float | None = None
+        while len(self._perception_buffer) > 1 and self._perception_buffer[1][0] <= cutoff:
+            self._perception_buffer.popleft()
+        if self._perception_buffer[0][0] <= cutoff:
+            _, delayed_lead, delayed_stop = self._perception_buffer[0]
+        return delayed_lead, delayed_stop
 
     def step(
         self,
@@ -101,11 +148,13 @@ class AutopilotController:
             speed_limit = road_speed_limit_mps
         speed_limit = max(0.0, speed_limit * self._speed_factor)
 
-        lead = (
+        raw_lead = (
             self._idm.detect_lead(scene, self_actor_id=self_actor_id, x=x, y=y, yaw_deg=yaw_deg)
             if scene is not None and self_actor_id > 0
             else None
         )
+        raw_stop = self._signals.nearest_stop_distance(path, traffic_lights)
+        lead, stop_distance = self._apply_reaction_delay(dt, raw_lead, raw_stop)
 
         if self._lane_change is not None and scene is not None and self_actor_id > 0:
             target_lane = self._lane_change.decide(
@@ -126,7 +175,6 @@ class AutopilotController:
                 if switched is not None:
                     path = switched
 
-        stop_distance = self._signals.nearest_stop_distance(path, traffic_lights)
         free_target = self._longitudinal.target_speed(
             speed_limit_mps=speed_limit,
             speed_mps=speed_mps,

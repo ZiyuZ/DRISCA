@@ -149,6 +149,7 @@ vehicle_count = 10
 seed = 42
 speed_factor = 1.0
 enable_lane_change = true
+style = "balanced"  # balanced | aggressive | conservative | sluggish | mixed
 ```
 
 开启后在避开主车出生点的空闲位置生成指定数量的背景车，沿道路图自动选路、按 IDM 模型跟驰防追尾、遵守红绿灯并在安全间隙允许时换道；实验结束时自动清理。

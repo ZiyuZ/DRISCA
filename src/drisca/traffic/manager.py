@@ -14,6 +14,7 @@ from drisca.core.config import TrafficConfig
 from drisca.core.snapshot import Snapshot
 
 from .controller import AutopilotController
+from .profiles import resolve_profile
 from .road_graph import RoadGraph
 from .scene import TrafficScene
 from .signals import SignalTracker
@@ -85,6 +86,7 @@ class TrafficManager:
 
         occupied: list[tuple[float, float]] = [(ego_location[0], ego_location[1])]
         spawned = 0
+        style_counts: dict[str, int] = {}
         for point in spawn_points:
             if spawned >= cfg.vehicle_count:
                 break
@@ -107,8 +109,10 @@ class TrafficManager:
                 continue
 
             actor_id = int(result['actor_id'])
-            # 每辆背景车分配独立派生速度系数与选路种子，避免车流完全同质化
-            jitter = rng.uniform(0.9, 1.05)
+            profile = resolve_profile(cfg.style, rng)
+            style_counts[profile.name] = style_counts.get(profile.name, 0) + 1
+            # 每辆背景车分配独立派生速度微调与选路种子，避免车流完全同质化
+            jitter = rng.uniform(0.92, 1.05)
             controller = AutopilotController(
                 self._graph,
                 self._signals,
@@ -116,13 +120,17 @@ class TrafficManager:
                 dynamic_speed_limit=True,
                 speed_factor=cfg.speed_factor * jitter,
                 enable_lane_change=cfg.enable_lane_change,
+                profile=profile,
                 random_seed=rng.randint(1, 2_147_483_647),
             )
             self._vehicles[actor_id] = _ManagedVehicle(actor_id=actor_id, controller=controller)
             occupied.append((px, py))
             spawned += 1
 
-        logger.info(f'背景交通流已生成：目标 {cfg.vehicle_count} 辆，实际 {spawned} 辆（seed={cfg.seed}）')
+        logger.info(
+            f'背景交通流已生成：目标 {cfg.vehicle_count} 辆，实际 {spawned} 辆'
+            f'（seed={cfg.seed}，风格={cfg.style}，分布={style_counts}）'
+        )
         return spawned
 
     def apply_control_state(
