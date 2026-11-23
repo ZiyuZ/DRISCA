@@ -282,6 +282,14 @@ class EgoVehicleConfig(BaseModel, frozen=True, extra='forbid'):
     init_autopilot: bool = False               # 开启后在实验就绪时切入自研自动驾驶（external/python）
 
 
+class TrafficConfig(BaseModel, frozen=True, extra='forbid'):
+    enabled: bool = False                      # 是否生成多车背景交通流
+    vehicle_count: int = Field(default=0, ge=0, le=100)
+    seed: int = 42                             # 车型、出生点与分岔选路的可复现随机种子
+    speed_factor: float = Field(default=1.0, ge=0.3, le=1.5)
+    enable_lane_change: bool = True            # 是否允许安全间隙换道
+
+
 class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):
     id: str
     name: str
@@ -292,6 +300,7 @@ class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):
 class PresetConfig(BaseModel, frozen=True, extra='forbid'):
     world: WorldConfig = WorldConfig()
     ego: EgoVehicleConfig
+    traffic: TrafficConfig = TrafficConfig()
     cameras: CameraRigConfig
     instructions: tuple[ExperimentInstructionConfig, ...] = ()
     markers: tuple[str, ...] = ()

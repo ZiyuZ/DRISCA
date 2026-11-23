@@ -138,6 +138,21 @@ transition_seconds = 0.0
 
 `ego.dynamic_speed_limit = false` 时使用 `default_speed_limit`，文件单位为 m/s；设为 `true` 时使用原生快照中的道路限速（m/s），手动驾驶的主车通常为 0。界面以 km/h 展示和输入。
 
+### 背景交通流
+
+`[traffic]` 控制实验启动时由自研交通模块批量生成的背景车辆：
+
+```toml
+[traffic]
+enabled = false
+vehicle_count = 10
+seed = 42
+speed_factor = 1.0
+enable_lane_change = true
+```
+
+开启后在避开主车出生点的空闲位置生成指定数量的背景车，沿道路图自动选路、按 IDM 模型跟驰防追尾、遵守红绿灯并在安全间隙允许时换道；实验结束时自动清理。
+
 ### 相机
 
 四路名称为 `front`、`rear_top`、`rear_left`、`rear_right`。每路直接填写 `x/y/z/pitch/yaw/roll` 与 `fov`。安装位置使用车辆包围盒比例，X 向前、Y 向右、Z 向上，0 表示包围盒中心，±1 表示相应边界；界面显示为 ±100%。simulator 按实际车辆尺寸换算安装坐标，姿态与水平视野单位为 deg。
