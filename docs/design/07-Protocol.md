@@ -146,6 +146,36 @@ class SetWeatherCommand(BaseModel, frozen=True):
     command_id: str
     type: Literal['set_weather'] = 'set_weather'
     weather: WeatherConfig
+    transition_seconds: float = 0.0  # 非负有限秒数，交给 environment.apply
+
+
+class CreateFogRegionCommand(BaseModel, frozen=True):
+    """由 launcher 运行期创建固定世界空间的局部球雾"""
+    command_id: str
+    type: Literal['create_fog_region'] = 'create_fog_region'
+    center_m: tuple[float, float, float]
+    radius_m: float  # (0, 100000] 米
+    density: float  # [0, 1]
+    transition_seconds: float = 0.0
+
+
+class UpdateFogRegionCommand(BaseModel, frozen=True):
+    """由 launcher 运行期调整局部球雾，未给出的字段保持原目标"""
+    command_id: str
+    type: Literal['update_fog_region'] = 'update_fog_region'
+    region_id: int
+    center_m: tuple[float, float, float] | None = None
+    radius_m: float | None = None
+    density: float | None = None
+    transition_seconds: float = 0.0
+
+
+class DeleteFogRegionCommand(BaseModel, frozen=True):
+    """由 launcher 运行期删除局部球雾，可指定渐隐时长"""
+    command_id: str
+    type: Literal['delete_fog_region'] = 'delete_fog_region'
+    region_id: int
+    transition_seconds: float = 0.0
 
 
 class UpdateCameraCommand(BaseModel, frozen=True):
@@ -168,11 +198,16 @@ LauncherCommand = Annotated[
     | SetAutopilotCommand
     | SetTakeoverCommand
     | SetWeatherCommand
+    | CreateFogRegionCommand
+    | UpdateFogRegionCommand
+    | DeleteFogRegionCommand
     | UpdateCameraCommand
     | UpdateLayoutCommand,
     Field(discriminator='type'),
 ]
 ```
+
+局部球雾命令在 worker 中映射为原生 `environment.create/update/delete`，与天气命令一样走 exchange。`transition_seconds` 均为非负有限秒数，默认 0。带过渡的操作由 worker 维护 request_id、operation_index 与 `command_id` 的关联，完成或替换事件到达时回填；零时长操作只有 applied。
 
 > 命令与事件的区别：`XxxCommand` 表示要求子进程执行某个操作，由 `launcher` 发出。`ExperimentEvent`（`XxxEvent`）表示某个操作已经在子进程中执行生效，由实际执行它的进程在应用之后上报并记录。例如 Launcher 发出天气命令，worker 通过原生 `environment.apply` 应用后产生 `environment_applied` 事件，回填来源 `command_id` 并上报；带过渡时随后产生 `environment_completed`。事件表记录实际生效的操作，界面依据事件和最新遥测更新。
 

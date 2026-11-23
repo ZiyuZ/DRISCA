@@ -56,7 +56,8 @@ Unreal 启动期间持续显示正在连接，直到 CARLA 世界可用或达到
 | `POST /api/experiment/start`、`POST /api/experiment/stop` | 启动和停止实验 |
 | `POST /api/instructions/{id}/execute`、`POST /api/markers` | 执行预设指令和记录打点 |
 | `POST /api/cameras/{name}`、`POST /api/display-layout` | 应用相机安装与后视镜布局 |
-| `POST /api/weather` | 调整当前世界全局天气；实验中通过模拟器应用，空闲时直接应用到原生环境 |
+| `POST /api/weather` | 调整当前世界全局天气；正文为 `{weather, transition_seconds}`，实验中经模拟器应用，空闲时直接应用到原生环境 |
+| `POST /api/weather/regions`、`PATCH /api/weather/regions/{id}`、`DELETE /api/weather/regions/{id}?transition_seconds=` | 创建、更新和渐隐删除局部球雾；实验中经 worker 命令应用，空闲时直接应用到原生环境 |
 | `GET /api/sessions`、`GET /api/sessions/{id}` | 筛选会话与读取详情 |
 | `PUT /api/sessions/{id}/note` | 独立保存会话备注 |
 | `POST /api/sessions/delete` | 确认后删除所选会话及逐帧数据与事件 |
@@ -69,7 +70,7 @@ Unreal 启动期间持续显示正在连接，直到 CARLA 世界可用或达到
 
 `bootstrap.weather_presets` 提供原生环境目录中的全局天气预设及完整参数，条目同时带有 `preset_name`。`state.weather` 保存当前世界已应用的全局天气，`state.fog_regions` 保存当前局部球雾区域编号、中心、半径、密度和删除状态。worker 就绪事件附带一次实际区域快照，管理端据此初始化区域列表；启动前由本 worker 创建的准备区域事件按 region_id 保留并进入事件时间轴。模拟器应用后上报 `environment_applied`、`environment_completed` 和 `environment_replaced`，管理端据事件更新实际天气与区域列表并记录事件。零时长 delete 的 applied 直接移除区域，渐隐 delete 在 completed 时移除。
 
-`state.world_loading` 标明手动切换地图或实验启动准备世界的过程，经 SSE 推送到全部控制台。加载在现有后台任务中执行，期间修改请求返回 409，查询与状态推送继续工作。完成或失败后清除等待状态。空闲时的天气调整直接应用到原生全局环境，并更新 `state.weather`；场景控制复用运行期的天气编辑组件。局部球雾在预设中编辑，由 worker 在实验启动前创建。
+`state.world_loading` 标明手动切换地图或实验启动准备世界的过程，经 SSE 推送到全部控制台。加载在现有后台任务中执行，期间修改请求返回 409，查询与状态推送继续工作。完成或失败后清除等待状态。空闲时的全局天气与局部球雾调整直接应用到原生环境，并更新 `state.weather` 与 `state.fog_regions`；实验中经 worker 命令应用。预设中的初始球雾仍由 worker 在实验启动前创建。`/api/weather` 与局部球雾命令都支持非负有限的 `transition_seconds`，默认 0。
 
 交互原型位于 `prototypes/launcher/`，开发衔接记录放在 `.local/notes/`。
 

@@ -117,41 +117,58 @@ Python 使用显式 dtype 和 numpy.frombuffer，研究记录按上表偏移解�
 
 ## 环境控制
 
-原生子系统持有唯一的全局 current/target 与过渡时钟，直接驱动天空、光照、雾和降水。`environment.apply` 提交完整全局 weather，`environment.update` 提交部分字段；嵌套对象同样部分更新，未给出的字段沿用原目标。`transition_seconds` 为非负有限秒数，默认 0，按世界仿真时钟插值。新命令从当前值向合并目标重新开始本次过渡，太阳方位走最短弧，恰好 180 度时正向。
+原生子系统持有唯一的全局环境状态（`current` / `target`）与过渡时钟，直接驱动天空、光照、雾和降水。
 
-全局 weather 字段：
+### 全局环境
+
+`environment.apply` 提交完整全局 `weather`，`environment.update` 提交部分字段；嵌套对象同样按提供字段部分更新，其余字段沿用原目标。`transition_seconds` 为非负有限秒数（默认 `0`），按世界仿真时钟插值。新命令以当前状态为起点向合并后的目标重新开始过渡；太阳方位按最短弧插值，恰好差 180 度时沿正向转动。
+
+`environment.get` 不带 `region_id` 时返回 `{region_id: null, current: {weather: ...}, target: {weather: ...}, remaining_seconds, deleting: false}`。`scene.catalog` 的 `weather_presets` 返回新全局结构加同级 `preset_name`，`Default` 展开为明确全值。Python 在提交前将命名预设展开为完整 `weather`。
+
+全局 `weather` 包含 14 项功能字段与 1 项雪效占位字段（`precipitation.snow`，当前固定为 `0`，非零返回 `unsupported`）：
 
 | 字段 | 范围或单位 | 含义 |
 | --- | --- | --- |
 | sun.azimuth_deg | [0, 360) 度 | 太阳方位 |
 | sun.elevation_deg | [-90, 90] 度 | 太阳高度 |
 | cloudiness | [0, 1] | 云量强度 |
-| wind | [0, 1] | 视觉风，不施加车辆侧向力 |
+| wind | [0, 1] | 视觉风强度（独立于车辆侧向物理力） |
 | dust | [0, 1] | 尘暴效果输入 |
-| precipitation.rain | [0, 1] | 现有降雨资源强度 |
-| precipitation.snow | 仅 0 | 非零返回 unsupported |
+| precipitation.rain | [0, 1] | 降雨粒子与后处理强度 |
+| precipitation.snow | 仅 0 | 雪效占位，非零返回 `unsupported` |
 | surface.wetness | [0, 1] | 路面湿润外观 |
-| surface.puddles | [0, 1] | 已有材质积水强度 |
-| fog.density | [0, 1] | 直接作为 UE 高度雾密度，不使用 0.001 映射 |
+| surface.puddles | [0, 1] | 路面材质积水强度 |
+| fog.density | [0, 100] | 直接写入 UE 高度雾密度（无旧 0.001 缩放） |
 | fog.distance_m | [0, 1000000] 米 | 高度雾起始距离 |
-| fog.height_falloff | [0, 10000] | UE 高度雾衰减参数 |
+| fog.height_falloff | [0, 10000] | UE 高度雾衰减系数 |
 | scattering.light | [0, 1000] | 太阳光体积散射强度 |
 | scattering.mie | [0, 1000] | 大气 Mie 散射缩放 |
 | scattering.rayleigh | [0, 1000] | 大气 Rayleigh 散射缩放 |
 
-以上共 14 项功能字段；`precipitation.snow` 固定为 0，是尚未实现的雪效占位，不计入当前功能字段。
+上述数值均为原生引擎渲染参数，能见距离与降水量标定在后续校准阶段建立映射关系。
 
-范围是协议输入范围，效果未做能见距离或降水量的气象标定。`environment.get` 不带 region_id 时返回 `{region_id: null, current: {weather: ...}, target: {weather: ...}, remaining_seconds, deleting: false}`。
+### 局部球雾
 
-局部区域为固定世界空间球雾。`environment.create` 接收 center_m（米）、radius_m（大于 0 且不超过 100000 米）、weather.fog.density 和可选的 transition_seconds；局部雨雪与地表通道返回 unsupported。get、update、delete 使用 region_id，list 返回 regions。current 和 target 使用 `{center_m, radius_m, weather: {fog: {density}}}`。密度 1 对应 UE 径向消光 2，高度消光固定为 0；球雾采用原生径向分布与光学叠加，重叠可以更浓，不承诺 max 融合。delete 可渐隐，期间保持 deleting 并拒绝再次修改。
+局部区域表示固定在世界空间中的球形雾区，对应 UE `ALocalFogVolume` 组件：
 
-同一个 worker 控制连接在 `driving_view.start` 之前创建的区域随 start 转入会话；管理连接创建的准备区域仍归原连接。实验停止、控制连接异常和地图加载清理相应区域。地图加载同时把全局环境重置为新地图默认值，下一实验由 Python 再次提交初始环境。
+- `environment.create` 接收 `center_m`（米）、`radius_m`（`(0, 100000]` 米）、`weather.fog.density`（`[0, 1]`）和可选 `transition_seconds`；局部雨雪与地表通道返回 `unsupported`。
+- `environment.get`、`environment.update`、`environment.delete` 按 `region_id` 操作，`environment.list` 返回全部活跃区域 `regions`。
+- `current` 与 `target` 统一使用 `{center_m, radius_m, weather: {fog: {density}}}` 结构。
+- 密度 `0–1` 线性映射为 UE 径向消光 `0–2`；高度项在球内设为均匀饱和（`HeightFogFalloff=1`、`HeightFogOffset=2`、`HeightFogExtinction=50`）以由径向消光独立控制浓淡，并将局部雾全局起始距离 `r.LocalFogVolume.GlobalStartDistance` 下调至 `10 cm`。多个球雾按原生光学叠加合成，重叠区域浓度自然叠加。
+- `environment.delete` 支持渐隐时长，渐隐期间区域保持 `deleting: true` 并拒绝再次修改，完成后销毁。
 
-`scene.catalog` 的 weather_presets 使用新全局字段加同级 preset_name；Default 展开为明确全值，不再使用 -1 哨兵。Python 在提交前把命名预设展开为完整 weather。
+### 生命周期与事件
 
-环境事件为 environment_applied、environment_completed、environment_replaced，外层 native 元数据与其他事件一致。全局事件的 region_id 为 null，局部为数字。applied 带 operation、previous、transition_seconds；completed 沿用 operation；replaced 记录旧 current/target/operation 和新 request_id、operation_index、operation、target。完成与替换事件可能跨 exchange 到达，客户端按请求关联维护未完成操作，终态释放。零时长操作只产生 applied。实验停止时被中断的全局过渡产生 reason=session_ended 的 replaced，且不带 new_*。
+- **归属与清理**：同一 worker 控制连接在 `driving_view.start` 前创建的区域随 `start` 转入会话；管理连接在空闲期创建的区域归属原连接。实验停止、控制连接异常和地图加载按归属清理区域；地图加载同时将全局环境重置为新地图默认值，下次实验由 Python 重新提交初始环境。
+- **环境事件**：包括 `environment_applied`、`environment_completed`、`environment_replaced`，外层 `native` 元数据与其他事件一致；全局事件 `region_id` 为 `null`，局部事件为数字。
+  - `applied` 携带 `operation`、`previous`、`transition_seconds`；零时长操作仅触发 `applied`。
+  - `completed` 沿用原 `operation`。
+  - `replaced` 记录旧 `current` / `target` / `operation` 以及新 `request_id`、`operation_index`、`operation`、`target`；实验停止时被中断的全局过渡携带 `reason=session_ended`，不含 `new_*`。
+  - 完成与替换事件可跨 `exchange` 到达，客户端按请求关联维护未完成操作表并在终态释放。
 
-普通车辆录像的 recorder.replay 关闭 ReplayWeather，车辆回放不写回环境；请求 replay_weather=true 被拒绝。DRISCA 的全局与局部环境由自身初始配置和事件记录重现。
+### 录像与环境重现
+
+普通车辆录像的 `recorder.replay` 固定关闭 `ReplayWeather`，仅回放车辆与传感器；请求 `replay_weather=true` 返回错误。全局与局部环境通过 DRISCA 保存的初始配置和环境事件记录独立重现。
 
 ## 车道图与信号
 

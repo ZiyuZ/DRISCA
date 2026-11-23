@@ -230,7 +230,7 @@ class SurfaceConfig(BaseModel, frozen=True, extra='forbid'):
 
 
 class FogConfig(BaseModel, frozen=True, extra='forbid'):
-    density: float = Field(default=0.0, ge=0, le=1)
+    density: float = Field(default=0.0, ge=0, le=100)
     distance_m: float = Field(default=0.0, ge=0, le=1_000_000)
     height_falloff: float = Field(default=0.2, ge=0, le=10_000)
 
@@ -326,7 +326,7 @@ class RunConfig(BaseModel, frozen=True, extra='forbid'):
 
 读取配置时校验字段名称、类型与有效范围，错误信息包含文件和字段位置。缺少实际设置文件时，提示复制对应示例。保存采用同目录临时文件替换。按键和按钮使用单个枚举值。
 
-预设明确指定车辆和出生位姿。天气选择命名预设时，启动前从目录展开为完整数值；选择 `Custom` 时使用文件中的数值。全局状态包含 14 项功能字段，强度统一为 0 到 1 的无量纲输入，界面按百分比显示和编辑；雾密度直接对应 UE 高度雾密度，不使用旧的 0.001 缩放，`distance_m` 与 `height_falloff` 是控制参数，不代表已校准的能见距离。雪效尚未实现，`precipitation.snow` 固定为 0 且不计入功能字段。`world.fog_regions` 保存实验启动前由 worker 创建的世界空间球雾，每个区域指定中心、半径、密度和渐入时长。启动配置保存本次采用的设置。
+预设明确指定车辆和出生位姿。天气选择命名预设时，启动前从目录展开为完整数值；选择 `Custom` 时使用文件中的数值。天气编辑器将日照与天气类型独立选择：日照仅调整太阳高度，天气类型保留当前太阳方位与高度，组合结果以 `Custom` 完整保存。全局状态包含 14 项功能字段与 1 项雪效占位字段（`precipitation.snow` 固定为 0）；云雨、风和地表强度为 0 到 1，界面按百分比显示；全局雾密度范围为 0 到 100，直接写入 UE 高度雾密度，`distance_m` 与 `height_falloff` 为原生高度雾参数。预设 TOML 中的太阳、降水、地表、雾和散射分组采用内联表格式，解析后的模型结构保持一致。`world.fog_regions` 保存实验启动前由 worker 创建的世界空间球雾，每个区域指定中心、半径、密度和渐入时长。启动配置保存本次采用的设置。
 
 主机配置和输入配置在下一次实验启动时生效。服务监听地址和端口在重启 launcher 后生效。运行期相机、画面布局与天气调整保存在运行状态中，应用后记录事件。方案配置页保存安装参数到预设文件；主机配置页保存画面布局到 machine.toml。
 

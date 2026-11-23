@@ -15,6 +15,6 @@
 
 ## 当前安排
 
-原生 WebSocket API 与 Python 客户端已接入，官方 carla wheel 已移除。编辑器版在 Town10HD_Opt 完成 Launcher 启停、连续实验、采集、事件关联、录像、导出与异常收尾验证，连续切图与仿真时间修正已验证。当前收尾界面调整并排查 Singapore_Intersection 车辆生成问题；原生全局环境与球形局部雾接口已完成构建，Python 与 Launcher 已迁移，等待运行画面联调。自研交通模型、中心服务与双终端尚未实现，现有 Web 界面继续使用。
+原生 WebSocket API 与 Python 客户端已接入，官方 carla wheel 已移除。编辑器版已在 `Town10HD_Opt` 与 `Singapore_Intersection` 完成 Launcher 启停、连续实验、出生点与道路校验、采集、事件关联、录像、导出与异常收尾验证。DRISCA 自有环境控制器（全局 0–100 雾密度、日照与天气独立组合、球形局部雾及渐变事件）已完成原生构建与接口验证。后续依次推进自研交通模型、能见距离标靶校准、雪效/局部暴雨资源，以及中心服务与双终端。
 
 本目录作为新方案的独立入口。已有 docs/design/ 和 docs/guide/ 保留原有内容；新方案落地后的正式文档调整另行组织。一次性脚本、构建细节、交接和原始运行记录继续放在 .local/。

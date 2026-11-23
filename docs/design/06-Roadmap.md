@@ -4,7 +4,7 @@
 
 ## 当前主线：单机原生驾驶与专用接口
 
-基础契约、原生驾驶接入与 Launcher 已形成单机键盘实验流程，下一步逐项迁移专用接口。整体阶段安排见[研究平台路线图](../research-platform/03-Roadmap.md)，已有基础如下：
+基础契约、原生驾驶接入、专用 WebSocket 接口（替代官方 carla wheel）、自有环境控制（全局天气与局部球雾）及 Launcher 已形成完整的单机实验流程。整体阶段安排见[研究平台路线图](../research-platform/03-Roadmap.md)，已有基础如下：
 
 - 代码分层与不可变配置
   - 按 `launcher / simulator / traffic / core / storage` 五个顶层包组织单向依赖。`traffic` 在当前阶段只保留占位，实现列入后续计划。
@@ -16,8 +16,8 @@
   - 采用 Web 控制台与 pywebview 无边框桌面壳，先制作 Basecoat + Alpine.js 静态原型，再连接 Python 后端：集成 CARLA 预检、预设管理、子进程启停与监控、历史会话浏览与 CSV 导出。
   - 内置轻量 `FastAPI` 服务：通过本地 WebSocket 接收 `simulator` 的日志、事件与遥测快照，并通过 SSE 驱动平板 HUD。
   - 管理端按控制台、方案配置、数据管理、主机配置、输入配置五页组织。桌面与局域网浏览器共用页面和后端，进程管理使用标准库 subprocess。正式前端使用 Bun、Vite、React、TypeScript、Tailwind CSS 与 shadcn/ui，原型保存在 `prototypes/launcher/`。
-- Unreal 原生驾驶
-  - 主视图、三路后视镜与键盘连续控制在 Unreal 内运行，Python 读取最新驾驶状态并保存研究数据。单机键盘驾驶、接管、语音、打点与导出已完成实际联调，后续阶段见[研究平台路线图](../research-platform/03-Roadmap.md)。
+- Unreal 原生驾驶与环境控制
+  - 主视图、三路后视镜、键盘连续控制与自有环境控制器（全局 0–100 雾密度、日照与天气独立组合、球形局部雾及渐变事件）在 Unreal 内运行，Python 通过专用 WebSocket 接口读取最新驾驶状态并保存研究数据。单机实验、出生点与道路校验、接管、语音、打点与导出已在 `Town10HD_Opt` 与 `Singapore_Intersection` 完成验证，后续阶段见[研究平台路线图](../research-platform/03-Roadmap.md)。
   - 旧 Python 画面合成的测量保存在[渲染参考资料](../reference/RenderingPipeline.md)，方向盘设备封装原位保留，硬件到位后接入。
 
 ## 后续功能规划

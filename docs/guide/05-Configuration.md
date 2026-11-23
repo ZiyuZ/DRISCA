@@ -106,7 +106,9 @@ roll = 0.0
 
 ### 天气和限速
 
-`world.weather.preset_name` 选择原生环境目录中的天气预设，例如 `ClearNoon`；实验启动前展开为完整数值。选择 `Custom` 时使用同一表中的数值。强度字段是 0 到 1 的无量纲输入，界面按 0–100 百分比显示；雾密度直接作为 UE 高度雾密度，不使用旧的 0.001 缩放，起始距离和高度衰减是控制参数，不代表已校准的能见距离。雪效尚未实现，`precipitation.snow` 只能为 0。
+天气编辑器将日照与天气类型分开选择，可组合白天浓雾、夜间暴雨等场景。日照只调整太阳高度；选择天气保留当前太阳设置。太阳方位、高度和各项天气参数均可继续微调。
+
+`world.weather.preset_name` 选择原生环境目录中的天气预设，例如 `ClearNoon`，实验启动前展开为完整数值；选择 `Custom` 时使用同一表中的数值。云雨、风和地表强度为 0 到 1，界面按 0–100 百分比显示；全局雾密度范围为 0 到 100，直接作为 UE 高度雾密度，起始距离（`distance_m`）和高度衰减（`height_falloff`）为原生高度雾渲染参数。雪效列入后续计划，`precipitation.snow` 当前固定为 0。
 
 ```toml
 [world.weather]
@@ -115,27 +117,11 @@ cloudiness = 0.3
 wind = 0.2
 dust = 0.0
 
-[world.weather.sun]
-azimuth_deg = 0.0
-elevation_deg = 45.0
-
-[world.weather.precipitation]
-rain = 0.0
-snow = 0.0
-
-[world.weather.surface]
-wetness = 0.0
-puddles = 0.0
-
-[world.weather.fog]
-density = 0.1
-distance_m = 10.0
-height_falloff = 0.2
-
-[world.weather.scattering]
-light = 1.0
-mie = 0.003996
-rayleigh = 0.0331
+sun = { azimuth_deg = 0.0, elevation_deg = 45.0 }
+precipitation = { rain = 0.0, snow = 0.0 }
+surface = { wetness = 0.0, puddles = 0.0 }
+fog = { density = 0.1, distance_m = 10.0, height_falloff = 0.2 }
+scattering = { light = 1.0, mie = 0.003996, rayleigh = 0.0331 }
 ```
 
 `world.fog_regions` 保存实验启动前的局部球雾。每个区域由 worker 在驾驶视图启动前创建，实验结束、连接中断或切换地图时清理。中心使用世界坐标米，半径大于 0 且不超过 100000 米，密度为 0 到 1，`transition_seconds` 控制渐入时长。
