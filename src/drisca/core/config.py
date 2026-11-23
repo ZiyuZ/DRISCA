@@ -344,7 +344,7 @@ class SurfaceConfig(BaseModel, frozen=True, extra='forbid'):
 
 
 class FogConfig(BaseModel, frozen=True, extra='forbid'):
-    density: float = Field(default=0.0, ge=0, le=1)  # 直接对应 UE 高度雾密度
+    density: float = Field(default=0.0, ge=0, le=100)  # UE 高度雾密度；范围留供极浓雾调校
     distance_m: float = Field(default=0.0, ge=0, le=1_000_000)
     height_falloff: float = Field(default=0.2, ge=0, le=10_000)
 
@@ -356,7 +356,7 @@ class ScatteringConfig(BaseModel, frozen=True, extra='forbid'):
 
 
 class GlobalWeather(BaseModel, frozen=True, extra='forbid'):
-    """全局环境状态。强度为 0 到 1 的无量纲输入，不代表气象测量值。"""
+    """全局环境状态。云雨等强度为 0 到 1，雾密度使用 UE 原始参数。"""
 
     sun: SunConfig = SunConfig()
     cloudiness: float = Field(default=0.0, ge=0, le=1)
@@ -484,11 +484,31 @@ def _load(path: Path, model: type[BaseModel]) -> BaseModel:
         raise ValueError(f'读取配置 {path} 失败：{exc}') from exc
 
 
+def _preset_toml(preset: PresetConfig) -> str:
+    """天气短分组使用内联表，主要配置保留独立节。"""
+    data = preset.model_dump(mode='json', exclude_none=True)
+    world = data.pop('world')
+    weather = world.pop('weather')
+    prefix = {'markers': data.pop('markers'), 'instructions': data.pop('instructions'), 'world': world}
+    text = tomli_w.dumps(prefix) + '\n[world.weather]\n'
+    for name, value in weather.items():
+        if isinstance(value, dict):
+            fields = ', '.join(tomli_w.dumps(value).strip().splitlines())
+            text += f'{name} = {{ {fields} }}\n'
+        else:
+            text += tomli_w.dumps({name: value})
+    return text + '\n' + tomli_w.dumps(data)
+
+
 def _save(path: Path, model: BaseModel) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + '.tmp')
-    with temporary.open('wb') as stream:
-        tomli_w.dump(model.model_dump(mode='json', exclude_none=True), stream)
+    text = (
+        _preset_toml(model)
+        if isinstance(model, PresetConfig)
+        else tomli_w.dumps(model.model_dump(mode='json', exclude_none=True))
+    )
+    temporary.write_text(text, encoding='utf-8')
     temporary.replace(path)
 
 

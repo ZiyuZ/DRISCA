@@ -10,7 +10,7 @@ import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Slider } from "./ui/slider";
 import { SearchSelect } from "./common";
-import { weatherName } from "./weather-editor";
+import { weatherDescription } from "./weather-editor";
 import { catalogMatchesPreset, matchSpawnIndex, spawnBound } from "../lib/spawn";
 
 type Props = {
@@ -65,7 +65,7 @@ export function ExperimentConfig({ preset, state, update, onWeather, onMapChange
                 onClick={onWeather}
               >
                 <span>
-                  {weatherName(String(preset.world.weather.preset_name))}
+                  {weatherDescription(preset.world.weather, state.catalog.weather_presets)}
                 </span>
                 <span className="small">
                   {preset.world.fog_regions.length > 0

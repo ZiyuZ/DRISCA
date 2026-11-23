@@ -21,27 +21,11 @@ cloudiness = 0.1
 wind = 0.1
 dust = 0.0
 
-[world.weather.sun]
-azimuth_deg = 0.0
-elevation_deg = 45.0
-
-[world.weather.precipitation]
-rain = 0.0
-snow = 0.0
-
-[world.weather.surface]
-wetness = 0.0
-puddles = 0.0
-
-[world.weather.fog]
-density = 0.0
-distance_m = 0.0
-height_falloff = 0.2
-
-[world.weather.scattering]
-light = 1.0
-mie = 0.003996
-rayleigh = 0.0331
+sun = { azimuth_deg = 0.0, elevation_deg = 45.0 }
+precipitation = { rain = 0.0, snow = 0.0 }
+surface = { wetness = 0.0, puddles = 0.0 }
+fog = { density = 0.0, distance_m = 0.0, height_falloff = 0.2 }
+scattering = { light = 1.0, mie = 0.003996, rayleigh = 0.0331 }
 
 # 初始局部球雾，可重复添加。中心为世界坐标米，密度 0 到 1。
 # [[world.fog_regions]]

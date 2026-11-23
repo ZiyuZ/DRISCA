@@ -15,6 +15,7 @@ type Props = {
   className?: string;
   disabled?: boolean;
   "aria-label"?: string;
+  "aria-labelledby"?: string;
 };
 export function SharedSelect({
   value,
@@ -24,10 +25,11 @@ export function SharedSelect({
   className,
   disabled,
   "aria-label": label,
+  "aria-labelledby": labelledBy,
 }: Props) {
   return (
     <Select value={value} onValueChange={onValueChange} disabled={disabled}>
-      <SelectTrigger className={cn("w-full", className)} aria-label={label}>
+      <SelectTrigger className={cn("w-full", className)} aria-label={label} aria-labelledby={labelledBy}>
         <SelectValue placeholder={placeholder}>{options.find(([key]) => key === value)?.[1]}</SelectValue>
       </SelectTrigger>
       <SelectContent position="popper">

@@ -9,6 +9,7 @@ import {
   CollapsibleTrigger,
 } from "./ui/collapsible";
 import { Slider } from "./ui/slider";
+import { useId } from "react";
 
 type Props = {
   weather: Weather;
@@ -59,7 +60,7 @@ const primary: Row[] = [
   { path: ["precipitation", "rain"], label: "降雨 · %", min: 0, max: 100, step: 1, percent: true },
   { path: ["surface", "wetness"], label: "路面湿润 · %", min: 0, max: 100, step: 1, percent: true },
   { path: ["sun", "elevation_deg"], label: "太阳高度 · °", min: -90, max: 90, step: 1 },
-  { path: ["fog", "density"], label: "雾强度 · %", min: 0, max: 100, step: 1, percent: true },
+  { path: ["fog", "density"], label: "雾密度参数", min: 0, max: 100, step: 0.001 },
   { path: ["wind"], label: "风 · %", min: 0, max: 100, step: 1, percent: true },
 ];
 const extra: Row[] = [
@@ -84,16 +85,33 @@ const withNumber = (source: Weather, path: string[], value: number): Weather => 
   target[path[path.length - 1]] = value;
   return result;
 };
+const daylight = [["day", "白天", 75], ["dusk", "黄昏", 0], ["night", "夜晚", -30]] as const;
+const daylightValue = (weather: Weather) => weather.sun.elevation_deg > 6 ? "day" : weather.sun.elevation_deg < -6 ? "night" : "dusk";
+const weatherOptions = (presets: Record<string, Weather>) => Object.keys(presets)
+  .filter(name => name.endsWith("Noon") || name === "DustStorm")
+  .map(name => [name, weatherName(name).replace(/正午$/, "")] as const);
+const matchingWeather = (weather: Weather, presets: Record<string, Weather>) => weatherOptions(presets)
+  .find(([name]) => [...primary, ...extra].filter(({ path }) => path[0] !== "sun").every(({ path }) =>
+    numberAt(weather, path) === numberAt(presets[name], path)
+  ))?.[0];
+
+export function weatherDescription(weather: Weather, presets: Record<string, Weather>) {
+  const light = daylight.find(([value]) => value === daylightValue(weather))![1];
+  const name = matchingWeather(weather, presets) ?? weather.preset_name;
+  return `${light} · ${weatherName(name).replace(/正午|傍晚|夜间/g, "")}`;
+}
 
 export function WeatherEditor({ weather, weatherPresets, onChange, regions, onRegionsChange }: Props) {
+  const id = useId();
+  const weatherValue = matchingWeather(weather, weatherPresets) ?? "Custom";
   const row = ({ path, label, min, max, step, percent }: Row) => {
     const raw = numberAt(weather, path);
     const value = percent ? Math.round(raw * 10000) / 100 : raw;
     const change = (next: number) =>
       onChange({ ...withNumber(weather, path, percent ? next / 100 : next), preset_name: "Custom" });
     return (
-      <label className="weather-field" key={path.join(".")}>
-        <span>{label}</span>
+      <div className="weather-field" key={path.join(".")}>
+        <label htmlFor={`${id}-${path.join("-")}`}>{label}</label>
         <div className="weather-range">
           <Slider
             className="prototype-slider"
@@ -104,23 +122,36 @@ export function WeatherEditor({ weather, weatherPresets, onChange, regions, onRe
             value={[Math.min(max, Math.max(min, value))]}
             onValueChange={([v]) => change(v)}
           />
-          <NumberInput value={value} onValueChange={change} />
+          <NumberInput id={`${id}-${path.join("-")}`} value={value} onValueChange={change} />
         </div>
-      </label>
+      </div>
     );
   };
   return (
     <div className="weather-editor">
-      <label className="weather-field">
-        <span>天气预设</span>
+      <div className="weather-field">
+        <span id={`${id}-daylight`}>日照</span>
         <SharedSelect
-          value={String(weather.preset_name)}
-          options={[...Object.keys(weatherPresets).map(name => [name, weatherName(name)] as const), ["Custom", "自定义"] as const]}
-          onValueChange={(value) =>
-            onChange(value === "Custom" ? { ...weather, preset_name: value } : { ...weatherPresets[value], preset_name: value })
-          }
+          aria-labelledby={`${id}-daylight`}
+          value={daylightValue(weather)}
+          options={daylight.map(([value, label]) => [value, label] as const)}
+          onValueChange={value => {
+            const selected = daylight.find(([name]) => name === value);
+            if (selected) onChange({ ...weather, sun: { ...weather.sun, elevation_deg: selected[2] }, preset_name: "Custom" });
+          }}
         />
-      </label>
+      </div>
+      <div className="weather-field">
+        <span id={`${id}-weather`}>天气类型</span>
+        <SharedSelect
+          aria-labelledby={`${id}-weather`}
+          value={weatherValue}
+          options={[...weatherOptions(weatherPresets), ...(weatherValue === "Custom" ? [["Custom", "自定义"] as const] : [])]}
+          onValueChange={value => {
+            if (value !== "Custom") onChange({ ...weatherPresets[value], sun: weather.sun, preset_name: "Custom" });
+          }}
+        />
+      </div>
       {primary.map(row)}
       <Collapsible>
         <CollapsibleTrigger asChild>
@@ -134,7 +165,7 @@ export function WeatherEditor({ weather, weatherPresets, onChange, regions, onRe
         </CollapsibleContent>
       </Collapsible>
       <p className="weather-note">
-        百分比字段的 0–100 对应原生强度 0–1。雾强度与衰减是控制参数，起始距离不是已校准的能见距离。
+        日照与天气独立组合；太阳高度可继续微调。雾密度范围 0–100，直接控制高度雾；起始距离与密度均未标定为能见距离。雪效待实现。
       </p>
       {regions && onRegionsChange && <FogRegionsEditor regions={regions} onChange={onRegionsChange} />}
     </div>
