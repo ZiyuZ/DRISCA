@@ -214,22 +214,53 @@ class ControlConfig(BaseModel, frozen=True, extra='forbid'):
 `PresetConfig` 对应 `configs/presets/*.toml`。下列参数对象使用 Pydantic 的 `JsonValue` 表达 JSON 值：
 
 ```python
-class WeatherConfig(BaseModel, frozen=True, extra='forbid'):
-    preset_name: str = 'Default'  # 如 'ClearNoon', 'WetNoon', 'HardRainNoon'；为 'Custom' 时使用下方参数
-    cloudiness: float = 30.0
-    wetness: float = 80.0
-    precipitation: float = 80.0
-    precipitation_deposits: float = 80.0
-    wind_intensity: float = 20.0
-    dust_storm: float = 0.0
-    sun_azimuth_angle: float = 0.0
-    sun_altitude_angle: float = 45.0
-    fog_density: float = 0.0
-    fog_distance: float = 0.0
-    fog_falloff: float = 0.0
-    scattering_intensity: float = 0.0
-    mie_scattering_scale: float = 0.0
-    rayleigh_scattering_scale: float = 0.0331
+class SunConfig(BaseModel, frozen=True, extra='forbid'):
+    azimuth_deg: float = Field(default=0.0, ge=0, lt=360)
+    elevation_deg: float = Field(default=75.0, ge=-90, le=90)
+
+
+class PrecipitationConfig(BaseModel, frozen=True, extra='forbid'):
+    rain: float = Field(default=0.0, ge=0, le=1)
+    snow: float = Field(default=0.0, ge=0, le=1)  # 原生尚未提供雪效，非零报错
+
+
+class SurfaceConfig(BaseModel, frozen=True, extra='forbid'):
+    wetness: float = Field(default=0.0, ge=0, le=1)
+    puddles: float = Field(default=0.0, ge=0, le=1)
+
+
+class FogConfig(BaseModel, frozen=True, extra='forbid'):
+    density: float = Field(default=0.0, ge=0, le=1)
+    distance_m: float = Field(default=0.0, ge=0, le=1_000_000)
+    height_falloff: float = Field(default=0.2, ge=0, le=10_000)
+
+
+class ScatteringConfig(BaseModel, frozen=True, extra='forbid'):
+    light: float = Field(default=1.0, ge=0, le=1000)
+    mie: float = Field(default=0.003996, ge=0, le=1000)
+    rayleigh: float = Field(default=0.0331, ge=0, le=1000)
+
+
+class GlobalWeather(BaseModel, frozen=True, extra='forbid'):
+    sun: SunConfig = SunConfig()
+    cloudiness: float = Field(default=0.0, ge=0, le=1)
+    wind: float = Field(default=0.0, ge=0, le=1)
+    dust: float = Field(default=0.0, ge=0, le=1)
+    precipitation: PrecipitationConfig = PrecipitationConfig()
+    surface: SurfaceConfig = SurfaceConfig()
+    fog: FogConfig = FogConfig()
+    scattering: ScatteringConfig = ScatteringConfig()
+
+
+class WeatherConfig(GlobalWeather, frozen=True, extra='forbid'):
+    preset_name: str = 'Default'  # 命名预设启动前展开；'Custom' 使用本对象数值
+
+
+class FogRegionConfig(BaseModel, frozen=True, extra='forbid'):
+    center_m: tuple[float, float, float]
+    radius_m: float = Field(gt=0, le=100_000)
+    density: float = Field(default=0.0, ge=0, le=1)
+    transition_seconds: float = Field(default=0.0, ge=0)
 
 
 class WorldConfig(BaseModel, frozen=True, extra='forbid'):
@@ -238,6 +269,7 @@ class WorldConfig(BaseModel, frozen=True, extra='forbid'):
     sync_mode: bool = True
     simulation_fps: int = 60  # 同步模式的世界推进频率
     weather: WeatherConfig = WeatherConfig()
+    fog_regions: tuple[FogRegionConfig, ...] = ()
 
 
 class EgoVehicleConfig(BaseModel, frozen=True, extra='forbid'):
@@ -294,7 +326,7 @@ class RunConfig(BaseModel, frozen=True, extra='forbid'):
 
 读取配置时校验字段名称、类型与有效范围，错误信息包含文件和字段位置。缺少实际设置文件时，提示复制对应示例。保存采用同目录临时文件替换。按键和按钮使用单个枚举值。
 
-预设明确指定车辆和出生位姿。天气选择 CARLA 预设时，启动前展开为完整参数；选择 `Custom` 时使用文件中的自定义参数。启动配置保存本次采用的设置。
+预设明确指定车辆和出生位姿。天气选择命名预设时，启动前从目录展开为完整数值；选择 `Custom` 时使用文件中的数值。全局状态包含 14 项功能字段，强度统一为 0 到 1 的无量纲输入，界面按百分比显示和编辑；雾密度直接对应 UE 高度雾密度，不使用旧的 0.001 缩放，`distance_m` 与 `height_falloff` 是控制参数，不代表已校准的能见距离。雪效尚未实现，`precipitation.snow` 固定为 0 且不计入功能字段。`world.fog_regions` 保存实验启动前由 worker 创建的世界空间球雾，每个区域指定中心、半径、密度和渐入时长。启动配置保存本次采用的设置。
 
 主机配置和输入配置在下一次实验启动时生效。服务监听地址和端口在重启 launcher 后生效。运行期相机、画面布局与天气调整保存在运行状态中，应用后记录事件。方案配置页保存安装参数到预设文件；主机配置页保存画面布局到 machine.toml。
 

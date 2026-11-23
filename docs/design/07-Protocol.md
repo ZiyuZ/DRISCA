@@ -49,6 +49,7 @@ class WorkerReadyEvent(BaseModel, frozen=True):
     ego_actor_id: int
     ego_type_id: str
     vehicle_box: dict[str, dict[str, float]]  # 包围盒 location、extent 与 rotation，供相机示意使用
+    fog_regions: tuple[RegionSnapshot, ...] = ()  # 就绪时的实际局部球雾快照，供界面初始化
 
 
 class WorkerStatusEvent(BaseModel, frozen=True):
@@ -141,7 +142,7 @@ class SetTakeoverCommand(BaseModel, frozen=True):
 
 
 class SetWeatherCommand(BaseModel, frozen=True):
-    """由 launcher 运行期动态切换天气"""
+    """由 launcher 运行期动态切换全局天气；weather 已展开为完整数值"""
     command_id: str
     type: Literal['set_weather'] = 'set_weather'
     weather: WeatherConfig
@@ -173,7 +174,7 @@ LauncherCommand = Annotated[
 ]
 ```
 
-> 命令与事件的区别：`XxxCommand` 表示要求子进程执行某个操作，由 `launcher` 发出。`ExperimentEvent`（`XxxEvent`）表示某个操作已经在子进程中执行生效，由实际执行它的进程在应用之后上报并记录。例如 Launcher 发出天气命令，原生应用后产生 set_weather 事件，由 worker 回填来源 command_id 并上报。事件表记录实际生效的操作，界面依据事件和最新遥测更新。
+> 命令与事件的区别：`XxxCommand` 表示要求子进程执行某个操作，由 `launcher` 发出。`ExperimentEvent`（`XxxEvent`）表示某个操作已经在子进程中执行生效，由实际执行它的进程在应用之后上报并记录。例如 Launcher 发出天气命令，worker 通过原生 `environment.apply` 应用后产生 `environment_applied` 事件，回填来源 `command_id` 并上报；带过渡时随后产生 `environment_completed`。事件表记录实际生效的操作，界面依据事件和最新遥测更新。
 
 ## 命令错误
 

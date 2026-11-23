@@ -32,7 +32,7 @@
 
 Python 已通过自有客户端访问原生 API，移除 carla 包和专用 wheel；原生端继续复用 CARLA 内部能力。官方 Traffic Manager 宿主方案取消，自研 Python 交通模块放在 src/drisca/traffic/，道路、信号与 external 批量控制接口为其提供基础。迁移后的 Launcher 已在编辑器版 Town10HD_Opt 完成单车流程联调，Singapore_Intersection 车辆生成问题正在排查。
 
-天气配置的命名预设代表完整的 CARLA 内置天气；`preset_name` 为 `Custom` 时使用各项数值参数。界面选择预设后填入对应参数，修改任意参数会自动切换到 `Custom`。脚本需要修改预设中的某个参数时，先读取该预设参数，再以 `Custom` 提交修改后的完整天气。
+天气配置的命名预设来自原生环境目录，代表一套完整的全局环境值；`preset_name` 为 `Custom` 时使用各项数值参数。界面选择预设后填入对应参数，修改任意参数会自动切换到 `Custom`。脚本需要修改预设中的某个参数时，先读取该预设参数，再以 `Custom` 提交修改后的完整天气。强度统一为 0 到 1，局部球雾单独配置。
 
 ## 车辆如何控制
 

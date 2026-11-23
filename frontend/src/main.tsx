@@ -333,6 +333,8 @@ function App() {
         >
           {preset && (
             <WeatherEditor weather={preset.world.weather} weatherPresets={state.catalog.weather_presets}
+              regions={preset.world.fog_regions}
+              onRegionsChange={items => update(["world", "fog_regions"], items)}
               onChange={weather => update(["world", "weather"], weather)} />
           )}
         </Modal>

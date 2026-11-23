@@ -31,6 +31,35 @@ export type SpawnPoint = {
   yaw: number;
   roll: number;
 };
+export type Sun = { azimuth_deg: number; elevation_deg: number; };
+export type Precipitation = { rain: number; snow: number; };
+export type Surface = { wetness: number; puddles: number; };
+export type Fog = { density: number; distance_m: number; height_falloff: number; };
+export type Scattering = { light: number; mie: number; rayleigh: number; };
+export type Weather = {
+  preset_name: string;
+  sun: Sun;
+  cloudiness: number;
+  wind: number;
+  dust: number;
+  precipitation: Precipitation;
+  surface: Surface;
+  fog: Fog;
+  scattering: Scattering;
+};
+export type FogRegion = {
+  center_m: [number, number, number];
+  radius_m: number;
+  density: number;
+  transition_seconds: number;
+};
+export type RuntimeFogRegion = {
+  region_id: number;
+  center_m: number[];
+  radius_m: number;
+  density: number;
+  deleting: boolean;
+};
 export type MachineConfig = {
   carla: { host: string; port: number; };
   driving_view: { host: string; port: number; timeout: number; };
@@ -70,7 +99,8 @@ export type PresetConfig = {
     load_map: boolean;
     sync_mode: boolean;
     simulation_fps: number;
-    weather: Record<string, string | number>;
+    weather: Weather;
+    fog_regions: FogRegion[];
   };
   ego: {
     role_name: string;
@@ -90,7 +120,6 @@ export type PresetConfig = {
   instructions: Instruction[];
   markers: string[];
 };
-export type Weather = PresetConfig["world"]["weather"];
 export type Telemetry = {
   frame_no: number;
   server_fps: number;
@@ -131,6 +160,7 @@ export type RuntimeState = {
   telemetry: Telemetry | null;
   cameras: PresetConfig["cameras"] | null;
   weather: Weather | null;
+  fog_regions: RuntimeFogRegion[];
   display_layout: DisplayLayout | null;
   vehicle_box: {
     location: { x: number; y: number; z: number; };

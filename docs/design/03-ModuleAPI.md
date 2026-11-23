@@ -17,7 +17,8 @@ src/drisca/
 │   ├── protocol.py           # WorkerEvent / LauncherCommand 判别联合类型与序列化
 │   ├── client.py             # NativeApiClient：原生 WebSocket 客户端
 │   ├── driving_view.py       # 键盘名称到 Unreal FKey 的映射
-│   ├── weather.py            # WeatherConfig 与原生天气 JSON 的转换
+│   ├── weather.py            # 全局天气与原生 weather 载荷转换、命名预设展开
+│   ├── environment.py        # 环境快照、局部球雾状态与环境事件载荷模型
 │   ├── snapshot.py           # 固定二进制快照的 NumPy 解码与位标记
 │   └── tools.py              # 原生 Recorder 信息与回放调用
 ├── storage/                  # SQLite 单库持久化层
@@ -138,7 +139,7 @@ class NativeApiClient:
 
 `ServerInfo` 包含协议版本、服务实例、世界标识和地图名；`ExchangeResult` 包含逐项结果、事件、逐车控制状态、信号状态和 `Snapshot`。普通请求使用 `DrivingViewConfig.timeout`，地图与目录使用 `long_timeout`。原生错误通过带 method、code、message、results 的 `NativeApiError` 暴露。
 
-客户端还提供天气、车辆创建、视图、Recorder 和道路目录的薄方法。`road_graph_all()` 按页取得完整车道图，缓存按世界与采样步长失效。完整原生契约见[原生 WebSocket 接口](./11-NativeAPI.md)。
+客户端还提供环境、车辆创建、视图、Recorder 和道路目录的薄方法。环境方法覆盖全局 get/apply/update 与局部 create/get/list/update/delete，并解析为冻结状态模型。`road_graph_all()` 按页取得完整车道图，缓存按世界与采样步长失效。完整原生契约见[原生 WebSocket 接口](./11-NativeAPI.md)。
 
 `core/snapshot.py` 使用明确的小端 dtype 解码 48 字节头、96 字节车辆记录和 128 字节研究记录；数组持有消息缓冲区并供本地数值计算。连接初始化与每次 exchange 校验协议和快照关联信息。
 

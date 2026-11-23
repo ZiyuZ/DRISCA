@@ -67,7 +67,11 @@ export function ExperimentConfig({ preset, state, update, onWeather, onMapChange
                 <span>
                   {weatherName(String(preset.world.weather.preset_name))}
                 </span>
-                <span className="small">调整参数</span>
+                <span className="small">
+                  {preset.world.fog_regions.length > 0
+                    ? `调整参数 · ${preset.world.fog_regions.length} 处球雾`
+                    : "调整参数"}
+                </span>
               </Button>
             </label>
             <label className="dr-field">

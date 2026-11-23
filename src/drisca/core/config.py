@@ -1,6 +1,7 @@
 """实验配置模型。"""
 
 import json
+import math
 import shutil
 import tomllib
 from datetime import datetime
@@ -318,22 +319,80 @@ class ControlConfig(BaseModel, frozen=True, extra='forbid'):
     wheel: WheelControlConfig = WheelControlConfig()
 
 
-class WeatherConfig(BaseModel, frozen=True, extra='forbid'):
-    preset_name: str = 'Default'  # 如 'ClearNoon', 'WetNoon', 'HardRainNoon'；为 'Custom' 时使用下方参数
-    cloudiness: float = 30.0
-    wetness: float = 80.0
-    precipitation: float = 80.0
-    precipitation_deposits: float = 80.0
-    wind_intensity: float = 20.0
-    dust_storm: float = 0.0
-    sun_azimuth_angle: float = 0.0
-    sun_altitude_angle: float = 45.0
-    fog_density: float = 0.0
-    fog_distance: float = 0.0
-    fog_falloff: float = 0.0
-    scattering_intensity: float = 0.0
-    mie_scattering_scale: float = 0.0
-    rayleigh_scattering_scale: float = 0.0331
+class SunConfig(BaseModel, frozen=True, extra='forbid'):
+    """太阳方位与高度，单位度。"""
+
+    azimuth_deg: float = Field(default=0.0, ge=0, lt=360)
+    elevation_deg: float = Field(default=75.0, ge=-90, le=90)
+
+
+class PrecipitationConfig(BaseModel, frozen=True, extra='forbid'):
+    rain: float = Field(default=0.0, ge=0, le=1)
+    snow: float = Field(default=0.0, ge=0, le=1)
+
+    @field_validator('snow')
+    @classmethod
+    def validate_snow(cls, value: float) -> float:
+        if value != 0:
+            raise ValueError('原生尚未提供雪效资源，snow 只能为 0')
+        return value
+
+
+class SurfaceConfig(BaseModel, frozen=True, extra='forbid'):
+    wetness: float = Field(default=0.0, ge=0, le=1)
+    puddles: float = Field(default=0.0, ge=0, le=1)
+
+
+class FogConfig(BaseModel, frozen=True, extra='forbid'):
+    density: float = Field(default=0.0, ge=0, le=1)  # 直接对应 UE 高度雾密度
+    distance_m: float = Field(default=0.0, ge=0, le=1_000_000)
+    height_falloff: float = Field(default=0.2, ge=0, le=10_000)
+
+
+class ScatteringConfig(BaseModel, frozen=True, extra='forbid'):
+    light: float = Field(default=1.0, ge=0, le=1000)
+    mie: float = Field(default=0.003996, ge=0, le=1000)
+    rayleigh: float = Field(default=0.0331, ge=0, le=1000)
+
+
+class GlobalWeather(BaseModel, frozen=True, extra='forbid'):
+    """全局环境状态。强度为 0 到 1 的无量纲输入，不代表气象测量值。"""
+
+    sun: SunConfig = SunConfig()
+    cloudiness: float = Field(default=0.0, ge=0, le=1)
+    wind: float = Field(default=0.0, ge=0, le=1)
+    dust: float = Field(default=0.0, ge=0, le=1)
+    precipitation: PrecipitationConfig = PrecipitationConfig()
+    surface: SurfaceConfig = SurfaceConfig()
+    fog: FogConfig = FogConfig()
+    scattering: ScatteringConfig = ScatteringConfig()
+
+
+class WeatherConfig(GlobalWeather, frozen=True, extra='forbid'):
+    preset_name: str = 'Default'  # 命名预设启动前展开为完整值；'Custom' 使用本对象中的数值
+
+
+class FogRegionConfig(BaseModel, frozen=True, extra='forbid'):
+    """固定世界空间的球形局部雾，由 worker 在实验启动前创建。"""
+
+    center_m: tuple[float, float, float]
+    radius_m: float = Field(gt=0, le=100_000)
+    density: float = Field(default=0.0, ge=0, le=1)
+    transition_seconds: float = Field(default=0.0, ge=0)
+
+    @field_validator('center_m')
+    @classmethod
+    def validate_center_m(cls, value: tuple[float, float, float]) -> tuple[float, float, float]:
+        if any(not math.isfinite(item) for item in value):
+            raise ValueError('球雾中心必须是有限数值')
+        return value
+
+    @field_validator('transition_seconds')
+    @classmethod
+    def validate_transition_seconds(cls, value: float) -> float:
+        if not math.isfinite(value):
+            raise ValueError('球雾渐入时长必须是有限数值')
+        return value
 
 
 class WorldConfig(BaseModel, frozen=True, extra='forbid'):
@@ -342,6 +401,7 @@ class WorldConfig(BaseModel, frozen=True, extra='forbid'):
     sync_mode: bool = True
     simulation_fps: int = Field(default=60, gt=0)
     weather: WeatherConfig = WeatherConfig()
+    fog_regions: tuple[FogRegionConfig, ...] = ()
 
 
 class EgoVehicleConfig(BaseModel, frozen=True, extra='forbid'):

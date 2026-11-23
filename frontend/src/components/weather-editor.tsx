@@ -1,6 +1,6 @@
 import { NumberInput } from "./number-input";
 import { ChevronDown } from "lucide-react";
-import type { Weather } from "../types/api";
+import type { FogRegion, Weather } from "../types/api";
 import { SharedSelect } from "./shared-select";
 import { Button } from "./ui/button";
 import {
@@ -14,6 +14,8 @@ type Props = {
   weather: Weather;
   weatherPresets: Record<string, Weather>;
   onChange: (weather: Weather) => void;
+  regions?: FogRegion[];
+  onRegionsChange?: (regions: FogRegion[]) => void;
 };
 const presets = [
   ["Default", "默认"],
@@ -43,33 +45,54 @@ const presets = [
 ] as const;
 export const weatherName = (value: string) =>
   presets.find(([key]) => key === value)?.[1] ?? value;
-const primary = [
-  ["cloudiness", "云量 · %", 0, 100, 1],
-  ["precipitation", "降雨 · %", 0, 100, 1],
-  ["wetness", "路面湿度 · %", 0, 100, 1],
-  ["sun_altitude_angle", "太阳高度 · °", -90, 90, 1],
-  ["fog_density", "雾浓度 · %", 0, 100, 1],
-  ["wind_intensity", "风力 · %", 0, 100, 1],
-] as const;
-const extra = [
-  ["precipitation_deposits", "路面积水 · %", 0, 100, 1],
-  ["dust_storm", "沙尘 · %", 0, 100, 1],
-  ["sun_azimuth_angle", "太阳方位角 · °", 0, 360, 1],
-  ["fog_distance", "雾起始距离 · m", 0, 500, 5],
-  ["fog_falloff", "雾衰减", 0, 5, 0.1],
-  ["scattering_intensity", "散射强度", 0, 10, 0.1],
-  ["mie_scattering_scale", "米氏散射", 0, 5, 0.01],
-  ["rayleigh_scattering_scale", "瑞利散射", 0, 5, 0.01],
-] as const;
-type WeatherRow = (typeof primary)[number] | (typeof extra)[number];
-export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
-  const change = (key: string, value: number) => {
-    onChange({ ...weather, [key]: value, preset_name: "Custom" });
-  };
-  const row = ([key, label, min, max, step]: WeatherRow) => {
-    const value = Number(weather[key]);
+
+type Row = {
+  path: string[];
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  percent?: boolean;
+};
+const primary: Row[] = [
+  { path: ["cloudiness"], label: "云量 · %", min: 0, max: 100, step: 1, percent: true },
+  { path: ["precipitation", "rain"], label: "降雨 · %", min: 0, max: 100, step: 1, percent: true },
+  { path: ["surface", "wetness"], label: "路面湿润 · %", min: 0, max: 100, step: 1, percent: true },
+  { path: ["sun", "elevation_deg"], label: "太阳高度 · °", min: -90, max: 90, step: 1 },
+  { path: ["fog", "density"], label: "雾强度 · %", min: 0, max: 100, step: 1, percent: true },
+  { path: ["wind"], label: "风 · %", min: 0, max: 100, step: 1, percent: true },
+];
+const extra: Row[] = [
+  { path: ["surface", "puddles"], label: "路面积水 · %", min: 0, max: 100, step: 1, percent: true },
+  { path: ["dust"], label: "沙尘 · %", min: 0, max: 100, step: 1, percent: true },
+  { path: ["sun", "azimuth_deg"], label: "太阳方位角 · °", min: 0, max: 359, step: 1 },
+  { path: ["fog", "distance_m"], label: "雾起始距离 · m", min: 0, max: 1000000, step: 100 },
+  { path: ["fog", "height_falloff"], label: "雾高度衰减参数", min: 0, max: 10000, step: 0.1 },
+  { path: ["scattering", "light"], label: "光散射参数", min: 0, max: 1000, step: 0.1 },
+  { path: ["scattering", "mie"], label: "米氏散射参数", min: 0, max: 1000, step: 0.001 },
+  { path: ["scattering", "rayleigh"], label: "瑞利散射参数", min: 0, max: 1000, step: 0.001 },
+];
+const numberAt = (source: Weather, path: string[]): number => {
+  let target: unknown = source;
+  for (const key of path) target = (target as Record<string, unknown>)[key];
+  return Number(target);
+};
+const withNumber = (source: Weather, path: string[], value: number): Weather => {
+  const result = structuredClone(source);
+  let target = result as unknown as Record<string, unknown>;
+  for (const key of path.slice(0, -1)) target = target[key] as Record<string, unknown>;
+  target[path[path.length - 1]] = value;
+  return result;
+};
+
+export function WeatherEditor({ weather, weatherPresets, onChange, regions, onRegionsChange }: Props) {
+  const row = ({ path, label, min, max, step, percent }: Row) => {
+    const raw = numberAt(weather, path);
+    const value = percent ? Math.round(raw * 10000) / 100 : raw;
+    const change = (next: number) =>
+      onChange({ ...withNumber(weather, path, percent ? next / 100 : next), preset_name: "Custom" });
     return (
-      <label className="weather-field" key={key}>
+      <label className="weather-field" key={path.join(".")}>
         <span>{label}</span>
         <div className="weather-range">
           <Slider
@@ -79,9 +102,9 @@ export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
             max={max}
             step={step}
             value={[Math.min(max, Math.max(min, value))]}
-            onValueChange={([v]) => change(key, v)}
+            onValueChange={([v]) => change(v)}
           />
-          <NumberInput value={value} onValueChange={(v) => change(key, v)} />
+          <NumberInput value={value} onValueChange={change} />
         </div>
       </label>
     );
@@ -92,9 +115,9 @@ export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
         <span>天气预设</span>
         <SharedSelect
           value={String(weather.preset_name)}
-          options={[...Object.keys(weatherPresets).map(name => [name, weatherName(name)] as const), ["Custom", "自定义"]]}
+          options={[...Object.keys(weatherPresets).map(name => [name, weatherName(name)] as const), ["Custom", "自定义"] as const]}
           onValueChange={(value) =>
-            onChange(value === "Custom" ? { ...weather, preset_name: value } : weatherPresets[value])
+            onChange(value === "Custom" ? { ...weather, preset_name: value } : { ...weatherPresets[value], preset_name: value })
           }
         />
       </label>
@@ -110,6 +133,82 @@ export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
           {extra.map(row)}
         </CollapsibleContent>
       </Collapsible>
+      <p className="weather-note">
+        百分比字段的 0–100 对应原生强度 0–1。雾强度与衰减是控制参数，起始距离不是已校准的能见距离。
+      </p>
+      {regions && onRegionsChange && <FogRegionsEditor regions={regions} onChange={onRegionsChange} />}
     </div>
+  );
+}
+
+function FogRegionsEditor({ regions, onChange }: { regions: FogRegion[]; onChange: (regions: FogRegion[]) => void }) {
+  const update = (index: number, changes: Partial<FogRegion>) =>
+    onChange(regions.map((region, current) => current === index ? { ...region, ...changes } : region));
+  const center = (index: number, axis: number, value: number) => {
+    const region = regions[index];
+    const next = [...region.center_m] as [number, number, number];
+    next[axis] = value;
+    update(index, { center_m: next });
+  };
+  return (
+    <section className="fog-regions">
+      <div className="fog-regions-head">
+        <div>
+          <h3>局部球雾</h3>
+          <p>固定世界坐标的球形区域，实验启动前由驾驶端创建，实验结束随会话清理。</p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => onChange([...regions, { center_m: [0, 0, 0], radius_m: 50, density: 0.5, transition_seconds: 0 }])}
+        >
+          添加区域
+        </Button>
+      </div>
+      {regions.length === 0 && <p className="weather-note">未配置局部球雾。</p>}
+      {regions.map((region, index) => (
+        <div className="fog-region" key={index}>
+          <div className="fog-region-head">
+            <span>区域 {index + 1}</span>
+            <Button variant="ghost" aria-label={`移除区域 ${index + 1}`} onClick={() => onChange(regions.filter((_, current) => current !== index))}>
+              移除
+            </Button>
+          </div>
+          <div className="fog-region-grid">
+            {(["X", "Y", "Z"] as const).map((axis, position) => (
+              <label className="dr-field" key={axis}>
+                <span>中心 {axis} · m</span>
+                <NumberInput
+                  className="input mono"
+                  step="0.1"
+                  value={region.center_m[position]}
+                  onValueChange={value => center(index, position, value)}
+                />
+              </label>
+            ))}
+            <label className="dr-field">
+              <span>半径 · m</span>
+              <NumberInput
+                className="input mono"
+                min="0.1"
+                step="1"
+                value={region.radius_m}
+                onValueChange={value => update(index, { radius_m: value })}
+              />
+            </label>
+            <label className="dr-field">
+              <span>雾强度 · %</span>
+              <NumberInput
+                className="input mono"
+                min="0"
+                max="100"
+                step="1"
+                value={region.density * 100}
+                onValueChange={value => update(index, { density: value / 100 })}
+              />
+            </label>
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }

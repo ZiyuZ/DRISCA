@@ -4,6 +4,12 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, TypeAdapter
 
 from .config import CameraConfig, DisplayLayoutConfig, WeatherConfig
+from .environment import (
+    EnvironmentAppliedPayload,
+    EnvironmentCompletedPayload,
+    EnvironmentReplacedPayload,
+    RegionSnapshot,
+)
 
 
 class WorkerRole(StrEnum):
@@ -56,10 +62,6 @@ class EnabledPayload(BaseModel, frozen=True):
 class UpdateCameraPayload(BaseModel, frozen=True):
     camera_name: Literal['front', 'rear_top', 'rear_left', 'rear_right']
     mount: CameraConfig  # 调整后的安装位姿与视野
-
-
-class SetWeatherPayload(BaseModel, frozen=True):
-    weather: WeatherConfig
 
 
 class ExperimentEventBase(BaseModel, frozen=True):
@@ -170,10 +172,22 @@ class UpdateCameraEvent(ExperimentEventBase, frozen=True):
     payload: UpdateCameraPayload
 
 
-class SetWeatherEvent(ExperimentEventBase, frozen=True):
+class EnvironmentAppliedEvent(ExperimentEventBase, frozen=True):
     kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
-    name: Literal['set_weather'] = 'set_weather'
-    payload: SetWeatherPayload
+    name: Literal['environment_applied'] = 'environment_applied'
+    payload: EnvironmentAppliedPayload
+
+
+class EnvironmentCompletedEvent(ExperimentEventBase, frozen=True):
+    kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
+    name: Literal['environment_completed'] = 'environment_completed'
+    payload: EnvironmentCompletedPayload
+
+
+class EnvironmentReplacedEvent(ExperimentEventBase, frozen=True):
+    kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
+    name: Literal['environment_replaced'] = 'environment_replaced'
+    payload: EnvironmentReplacedPayload
 
 
 class CollisionPayload(BaseModel, frozen=True):
@@ -300,7 +314,9 @@ ExperimentEvent = Annotated[
     | ToggleLightEvent
     | UpdateLayoutEvent
     | UpdateCameraEvent
-    | SetWeatherEvent
+    | EnvironmentAppliedEvent
+    | EnvironmentCompletedEvent
+    | EnvironmentReplacedEvent
     | CollisionEvent
     | LaneInvasionEvent
     | TrafficLightStateChangedEvent
@@ -324,6 +340,7 @@ class WorkerReadyEvent(BaseModel, frozen=True):
     ego_actor_id: int
     ego_type_id: str
     vehicle_box: dict[str, dict[str, float]]
+    fog_regions: tuple[RegionSnapshot, ...] = ()  # 就绪时的实际局部球雾快照
 
 
 class WorkerStatusEvent(BaseModel, frozen=True):

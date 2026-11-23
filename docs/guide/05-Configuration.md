@@ -72,7 +72,8 @@ toggle_reverse = "left_paddle"
 | 分组 | 内容 |
 | --- | --- |
 | `[world]` | 地图名、重载地图、同步模式、世界推进频率 |
-| `[world.weather]` | 天气预设名与自定义天气参数 |
+| `[world.weather]` | 全局天气预设名与完整天气参数 |
+| `[[world.fog_regions]]` | 实验启动前的固定世界空间球雾区域 |
 | `[ego]` | 主车蓝图、角色名、出生点所属地图、限速和初始自动驾驶选项；当前保持 `init_autopilot = false` |
 | `[ego.spawn_point]` | 固定出生位置，六个位姿字段完整填写 |
 | `[cameras.front]` 等 | 每路相机的比例安装位置、角度和 FOV |
@@ -105,7 +106,49 @@ roll = 0.0
 
 ### 天气和限速
 
-`world.weather.preset_name` 选择 CARLA 天气预设，例如 `ClearNoon`。选择 `Custom` 时，编辑同一表中的云量、降雨、积水、风、太阳、雾和散射参数，完整字段见示例。
+`world.weather.preset_name` 选择原生环境目录中的天气预设，例如 `ClearNoon`；实验启动前展开为完整数值。选择 `Custom` 时使用同一表中的数值。强度字段是 0 到 1 的无量纲输入，界面按 0–100 百分比显示；雾密度直接作为 UE 高度雾密度，不使用旧的 0.001 缩放，起始距离和高度衰减是控制参数，不代表已校准的能见距离。雪效尚未实现，`precipitation.snow` 只能为 0。
+
+```toml
+[world.weather]
+preset_name = "Custom"
+cloudiness = 0.3
+wind = 0.2
+dust = 0.0
+
+[world.weather.sun]
+azimuth_deg = 0.0
+elevation_deg = 45.0
+
+[world.weather.precipitation]
+rain = 0.0
+snow = 0.0
+
+[world.weather.surface]
+wetness = 0.0
+puddles = 0.0
+
+[world.weather.fog]
+density = 0.1
+distance_m = 10.0
+height_falloff = 0.2
+
+[world.weather.scattering]
+light = 1.0
+mie = 0.003996
+rayleigh = 0.0331
+```
+
+`world.fog_regions` 保存实验启动前的局部球雾。每个区域由 worker 在驾驶视图启动前创建，实验结束、连接中断或切换地图时清理。中心使用世界坐标米，半径大于 0 且不超过 100000 米，密度为 0 到 1，`transition_seconds` 控制渐入时长。
+
+```toml
+[[world.fog_regions]]
+center_m = [10.0, 20.0, 2.0]
+radius_m = 80.0
+density = 0.8
+transition_seconds = 0.0
+```
+
+旧预设中的 `cloudiness`、`wetness`、`precipitation` 等 0–100 字段和 `fog_density` 已由一次性迁移脚本转换为上述结构：百分比除以 100，旧雾密度乘以 0.001。迁移前的文件备份在 `.local/backup/weather-presets-*`。
 
 `ego.dynamic_speed_limit = false` 时使用 `default_speed_limit`，文件单位为 m/s；设为 `true` 时使用原生快照中的道路限速（m/s），手动驾驶的主车通常为 0。界面以 km/h 展示和输入。
 

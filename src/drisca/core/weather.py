@@ -1,17 +1,28 @@
-"""天气配置与原生 API 载荷之间的转换。"""
+"""全局天气配置与原生环境载荷之间的转换。"""
 
-from drisca.core.config import WeatherConfig
+from typing import Any
+
+from drisca.core.config import GlobalWeather, WeatherConfig
 
 
-def to_payload(config: WeatherConfig) -> dict[str, object]:
-    """命名预设只提交名称，由原生侧取内置完整值；Custom 提交全部数值字段。"""
-    if config.preset_name != 'Custom':
-        return {'preset_name': config.preset_name}
-    return config.model_dump(mode='json')
+def to_payload(config: GlobalWeather) -> dict[str, Any]:
+    """展开为 environment.apply/update 的 weather 对象。"""
+    return config.model_dump(mode='json', exclude={'preset_name'})
 
 
 def from_payload(payload: dict) -> WeatherConfig:
+    """解析目录中的完整天气条目，条目同时带有同名 preset_name。"""
     return WeatherConfig.model_validate(payload)
+
+
+def from_native(payload: dict) -> GlobalWeather:
+    """解析原生 current/target 中的 weather 对象，不含预设名。"""
+    return GlobalWeather.model_validate(payload)
+
+
+def to_config(weather: GlobalWeather, preset_name: str = 'Custom') -> WeatherConfig:
+    """把原生天气值包装为带预设名的配置对象。"""
+    return WeatherConfig.model_validate({**weather.model_dump(mode='json'), 'preset_name': preset_name})
 
 
 def resolve_weather(config: WeatherConfig, presets: dict[str, WeatherConfig]) -> WeatherConfig:

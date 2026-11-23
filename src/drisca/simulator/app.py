@@ -43,6 +43,8 @@ class SimulatorApp:
         self.control_revision = 0
         self.control_mode = ''
         self.invaded_lane_marking = ''
+        self.pending_environment: dict[tuple[int, int], str] = {}
+        self.prepared_regions: set[int] = set()
 
     def run(self) -> None:
         cfg = self.config
@@ -68,6 +70,7 @@ class SimulatorApp:
         api.set_world(cfg.preset.world.simulation_fps)
         ego_actor_id, describe = self._spawn_ego(api)
         self.ego_actor_id = ego_actor_id
+        self._create_fog_regions(api)
         view = api.start_view(
             session_id=cfg.session_id,
             ego_actor_id=ego_actor_id,
@@ -95,14 +98,26 @@ class SimulatorApp:
                 ego_actor_id=ego_actor_id,
                 ego_type_id=str(describe['blueprint']),
                 vehicle_box=describe['bounding_box'],
+                fog_regions=api.environment_list(),
             )
         )
         channel.send_event(WorkerStatusEvent(role=WorkerRole.SIMULATOR, state=WorkerState.RUNNING))
         self._loop(api, channel, writer)
         final = api.stop_experiment(cfg.session_id)
-        for raw in final.get('events') or ():
-            self._emit(channel, raw, command_id=None, source=str(raw['source']))
+        self._forward_raw(channel, final.get('events') or (), None, {})
         channel.send_event(WorkerStatusEvent(role=WorkerRole.SIMULATOR, state=WorkerState.STOPPING))
+
+    def _create_fog_regions(self, api: NativeApiClient) -> None:
+        """在 start_view 之前创建预设球雾，使区域随会话转入控制连接。"""
+        for region in self.config.preset.world.fog_regions:
+            result = api.environment_create(
+                center_m=region.center_m,
+                radius_m=region.radius_m,
+                density=region.density,
+                transition_seconds=region.transition_seconds,
+            )
+            self.prepared_regions.add(result.region_id)
+            logger.info(f'局部球雾已创建：region_id {result.region_id}，半径 {region.radius_m:g} m')
 
     def _spawn_ego(self, api: NativeApiClient) -> tuple[int, dict[str, Any]]:
         ego = self.config.preset.ego
@@ -265,7 +280,7 @@ class SimulatorApp:
 
     def _operation(self, command: LauncherCommand) -> dict[str, Any] | None:
         if isinstance(command, SetWeatherCommand):
-            return {'method': 'scene.set_weather', 'params': to_payload(command.weather)}
+            return {'method': 'environment.apply', 'params': {'weather': to_payload(command.weather)}}
         if isinstance(command, UpdateCameraCommand):
             return {
                 'method': 'driving_view.update',
@@ -317,19 +332,61 @@ class SimulatorApp:
         result: ExchangeResult,
         command_ids: dict[int, str],
     ) -> None:
-        for raw in result.events:
-            request_id = raw.get('request_id')
-            index = raw.get('operation_index')
-            command_id = None
-            if request_id is not None and index is not None and int(request_id) == result.request_id:
-                command_id = command_ids.get(int(index))
-            source = str(raw['source'])
-            if command_id is not None and source == 'model':
-                source = 'launcher'
-            self._emit(channel, raw, command_id=command_id, source=source)
+        self._forward_raw(channel, result.events, result.request_id, command_ids)
         for outcome in result.outcomes:
             if outcome.superseded:
                 logger.info(f'控制请求被跳过：{outcome.error.get("message", "")}')
+
+    def _forward_raw(
+        self,
+        channel: WorkerWSClient,
+        events: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+        request_id: int | None,
+        command_ids: dict[int, str],
+    ) -> None:
+        for raw in events:
+            session_id = str(raw.get('session_id') or '')
+            name = str(raw['name'])
+            payload = raw.get('payload') or {}
+            if not session_id:
+                # 空 session 的外部管理旧事件过滤；本次 worker 在 start_view 前创建
+                # 的准备区域事件保留，按 create 返回的 region_id 精确识别。
+                region_id = payload.get('region_id')
+                prepared = (
+                    name.startswith('environment_')
+                    and region_id is not None
+                    and int(region_id) in self.prepared_regions
+                )
+                if not prepared:
+                    continue
+            elif session_id != self.config.session_id:
+                raise RuntimeError(f'收到会话 {session_id} 的事件，当前会话 {self.config.session_id}')
+            event_request = raw.get('request_id')
+            index = raw.get('operation_index')
+            key = (
+                (int(event_request), int(index)) if event_request is not None and index is not None else None
+            )
+            source = str(raw['source'])
+            command_id = None
+            if name.startswith('environment_'):
+                # request_id 按连接递增，不能跨连接视为唯一。只有当前控制 worker 的
+                # 原生来源 model 事件才与本 worker 的指令关联；管理连接发起的同类
+                # 事件照常记录，但不匹配本 worker 的 command 与未完成操作表。
+                if source == 'model' and key is not None:
+                    if request_id is not None and key[0] == request_id:
+                        command_id = command_ids.get(key[1])
+                    if command_id is None:
+                        command_id = self.pending_environment.get(key)
+                    if name in ('environment_completed', 'environment_replaced'):
+                        self.pending_environment.pop(key, None)
+                    if name == 'environment_applied' and command_id is not None:
+                        if float(payload.get('transition_seconds') or 0) > 0:
+                            self.pending_environment[key] = command_id
+            elif key is not None and request_id is not None and key[0] == request_id:
+                command_id = command_ids.get(key[1])
+            if command_id is not None and source == 'model':
+                source = 'launcher'
+            self._emit(channel, raw, command_id=command_id, source=source)
 
     def _emit(
         self,

@@ -13,6 +13,11 @@ from websockets.exceptions import WebSocketException
 from websockets.sync.client import ClientConnection, connect
 
 from drisca.core.config import DrivingViewConfig
+from drisca.core.environment import (
+    EnvironmentList,
+    EnvironmentSnapshot,
+    RegionSnapshot,
+)
 from drisca.core.snapshot import (
     HEADER_BYTES,
     RESEARCH_RECORD_BYTES,
@@ -187,11 +192,92 @@ class NativeApiClient:
     def catalog(self) -> dict[str, Any]:
         return self.request('scene.catalog', self._world(), timeout=self.long_timeout)
 
-    def get_weather(self) -> dict[str, Any]:
-        return self.request('scene.get_weather', self._world())
+    def environment_get(self) -> EnvironmentSnapshot:
+        return EnvironmentSnapshot.model_validate(self.request('environment.get', self._world()))
 
-    def set_weather(self, weather: dict[str, Any]) -> dict[str, Any]:
-        return self.request('scene.set_weather', {**self._world(), **weather})
+    def environment_list(self) -> tuple[RegionSnapshot, ...]:
+        result = self.request('environment.list', self._world())
+        return EnvironmentList.model_validate(result).regions
+
+    def environment_apply(
+        self, weather: dict[str, Any], transition_seconds: float = 0.0
+    ) -> EnvironmentSnapshot:
+        return EnvironmentSnapshot.model_validate(
+            self.request(
+                'environment.apply',
+                {**self._world(), 'weather': weather, 'transition_seconds': transition_seconds},
+            )
+        )
+
+    def environment_update(
+        self, weather: dict[str, Any], transition_seconds: float = 0.0
+    ) -> EnvironmentSnapshot:
+        return EnvironmentSnapshot.model_validate(
+            self.request(
+                'environment.update',
+                {**self._world(), 'weather': weather, 'transition_seconds': transition_seconds},
+            )
+        )
+
+    def environment_create(
+        self,
+        *,
+        center_m: tuple[float, float, float],
+        radius_m: float,
+        density: float,
+        transition_seconds: float = 0.0,
+    ) -> RegionSnapshot:
+        return RegionSnapshot.model_validate(
+            self.request(
+                'environment.create',
+                {
+                    **self._world(),
+                    'center_m': list(center_m),
+                    'radius_m': radius_m,
+                    'weather': {'fog': {'density': density}},
+                    'transition_seconds': transition_seconds,
+                },
+            )
+        )
+
+    def environment_update_region(
+        self,
+        region_id: int,
+        *,
+        center_m: tuple[float, float, float] | None = None,
+        radius_m: float | None = None,
+        density: float | None = None,
+        transition_seconds: float = 0.0,
+    ) -> RegionSnapshot:
+        params: dict[str, Any] = {
+            **self._world(),
+            'region_id': region_id,
+            'transition_seconds': transition_seconds,
+        }
+        if center_m is not None:
+            params['center_m'] = list(center_m)
+        if radius_m is not None:
+            params['radius_m'] = radius_m
+        if density is not None:
+            params['weather'] = {'fog': {'density': density}}
+        return RegionSnapshot.model_validate(self.request('environment.update', params))
+
+    def environment_region(self, region_id: int) -> RegionSnapshot:
+        return RegionSnapshot.model_validate(
+            self.request('environment.get', {**self._world(), 'region_id': region_id})
+        )
+
+    def environment_delete(self, region_id: int, transition_seconds: float = 0.0) -> RegionSnapshot:
+        return RegionSnapshot.model_validate(
+            self.request(
+                'environment.delete',
+                {
+                    **self._world(),
+                    'region_id': region_id,
+                    'transition_seconds': transition_seconds,
+                },
+            )
+        )
 
     def set_world(self, simulation_fps: int) -> dict[str, Any]:
         return self.request('scene.set_world', {**self._world(), 'simulation_fps': simulation_fps})
@@ -332,6 +418,7 @@ class NativeApiClient:
         time_factor: float = 1.0,
         ignore_hero: bool = False,
     ) -> dict[str, Any]:
+        """回放车辆与传感器；原生固定关闭天气回放，环境由 DRISCA 重启。"""
         return self.request(
             'recorder.replay',
             {

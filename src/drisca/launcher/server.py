@@ -40,7 +40,7 @@ from drisca.core.protocol import (
     parse_worker_event,
 )
 from drisca.core.tools import query_recorder_info, replay_recorder
-from drisca.core.weather import from_payload, to_payload
+from drisca.core.weather import resolve_weather, to_config, to_payload
 from drisca.launcher.commands import COMMANDS, MODELS
 from drisca.launcher.runtime import Runtime
 
@@ -338,6 +338,8 @@ def create_app() -> FastAPI:
 
     @app.post('/api/weather')
     def weather(config: WeatherConfig):
+        if config.preset_name != 'Custom':
+            config = resolve_weather(config, rt().weather_presets)
         if rt().state['phase'] == 'running':
             rt().send(SetWeatherCommand(command_id=uuid4().hex, weather=config))
         else:
@@ -345,8 +347,10 @@ def create_app() -> FastAPI:
             api = rt().api
             if api is None or rt().state['carla_connecting']:
                 raise HTTPException(409, 'CARLA 尚未连接')
-            applied = from_payload(api.set_weather(to_payload(config)))
-            rt().update(weather=applied.model_dump(mode='json'))
+            applied = api.environment_apply(to_payload(config))
+            rt().update(
+                weather=to_config(applied.current.weather, config.preset_name).model_dump(mode='json')
+            )
         return {'ok': True}
 
     @app.get('/api/sessions')

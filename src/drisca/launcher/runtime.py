@@ -28,6 +28,7 @@ from drisca.core.config import (
     load_machine_config,
     write_run_config,
 )
+from drisca.core.environment import RegionSnapshot
 from drisca.core.paths import resolve_db_path
 from drisca.core.protocol import (
     LogEvent,
@@ -40,7 +41,7 @@ from drisca.core.protocol import (
     WorkerStatusEvent,
     dump_launcher_command,
 )
-from drisca.core.weather import from_payload, to_payload
+from drisca.core.weather import from_native, from_payload, resolve_weather, to_config, to_payload
 from drisca.launcher.commands import MODELS
 from drisca.launcher.unreal import launch_arguments
 from drisca.storage.db import StorageDB
@@ -89,6 +90,7 @@ class Runtime:
             'telemetry': None,
             'cameras': None,
             'weather': None,
+            'fog_regions': [],
             'display_layout': None,
             'vehicle_box': None,
             'error': None,
@@ -319,6 +321,7 @@ class Runtime:
         self.weather_presets = {
             str(item['preset_name']): from_payload(item) for item in catalog['weather_presets']
         }
+        environment = api.environment_get()
         self.update(
             catalog={
                 'maps': sorted(str(name) for name in catalog['maps']),
@@ -329,8 +332,20 @@ class Runtime:
                     name: config.model_dump(mode='json') for name, config in self.weather_presets.items()
                 },
             },
-            weather=from_payload(api.get_weather()).model_dump(mode='json'),
+            weather=to_config(environment.current.weather).model_dump(mode='json'),
+            fog_regions=[self.region_state(region) for region in api.environment_list()],
         )
+
+    @staticmethod
+    def region_state(region: RegionSnapshot) -> dict[str, Any]:
+        current = region.current
+        return {
+            'region_id': region.region_id,
+            'center_m': list(current.center_m),
+            'radius_m': current.radius_m,
+            'density': current.weather.fog.density,
+            'deleting': region.deleting,
+        }
 
     def load_world(self, map_name: str) -> None:
         api = self._require_api()
@@ -352,8 +367,10 @@ class Runtime:
         if world_cfg.load_map or current.rsplit('/', 1)[-1] != world_cfg.map_name.rsplit('/', 1)[-1]:
             api.load_map(world_cfg.map_name)
             self.refresh_world()
-        applied = from_payload(api.set_weather(to_payload(world_cfg.weather)))
-        self.update(weather=applied.model_dump(mode='json'))
+        applied = api.environment_apply(to_payload(world_cfg.weather))
+        self.update(
+            weather=to_config(applied.current.weather, world_cfg.weather.preset_name).model_dump(mode='json')
+        )
 
     def reset_scene(self) -> None:
         self._require_api().clear_actors()
@@ -482,6 +499,7 @@ class Runtime:
                 cameras=cfg.preset.cameras.model_dump(mode='json'),
                 display_layout=cfg.machine.display.layout.model_dump(mode='json'),
                 weather=cfg.preset.world.weather.model_dump(mode='json'),
+                fog_regions=[],
             )
             self.lifecycle('session_start')
             self.update(world_loading=True)
@@ -582,6 +600,7 @@ class Runtime:
                 active_run=None,
                 telemetry=None,
                 vehicle_box=None,
+                fog_regions=[],
             )
         if reset_error is not None:
             raise reset_error
@@ -620,6 +639,7 @@ class Runtime:
                 phase='stopping' if self.stop_requested.is_set() else 'running',
                 worker_state='stopping' if self.stop_requested.is_set() else 'running',
                 vehicle_box=event.vehicle_box,
+                fog_regions=[self.region_state(region) for region in event.fog_regions],
             )
         elif isinstance(event, WorkerStatusEvent):
             self.update(worker_state=event.state.value)
@@ -650,10 +670,36 @@ class Runtime:
                 self.update(cameras=cameras)
             elif item['name'] == 'update_layout':
                 self.update(display_layout=item['payload'])
-            elif item['name'] == 'set_weather':
-                weather = from_payload(item['payload']['weather'])
-                self.update(weather=weather.model_dump(mode='json'))
+            elif item['name'].startswith('environment_'):
+                self._apply_environment_event(item['name'], item['payload'])
             self.event(item)
+
+    def _apply_environment_event(self, name: str, payload: dict[str, Any]) -> None:
+        region_id = payload.get('region_id')
+        entity = payload.get('target') if name == 'environment_applied' else payload.get('current')
+        state = entity or {}
+        if region_id is None:
+            weather = state.get('weather')
+            if weather is not None:
+                self.update(weather=to_config(from_native(weather)).model_dump(mode='json'))
+            return
+        regions = {int(item['region_id']): item for item in self.state['fog_regions']}
+        operation = payload.get('operation')
+        duration = float(payload.get('transition_seconds') or 0)
+        removed = (name == 'environment_completed' and operation == 'delete') or (
+            name == 'environment_applied' and operation == 'delete' and duration == 0
+        )
+        if removed:
+            regions.pop(int(region_id), None)
+        else:
+            regions[int(region_id)] = {
+                'region_id': int(region_id),
+                'center_m': list(state.get('center_m') or ()),
+                'radius_m': state.get('radius_m', 0.0),
+                'density': (((state.get('weather') or {}).get('fog')) or {}).get('density', 0.0),
+                'deleting': bool(payload.get('deleting')),
+            }
+        self.update(fog_regions=[regions[key] for key in sorted(regions)])
 
     def execute(self, instruction) -> None:
         params: Any = MODELS[instruction.command].model_validate(instruction.params)
@@ -664,9 +710,8 @@ class Runtime:
             self.send(SetTakeoverCommand(command_id=command_id, enabled=params.enabled))
             self.speak(params.speech, command_id)
         elif instruction.command == 'weather':
-            self.send(
-                SetWeatherCommand(command_id=command_id, weather=WeatherConfig(preset_name=params.preset))
-            )
+            weather = resolve_weather(WeatherConfig(preset_name=params.preset), self.weather_presets)
+            self.send(SetWeatherCommand(command_id=command_id, weather=weather))
         elif instruction.command == 'speech':
             self.speak(params.text, command_id)
 

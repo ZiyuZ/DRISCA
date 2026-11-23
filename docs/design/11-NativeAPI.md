@@ -29,7 +29,7 @@ batch 按顺序提交多项操作，仅返回 JSON；exchange 提交同样的 op
 异步世界的 FixedDeltaSeconds 保持未设置，仿真时间来自当前世界的 GetTimeSeconds，与 IMU/GNSS 同源。simulation_fps 控制物理子步最大间隔，子步数覆盖最长 0.2 秒帧；例如 60 Hz 对应最多 12 个子步。该设置维持低帧率时的物理时间推进，实际画面与交换频率由运行负载决定。
 
 ```json
-{"id":20,"method":"exchange","params":{"world_id":1,"session_id":"session-id","operations":[{"method":"scene.set_weather","params":{"preset_name":"ClearNoon"}}]}}
+{"id":20,"method":"exchange","params":{"world_id":1,"session_id":"session-id","operations":[{"method":"environment.update","params":{"weather":{"cloudiness":0.5},"transition_seconds":3}}]}}
 ```
 
 格式错误直接报错，执行错误保留此前成功操作，后续操作标记 skipped。过期控制的 skipped/control_superseded 是可识别结果，客户端刷新模式后重新决策。发生协议漂移、非法快照、连接中断或事件队列溢出时，实验按失败路径收尾。
@@ -104,7 +104,8 @@ Python 使用显式 dtype 和 numpy.frombuffer，研究记录按上表偏移解�
 | 分组 | 方法 |
 | --- | --- |
 | 服务 | hello、server.status |
-| 场景 | scene.catalog、scene.load_map、scene.set_world、scene.clear_actors、scene.get_weather、scene.set_weather |
+| 场景 | scene.catalog、scene.load_map、scene.set_world、scene.clear_actors |
+| 环境 | environment.get、environment.apply、environment.update、environment.create、environment.list、environment.delete |
 | 车辆 | vehicle.spawn、vehicle.describe、vehicle.destroy、vehicle.set_mode、vehicle.apply_control、vehicle.set_lights |
 | 视图 | driving_view.start、driving_view.update、driving_view.get_config、driving_view.stop |
 | 道路 | road.query、scene.road_graph、scene.road_junctions、scene.road_signals |
@@ -112,7 +113,45 @@ Python 使用显式 dtype 和 numpy.frombuffer，研究记录按上表偏移解�
 | 录像 | recorder.start、recorder.stop、recorder.info、recorder.replay |
 | 实验 | experiment.stop |
 
-天气命名预设代表完整内置值，Custom 提交完整参数。相机、镜面与键盘参数沿用配置模型。道路与信号目录使用独立请求，在实验准备时获取；运行期信号与车辆状态按完整帧返回。
+环境接口取代旧的 scene.get_weather、scene.set_weather 与 RPC 天气写入，旧入口返回 unsupported。相机、镜面与键盘参数沿用配置模型。道路与信号目录使用独立请求，在实验准备时获取；运行期信号与车辆状态按完整帧返回。
+
+## 环境控制
+
+原生子系统持有唯一的全局 current/target 与过渡时钟，直接驱动天空、光照、雾和降水。`environment.apply` 提交完整全局 weather，`environment.update` 提交部分字段；嵌套对象同样部分更新，未给出的字段沿用原目标。`transition_seconds` 为非负有限秒数，默认 0，按世界仿真时钟插值。新命令从当前值向合并目标重新开始本次过渡，太阳方位走最短弧，恰好 180 度时正向。
+
+全局 weather 字段：
+
+| 字段 | 范围或单位 | 含义 |
+| --- | --- | --- |
+| sun.azimuth_deg | [0, 360) 度 | 太阳方位 |
+| sun.elevation_deg | [-90, 90] 度 | 太阳高度 |
+| cloudiness | [0, 1] | 云量强度 |
+| wind | [0, 1] | 视觉风，不施加车辆侧向力 |
+| dust | [0, 1] | 尘暴效果输入 |
+| precipitation.rain | [0, 1] | 现有降雨资源强度 |
+| precipitation.snow | 仅 0 | 非零返回 unsupported |
+| surface.wetness | [0, 1] | 路面湿润外观 |
+| surface.puddles | [0, 1] | 已有材质积水强度 |
+| fog.density | [0, 1] | 直接作为 UE 高度雾密度，不使用 0.001 映射 |
+| fog.distance_m | [0, 1000000] 米 | 高度雾起始距离 |
+| fog.height_falloff | [0, 10000] | UE 高度雾衰减参数 |
+| scattering.light | [0, 1000] | 太阳光体积散射强度 |
+| scattering.mie | [0, 1000] | 大气 Mie 散射缩放 |
+| scattering.rayleigh | [0, 1000] | 大气 Rayleigh 散射缩放 |
+
+以上共 14 项功能字段；`precipitation.snow` 固定为 0，是尚未实现的雪效占位，不计入当前功能字段。
+
+范围是协议输入范围，效果未做能见距离或降水量的气象标定。`environment.get` 不带 region_id 时返回 `{region_id: null, current: {weather: ...}, target: {weather: ...}, remaining_seconds, deleting: false}`。
+
+局部区域为固定世界空间球雾。`environment.create` 接收 center_m（米）、radius_m（大于 0 且不超过 100000 米）、weather.fog.density 和可选的 transition_seconds；局部雨雪与地表通道返回 unsupported。get、update、delete 使用 region_id，list 返回 regions。current 和 target 使用 `{center_m, radius_m, weather: {fog: {density}}}`。密度 1 对应 UE 径向消光 2，高度消光固定为 0；球雾采用原生径向分布与光学叠加，重叠可以更浓，不承诺 max 融合。delete 可渐隐，期间保持 deleting 并拒绝再次修改。
+
+同一个 worker 控制连接在 `driving_view.start` 之前创建的区域随 start 转入会话；管理连接创建的准备区域仍归原连接。实验停止、控制连接异常和地图加载清理相应区域。地图加载同时把全局环境重置为新地图默认值，下一实验由 Python 再次提交初始环境。
+
+`scene.catalog` 的 weather_presets 使用新全局字段加同级 preset_name；Default 展开为明确全值，不再使用 -1 哨兵。Python 在提交前把命名预设展开为完整 weather。
+
+环境事件为 environment_applied、environment_completed、environment_replaced，外层 native 元数据与其他事件一致。全局事件的 region_id 为 null，局部为数字。applied 带 operation、previous、transition_seconds；completed 沿用 operation；replaced 记录旧 current/target/operation 和新 request_id、operation_index、operation、target。完成与替换事件可能跨 exchange 到达，客户端按请求关联维护未完成操作，终态释放。零时长操作只产生 applied。实验停止时被中断的全局过渡产生 reason=session_ended 的 replaced，且不带 new_*。
+
+普通车辆录像的 recorder.replay 关闭 ReplayWeather，车辆回放不写回环境；请求 replay_weather=true 被拒绝。DRISCA 的全局与局部环境由自身初始配置和事件记录重现。
 
 ## 车道图与信号
 

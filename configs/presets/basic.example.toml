@@ -13,22 +13,42 @@ load_map = false
 sync_mode = true
 simulation_fps = 60
 
+# preset_name 可改为目录中的预设名（如 "ClearNoon"），启动前展开为完整值；
+# 修改任意参数后应改为 "Custom"，此时使用下方数值。
 [world.weather]
-preset_name = "ClearNoon"
-cloudiness = 30.0
-wetness = 80.0
-precipitation = 80.0
-precipitation_deposits = 80.0
-wind_intensity = 20.0
-dust_storm = 0.0
-sun_azimuth_angle = 0.0
-sun_altitude_angle = 45.0
-fog_density = 0.0
-fog_distance = 0.0
-fog_falloff = 0.0
-scattering_intensity = 0.0
-mie_scattering_scale = 0.0
-rayleigh_scattering_scale = 0.0331
+preset_name = "Custom"
+cloudiness = 0.1
+wind = 0.1
+dust = 0.0
+
+[world.weather.sun]
+azimuth_deg = 0.0
+elevation_deg = 45.0
+
+[world.weather.precipitation]
+rain = 0.0
+snow = 0.0
+
+[world.weather.surface]
+wetness = 0.0
+puddles = 0.0
+
+[world.weather.fog]
+density = 0.0
+distance_m = 0.0
+height_falloff = 0.2
+
+[world.weather.scattering]
+light = 1.0
+mie = 0.003996
+rayleigh = 0.0331
+
+# 初始局部球雾，可重复添加。中心为世界坐标米，密度 0 到 1。
+# [[world.fog_regions]]
+# center_m = [10.0, 20.0, 2.0]
+# radius_m = 80.0
+# density = 0.8
+# transition_seconds = 0.0
 
 [ego]
 role_name = "hero"

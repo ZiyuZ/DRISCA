@@ -133,7 +133,7 @@ class EventRow:
     frame_no: int | None            # 世界帧号（与 data.frame_no 对齐；launcher 自身启停事件为 None）
     timestamp: float               # 事件发生时的 time.time() 时间戳
     kind: str                       # EventKind 取值 ('operator_action' | 'worker_status' | 'run_lifecycle' | 'sensor' | 'custom_event')
-    name: str                       # 具体事件名称，如 'toggle_takeover', 'set_weather', 'session_start'
+    name: str                       # 具体事件名称，如 'toggle_takeover', 'environment_applied', 'session_start'
     source: str                     # 触发来源：'wheel' | 'keyboard' | 'launcher' | 'model' | 'sensor' | 'system'
     payload_json: str               # 结构化事件负载的 JSON 文本
 ```

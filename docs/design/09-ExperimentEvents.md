@@ -24,8 +24,51 @@ class UpdateCameraPayload(BaseModel, frozen=True):
     mount: CameraConfig   # 调整后的安装位姿与视野
 
 
-class SetWeatherPayload(BaseModel, frozen=True):
-    weather: WeatherConfig
+class GlobalWeatherState(BaseModel, frozen=True):
+    weather: GlobalWeather
+
+
+class EnvironmentRegionState(BaseModel, frozen=True):
+    center_m: tuple[float, float, float]
+    radius_m: float
+    weather: RegionWeatherState  # 当前仅为 fog.density
+
+
+EnvironmentState = GlobalWeatherState | EnvironmentRegionState
+
+
+class EnvironmentAppliedPayload(BaseModel, frozen=True):
+    region_id: int | None  # 全局为 None，局部为区域编号
+    current: EnvironmentState
+    target: EnvironmentState
+    remaining_seconds: float
+    deleting: bool
+    operation: Literal['apply', 'update', 'create', 'delete']
+    previous: EnvironmentState
+    transition_seconds: float
+
+
+class EnvironmentCompletedPayload(BaseModel, frozen=True):
+    region_id: int | None
+    current: EnvironmentState
+    target: EnvironmentState
+    remaining_seconds: float
+    deleting: bool
+    operation: Literal['apply', 'update', 'create', 'delete']
+
+
+class EnvironmentReplacedPayload(BaseModel, frozen=True):
+    region_id: int | None
+    current: EnvironmentState
+    target: EnvironmentState
+    remaining_seconds: float
+    deleting: bool
+    operation: Literal['apply', 'update', 'create', 'delete']  # 被替换的旧操作
+    new_request_id: int | None = None
+    new_operation_index: int | None = None
+    new_operation: Literal['apply', 'update', 'create', 'delete'] | None = None
+    new_target: EnvironmentState | None = None
+    reason: str | None = None  # 实验停止时为 session_ended，此时不带 new_* 字段
 
 
 class NativeEventRef(BaseModel, frozen=True):
@@ -117,10 +160,22 @@ class UpdateCameraEvent(ExperimentEventBase, frozen=True):
     payload: UpdateCameraPayload
 
 
-class SetWeatherEvent(ExperimentEventBase, frozen=True):
+class EnvironmentAppliedEvent(ExperimentEventBase, frozen=True):
     kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
-    name: Literal['set_weather'] = 'set_weather'
-    payload: SetWeatherPayload
+    name: Literal['environment_applied'] = 'environment_applied'
+    payload: EnvironmentAppliedPayload
+
+
+class EnvironmentCompletedEvent(ExperimentEventBase, frozen=True):
+    kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
+    name: Literal['environment_completed'] = 'environment_completed'
+    payload: EnvironmentCompletedPayload
+
+
+class EnvironmentReplacedEvent(ExperimentEventBase, frozen=True):
+    kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
+    name: Literal['environment_replaced'] = 'environment_replaced'
+    payload: EnvironmentReplacedPayload
 
 
 class CollisionPayload(BaseModel, frozen=True):
@@ -165,7 +220,9 @@ ExperimentEvent = Annotated[
     | ToggleLightEvent
     | UpdateLayoutEvent
     | UpdateCameraEvent
-    | SetWeatherEvent
+    | EnvironmentAppliedEvent
+    | EnvironmentCompletedEvent
+    | EnvironmentReplacedEvent
     | CollisionEvent
     | LaneInvasionEvent
     | CustomExperimentEvent,
@@ -197,5 +254,12 @@ ExperimentEvent = Annotated[
 | traffic_light_group_frozen | 灯组冻结变化，保留组、控制器和冻结前后状态 |
 | traffic_light_group_reset | 灯组重置，保留受影响身份与冻结前后状态 |
 | traffic_light_all_frozen | 全部灯组冻结，保留受影响组、控制器和各组前后状态 |
+| environment_applied | 环境命令开始生效，保留 region_id、current/target、previous、operation、transition_seconds |
+| environment_completed | 过渡完成，保留 region_id、current/target 和原 operation |
+| environment_replaced | 新命令中断未完成过渡，保留旧 current/target/operation 和新请求关联、操作与目标 |
+
+环境事件的全局 region_id 为 null，局部为数字。全局实体载荷为 `{weather: ...}`，局部实体为 `{center_m, radius_m, weather: {fog: {density}}}`。零时长操作只产生 applied。实验停止时被中断的全局过渡产生 reason=session_ended 的 replaced，不带 new_request_id、new_operation_index、new_operation 与 new_target。完成和替换事件可能跨 exchange 到达，worker 按请求关联维护实验内未完成的环境操作，终态时释放；不建立通用恢复框架。
+
+worker 对空 session_id 的事件只保留本次准备区域的事件，按 worker 创建时返回的 region_id 精确识别；这些事件保留原生 event_id、帧、仿真时间与请求关联，不补写 session_id。其余空 session 的管理端旧事件不写入本次实验。实验开始前的初始天气与区域配置仍保存在 RunConfig。环境事件只有来源为当前控制 worker（model）时才与本 worker 的 command_id 和未完成操作关联；request_id 按连接递增，不能跨连接视为唯一。管理连接发起的环境事件照常记录，但不匹配本 worker 指令。键盘、传感器等既有事件的关联语义不变。
 
 操作者命令通过本次 exchange 的 request_id 与 operation_index 回填 command_id；只有实际命中命令关联时才将 worker 的 model 来源映射为 launcher。键盘和传感器保留原始来源。当前自动驾驶算法尚未实现，P 请求仍记录，启用操作明确报错并保持当前人工驾驶。正常自动相位由帧快照记录，操作者信号调整按一次操作记录一次事件。
