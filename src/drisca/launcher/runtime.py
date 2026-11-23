@@ -33,6 +33,7 @@ from drisca.core.paths import resolve_db_path
 from drisca.core.protocol import (
     LogEvent,
     LogLevel,
+    SetAutopilotCommand,
     SetTakeoverCommand,
     SetWeatherCommand,
     StopCommand,
@@ -455,8 +456,6 @@ class Runtime:
             raise RuntimeError('原生接口尚未连接')
         self.worker_error = None
         try:
-            if preset.ego.init_autopilot:
-                raise RuntimeError('自动驾驶尚未实现，请在预设中关闭启动即自动驾驶')
             for instruction in preset.instructions:
                 MODELS[instruction.command].model_validate(instruction.params)
             problem = self.spawn_point_problem(preset)
@@ -709,8 +708,8 @@ class Runtime:
         params: Any = MODELS[instruction.command].model_validate(instruction.params)
         command_id = uuid4().hex
         if instruction.command == 'autopilot':
-            raise RuntimeError('自动驾驶尚未实现，无法提交该指令')
-        if instruction.command == 'takeover':
+            self.send(SetAutopilotCommand(command_id=command_id, enabled=params.enabled))
+        elif instruction.command == 'takeover':
             self.send(SetTakeoverCommand(command_id=command_id, enabled=params.enabled))
             self.speak(params.speech, command_id)
         elif instruction.command == 'weather':

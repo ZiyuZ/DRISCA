@@ -29,13 +29,13 @@ from drisca.core.protocol import (
 )
 from drisca.core.weather import to_payload
 from drisca.simulator.events import map_event
-from drisca.simulator.state import project_snapshot, research_ready
+from drisca.simulator.state import DrivingState, project_snapshot, research_ready
 from drisca.simulator.ws_client import WorkerWSClient
 from drisca.storage.writer import BatchDataWriter
+from drisca.traffic import AutopilotController, RoadGraph, SignalTracker
 
 SAMPLE_INTERVAL = 1 / 20
 TELEMETRY_INTERVAL = 1 / 25
-AUTOPILOT_UNAVAILABLE = '自动驾驶尚未实现：原生接口只支持人工驾驶与外部控制'
 
 
 class SimulatorApp:
@@ -48,11 +48,14 @@ class SimulatorApp:
         self.invaded_lane_marking = ''
         self.pending_environment: dict[tuple[int, int], str] = {}
         self.prepared_regions: set[int] = set()
+        self.autopilot: AutopilotController | None = None
+        self.last_driving: DrivingState | None = None
+        self.last_traffic_lights: tuple[dict[str, Any], ...] = ()
+        self._pending_mode_toggle = False
+        self._pending_init_autopilot = run_config.preset.ego.init_autopilot
 
     def run(self) -> None:
         cfg = self.config
-        if cfg.preset.ego.init_autopilot:
-            raise RuntimeError(f'{AUTOPILOT_UNAVAILABLE}，预设要求启动即自动驾驶')
         with ExitStack() as stack:
             channel = WorkerWSClient(cfg.launcher_ws_url)
             channel.start()
@@ -73,6 +76,7 @@ class SimulatorApp:
         api.set_world(cfg.preset.world.simulation_fps)
         ego_actor_id, describe = self._spawn_ego(api)
         self.ego_actor_id = ego_actor_id
+        self._init_autopilot(api)
         self._create_fog_regions(api)
         view = api.start_view(
             session_id=cfg.session_id,
@@ -109,6 +113,21 @@ class SimulatorApp:
         final = api.stop_experiment(cfg.session_id)
         self._forward_raw(channel, final.get('events') or (), None, {})
         channel.send_event(WorkerStatusEvent(role=WorkerRole.SIMULATOR, state=WorkerState.STOPPING))
+
+    def _init_autopilot(self, api: NativeApiClient) -> None:
+        """从原生接口加载道路图与信号灯映射，构造主车自研自动驾驶控制器。"""
+        raw_graph = api.road_graph_all(sampling_step=2.0)
+        raw_signals = api.road_signals()
+        graph = RoadGraph.from_native(raw_graph)
+        signals = SignalTracker.from_native(raw_signals, graph)
+        ego = self.config.preset.ego
+        self.autopilot = AutopilotController(
+            graph,
+            signals,
+            default_speed_limit_mps=ego.default_speed_limit,
+            dynamic_speed_limit=ego.dynamic_speed_limit,
+        )
+        logger.info(f'自研自动驾驶控制器已初始化：车道数 {int(raw_graph.get("lane_count", 0))}')
 
     def _create_fog_regions(self, api: NativeApiClient) -> None:
         """在 start_view 之前创建预设球雾，使区域随会话转入控制连接。"""
@@ -184,10 +203,53 @@ class SimulatorApp:
             operations, command_ids = self._operations(channel.poll_commands())
             if not self.running and not operations:
                 break
+            mode_changed_in_batch = any(op.get('method') == 'vehicle.set_mode' for op in operations)
+            if self.running and not mode_changed_in_batch:
+                if self._pending_init_autopilot:
+                    self._pending_init_autopilot = False
+                    init_op = self._external_operation()
+                    if init_op is not None:
+                        operations.append(init_op)
+                        mode_changed_in_batch = True
+                elif self._pending_mode_toggle:
+                    self._pending_mode_toggle = False
+                    toggle_op = (
+                        self._manual_operation()
+                        if self.control_mode == 'external'
+                        else self._external_operation()
+                    )
+                    if toggle_op is not None:
+                        operations.append(toggle_op)
+                        mode_changed_in_batch = True
+            if (
+                self.running
+                and not mode_changed_in_batch
+                and self.control_mode == 'external'
+                and self.autopilot is not None
+                and self.last_driving is not None
+            ):
+                dt = (
+                    max(1e-3, 1.0 / self.last_driving.server_fps)
+                    if self.last_driving.server_fps > 0
+                    else SAMPLE_INTERVAL
+                )
+                control = self.autopilot.step(
+                    x=self.last_driving.location[0],
+                    y=self.last_driving.location[1],
+                    yaw_deg=self.last_driving.rotation[1],
+                    speed_mps=self.last_driving.speed,
+                    dt=dt,
+                    road_id=self.last_driving.road_id,
+                    lane_id=self.last_driving.lane_id,
+                    road_speed_limit_mps=self.last_driving.speed_limit,
+                    traffic_lights=self.last_traffic_lights,
+                )
+                operations.append(control.to_operation(self.ego_actor_id, self.control_revision))
             deadline = time.monotonic() + SAMPLE_INTERVAL
             started = time.monotonic()
             result = api.exchange(operations, session_id=cfg.session_id)
             exchange_ms.append((time.monotonic() - started) * 1000)
+            self.last_traffic_lights = result.traffic_lights
             self._apply_control_state(result.control_state)
             self._forward_events(channel, result, command_ids)
             if result.frame_no != last_frame:
@@ -202,6 +264,7 @@ class SimulatorApp:
                     simulator_fps=loop_frames / elapsed if elapsed > 0 else 0.0,
                     invaded_lane_marking=self.invaded_lane_marking,
                 )
+                self.last_driving = driving
                 snapshot = result.snapshot
                 stamp = (snapshot.frame_no, snapshot.simulation_time_us, snapshot.wall_time_us)
                 if first_snapshot is None:
@@ -337,10 +400,23 @@ class SimulatorApp:
             return self._manual_operation()
         if isinstance(command, SetAutopilotCommand):
             if command.enabled:
-                logger.error(f'{AUTOPILOT_UNAVAILABLE}，自动驾驶指令已拒绝，实验继续进行')
-                return None
+                return self._external_operation()
             return self._manual_operation()
         raise ValueError(f'未知的驾驶端命令：{command}')
+
+    def _external_operation(self) -> dict[str, Any] | None:
+        if self.control_mode == 'external':
+            logger.info('主车已处于自动驾驶，无需切换控制模式')
+            return None
+        return {
+            'method': 'vehicle.set_mode',
+            'params': {
+                'actor_id': self.ego_actor_id,
+                'mode': 'external',
+                'controller': 'python',
+                'expected_control_revision': self.control_revision,
+            },
+        }
 
     def _manual_operation(self) -> dict[str, Any] | None:
         if self.control_mode == 'manual':
@@ -362,8 +438,11 @@ class SimulatorApp:
         for item in control_state or ():
             if int(item.get('actor_id', 0)) != self.ego_actor_id:
                 continue
+            new_mode = str(item.get('mode', ''))
+            if new_mode != self.control_mode and self.autopilot is not None:
+                self.autopilot.reset()
             self.control_revision = int(item.get('revision', 0))
-            self.control_mode = str(item.get('mode', ''))
+            self.control_mode = new_mode
 
     def _forward_events(
         self,
@@ -437,7 +516,8 @@ class SimulatorApp:
     ) -> None:
         event = map_event(raw, command_id=command_id, source=source)
         if event.name == 'driver_request':
-            logger.error(f'{AUTOPILOT_UNAVAILABLE}，驾驶人请求切换自动化，当前模式保持不变')
+            self._pending_mode_toggle = True
+            logger.info('收到驾驶人自动驾驶切换请求，下一交换帧执行模式切换')
         if event.name == 'lane_invasion':
             markings = (raw.get('payload') or {}).get('markings') or ()
             self.invaded_lane_marking = ', '.join(str(item) for item in markings)

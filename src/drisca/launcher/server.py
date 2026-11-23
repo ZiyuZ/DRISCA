@@ -289,8 +289,6 @@ def create_app() -> FastAPI:
         if rt().state['carla_connecting'] or not rt().state['carla_connected']:
             raise HTTPException(409, 'CARLA 尚未连接')
         config = load_preset(safe_name(request.preset_name))
-        if config.ego.init_autopilot:
-            raise HTTPException(409, '自动驾驶尚未实现，请在预设中关闭启动即自动驾驶')
         problem = rt().spawn_point_problem(config)
         if problem is not None:
             raise HTTPException(409, problem)
@@ -338,8 +336,6 @@ def create_app() -> FastAPI:
         instruction = next((item for item in cfg.preset.instructions if item.id == instruction_id), None)
         if instruction is None:
             raise HTTPException(404, '指令不存在')
-        if instruction.command == 'autopilot':
-            raise HTTPException(409, '自动驾驶尚未实现，无法执行该指令')
         rt().background(rt().execute, instruction)
         return {'ok': True}
 
