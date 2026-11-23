@@ -1,14 +1,17 @@
-"""单车自动驾驶组合控制器。"""
+"""单车自动驾驶组合控制器（支持跟驰与安全换道）。"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
+from .idm import IDMModel
+from .lane_change import LaneChangeDecider
 from .lateral import PurePursuitController
 from .longitudinal import SpeedPIDController
 from .planner import LocalRoutePlanner
 from .road_graph import RoadGraph
+from .scene import TrafficScene
 from .signals import SignalTracker
 
 
@@ -42,7 +45,7 @@ class VehicleControl:
 
 
 class AutopilotController:
-    """组合车道图、局部路径规划、横向转向、纵向速度与信号灯响应的单车自动驾驶控制器。"""
+    """组合车道图、局部路径规划、横向转向、纵向速度、IDM 跟驰、换道与信号灯响应。"""
 
     def __init__(
         self,
@@ -51,19 +54,27 @@ class AutopilotController:
         *,
         default_speed_limit_mps: float = 33.33,
         dynamic_speed_limit: bool = False,
+        speed_factor: float = 1.0,
+        enable_lane_change: bool = False,
         random_seed: int | None = None,
     ) -> None:
+        self._graph = graph
         self._planner = LocalRoutePlanner(graph, random_seed=random_seed)
         self._lateral = PurePursuitController()
         self._longitudinal = SpeedPIDController()
+        self._idm = IDMModel()
+        self._lane_change = LaneChangeDecider() if enable_lane_change else None
         self._signals = signals
         self._default_speed_limit_mps = default_speed_limit_mps
         self._dynamic_speed_limit = dynamic_speed_limit
+        self._speed_factor = speed_factor
 
     def reset(self) -> None:
         self._planner.reset()
         self._lateral.reset()
         self._longitudinal.reset()
+        if self._lane_change is not None:
+            self._lane_change.reset()
 
     def step(
         self,
@@ -77,8 +88,10 @@ class AutopilotController:
         lane_id: int | None,
         road_speed_limit_mps: float,
         traffic_lights: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+        scene: TrafficScene | None = None,
+        self_actor_id: int = 0,
     ) -> VehicleControl:
-        """根据当前车辆状态与实时信号灯计算本步控制量。"""
+        """根据当前车辆状态、周边车辆场景与实时信号灯计算本步控制量。"""
         path = self._planner.update(x, y, yaw_deg, road_id=road_id, lane_id=lane_id)
         if path is None:
             return VehicleControl(throttle=0.0, steer=0.0, brake=0.6)
@@ -86,13 +99,44 @@ class AutopilotController:
         speed_limit = self._default_speed_limit_mps
         if self._dynamic_speed_limit and road_speed_limit_mps > 0.1:
             speed_limit = road_speed_limit_mps
+        speed_limit = max(0.0, speed_limit * self._speed_factor)
+
+        lead = (
+            self._idm.detect_lead(scene, self_actor_id=self_actor_id, x=x, y=y, yaw_deg=yaw_deg)
+            if scene is not None and self_actor_id > 0
+            else None
+        )
+
+        if self._lane_change is not None and scene is not None and self_actor_id > 0:
+            target_lane = self._lane_change.decide(
+                graph=self._graph,
+                current_lane=self._planner.current_lane(),
+                scene=scene,
+                self_actor_id=self_actor_id,
+                x=x,
+                y=y,
+                yaw_deg=yaw_deg,
+                free_speed_mps=speed_limit,
+                lead=lead,
+                dt=dt,
+            )
+            if target_lane is not None:
+                self._planner.switch_lane(target_lane)
+                switched = self._planner.update(x, y, yaw_deg, road_id=None, lane_id=None)
+                if switched is not None:
+                    path = switched
 
         stop_distance = self._signals.nearest_stop_distance(path, traffic_lights)
-        target_speed = self._longitudinal.target_speed(
+        free_target = self._longitudinal.target_speed(
             speed_limit_mps=speed_limit,
             speed_mps=speed_mps,
             path=path,
             stop_distance_m=stop_distance,
+        )
+        target_speed = self._idm.desired_speed(
+            speed_mps=speed_mps,
+            free_speed_mps=free_target,
+            lead=lead,
         )
         throttle, brake = self._longitudinal.compute(
             speed_mps=speed_mps,

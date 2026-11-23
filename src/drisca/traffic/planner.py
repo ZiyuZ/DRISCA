@@ -41,6 +41,16 @@ class LocalRoutePlanner:
     def reset(self) -> None:
         self._queue.clear()
 
+    def current_lane(self) -> LaneNode | None:
+        if not self._queue:
+            return None
+        return self._graph.get(self._queue[0])
+
+    def switch_lane(self, target_lane_key: str) -> None:
+        """发起换道，将目标车道置为前瞻队列首段。"""
+        if self._graph.get(target_lane_key) is not None:
+            self._queue = [target_lane_key]
+
     def update(
         self,
         x: float,

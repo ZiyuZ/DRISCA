@@ -411,7 +411,17 @@ class EgoVehicleConfig(BaseModel, frozen=True, extra='forbid'):
     spawn_map: str = ''  # 出生点所属地图；为空或与目标地图不一致时视为未选择
     default_speed_limit: float = Field(default=33.33, ge=0)
     dynamic_speed_limit: bool = False  # 开启时使用车辆记录的限速（原生已换算为 m/s），手动主车为 0
-    init_autopilot: bool = False  # 原生接口尚未提供自动驾驶，启动时显式拒绝
+    init_autopilot: bool = False  # 开启后在实验就绪时切入自研自动驾驶
+
+
+class TrafficConfig(BaseModel, frozen=True, extra='forbid'):
+    """背景交通流配置，保存于实验预设的 [traffic] 节。"""
+
+    enabled: bool = False
+    vehicle_count: int = Field(default=0, ge=0, le=100)
+    seed: int = 42
+    speed_factor: float = Field(default=1.0, ge=0.3, le=1.5)
+    enable_lane_change: bool = True
 
 
 class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):
@@ -424,6 +434,7 @@ class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):
 class PresetConfig(BaseModel, frozen=True, extra='forbid'):
     world: WorldConfig = WorldConfig()
     ego: EgoVehicleConfig
+    traffic: TrafficConfig = TrafficConfig()
     cameras: CameraRigConfig = CameraRigConfig()
     instructions: tuple[ExperimentInstructionConfig, ...] = ()
     markers: tuple[str, ...] = ('进入路段', '离开路段', '任务完成', '异常情况')

@@ -50,6 +50,13 @@ pitch = 0.0
 yaw = 90.0
 roll = 0.0
 
+[traffic]
+enabled = false
+vehicle_count = 0
+seed = 42
+speed_factor = 1.0
+enable_lane_change = true
+
 [cameras]
 
 [cameras.front]

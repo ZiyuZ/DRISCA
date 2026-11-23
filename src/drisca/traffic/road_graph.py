@@ -26,6 +26,10 @@ class LaneNode:
     predecessors: tuple[str, ...]
     left_lane: str | None
     right_lane: str | None
+    left_same_direction: bool
+    right_same_direction: bool
+    left_allowed: bool
+    right_allowed: bool
     points: np.ndarray  # shape (N, 3), 米
     directions: np.ndarray  # shape (N, 3), 单位方向向量
     s_values: np.ndarray  # shape (N,), 沿行驶方向起点算起的距离 (m)
@@ -91,6 +95,10 @@ class RoadGraph:
                 predecessors=tuple(str(p) for p in (item.get('predecessors') or ())),
                 left_lane=str(item['left_lane']) if item.get('left_lane') else None,
                 right_lane=str(item['right_lane']) if item.get('right_lane') else None,
+                left_same_direction=bool(item.get('left_same_direction', False)),
+                right_same_direction=bool(item.get('right_same_direction', False)),
+                left_allowed=bool(item.get('left_allowed', False)),
+                right_allowed=bool(item.get('right_allowed', False)),
                 points=points,
                 directions=directions,
                 s_values=s_values,

@@ -7,6 +7,13 @@ export type Camera = {
   roll: number;
   fov: number;
 };
+export type TrafficConfig = {
+  enabled: boolean;
+  vehicle_count: number;
+  seed: number;
+  speed_factor: number;
+  enable_lane_change: boolean;
+};
 export type CameraViewport = {
   screen_position: [number, number];
   image_size: [number, number];
@@ -117,6 +124,7 @@ export type PresetConfig = {
     rear_left: Camera;
     rear_right: Camera;
   };
+  traffic: TrafficConfig;
   instructions: Instruction[];
   markers: string[];
 };

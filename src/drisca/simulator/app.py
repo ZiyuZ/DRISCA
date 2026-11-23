@@ -27,12 +27,13 @@ from drisca.core.protocol import (
     WorkerState,
     WorkerStatusEvent,
 )
+from drisca.core.snapshot import Snapshot
 from drisca.core.weather import to_payload
 from drisca.simulator.events import map_event
 from drisca.simulator.state import DrivingState, project_snapshot, research_ready
 from drisca.simulator.ws_client import WorkerWSClient
 from drisca.storage.writer import BatchDataWriter
-from drisca.traffic import AutopilotController, RoadGraph, SignalTracker
+from drisca.traffic import AutopilotController, RoadGraph, SignalTracker, TrafficManager, TrafficScene
 
 SAMPLE_INTERVAL = 1 / 20
 TELEMETRY_INTERVAL = 1 / 25
@@ -49,6 +50,9 @@ class SimulatorApp:
         self.pending_environment: dict[tuple[int, int], str] = {}
         self.prepared_regions: set[int] = set()
         self.autopilot: AutopilotController | None = None
+        self.traffic_manager: TrafficManager | None = None
+        self.last_snapshot: Snapshot | None = None
+        self.last_scene: TrafficScene | None = None
         self.last_driving: DrivingState | None = None
         self.last_traffic_lights: tuple[dict[str, Any], ...] = ()
         self._pending_mode_toggle = False
@@ -115,7 +119,7 @@ class SimulatorApp:
         channel.send_event(WorkerStatusEvent(role=WorkerRole.SIMULATOR, state=WorkerState.STOPPING))
 
     def _init_autopilot(self, api: NativeApiClient) -> None:
-        """从原生接口加载道路图与信号灯映射，构造主车自研自动驾驶控制器。"""
+        """从原生接口加载道路图与信号灯映射，构造主车自动驾驶与背景交通流管理器。"""
         raw_graph = api.road_graph_all(sampling_step=2.0)
         raw_signals = api.road_signals()
         graph = RoadGraph.from_native(raw_graph)
@@ -127,7 +131,17 @@ class SimulatorApp:
             default_speed_limit_mps=ego.default_speed_limit,
             dynamic_speed_limit=ego.dynamic_speed_limit,
         )
-        logger.info(f'自研自动驾驶控制器已初始化：车道数 {int(raw_graph.get("lane_count", 0))}')
+        self.traffic_manager = TrafficManager(graph, signals, self.config.preset.traffic)
+        sp = ego.spawn_point
+        self.traffic_manager.spawn_background(
+            api,
+            ego_location=(sp.x, sp.y, sp.z),
+            default_speed_limit_mps=ego.default_speed_limit,
+        )
+        logger.info(
+            f'自研交通模块已初始化：车道数 {int(raw_graph.get("lane_count", 0))}，'
+            f'背景车 {self.traffic_manager.vehicle_count} 辆'
+        )
 
     def _create_fog_regions(self, api: NativeApiClient) -> None:
         """在 start_view 之前创建预设球雾，使区域随会话转入控制连接。"""
@@ -221,6 +235,11 @@ class SimulatorApp:
                     if toggle_op is not None:
                         operations.append(toggle_op)
                         mode_changed_in_batch = True
+            dt = (
+                max(1e-3, 1.0 / self.last_driving.server_fps)
+                if self.last_driving is not None and self.last_driving.server_fps > 0
+                else SAMPLE_INTERVAL
+            )
             if (
                 self.running
                 and not mode_changed_in_batch
@@ -228,11 +247,6 @@ class SimulatorApp:
                 and self.autopilot is not None
                 and self.last_driving is not None
             ):
-                dt = (
-                    max(1e-3, 1.0 / self.last_driving.server_fps)
-                    if self.last_driving.server_fps > 0
-                    else SAMPLE_INTERVAL
-                )
                 control = self.autopilot.step(
                     x=self.last_driving.location[0],
                     y=self.last_driving.location[1],
@@ -243,13 +257,31 @@ class SimulatorApp:
                     lane_id=self.last_driving.lane_id,
                     road_speed_limit_mps=self.last_driving.speed_limit,
                     traffic_lights=self.last_traffic_lights,
+                    scene=self.last_scene,
+                    self_actor_id=self.ego_actor_id,
                 )
                 operations.append(control.to_operation(self.ego_actor_id, self.control_revision))
+            if (
+                self.running
+                and self.traffic_manager is not None
+                and self.last_snapshot is not None
+                and self.last_scene is not None
+            ):
+                operations.extend(
+                    self.traffic_manager.step_operations(
+                        self.last_snapshot,
+                        self.last_scene,
+                        self.last_traffic_lights,
+                        dt,
+                    )
+                )
             deadline = time.monotonic() + SAMPLE_INTERVAL
             started = time.monotonic()
             result = api.exchange(operations, session_id=cfg.session_id)
             exchange_ms.append((time.monotonic() - started) * 1000)
             self.last_traffic_lights = result.traffic_lights
+            self.last_snapshot = result.snapshot
+            self.last_scene = TrafficScene.from_vehicles(result.snapshot.vehicles)
             self._apply_control_state(result.control_state)
             self._forward_events(channel, result, command_ids)
             if result.frame_no != last_frame:
@@ -435,6 +467,8 @@ class SimulatorApp:
     def _apply_control_state(
         self, control_state: tuple[dict[str, Any], ...] | list[dict[str, Any]] | None
     ) -> None:
+        if self.traffic_manager is not None:
+            self.traffic_manager.apply_control_state(control_state)
         for item in control_state or ():
             if int(item.get('actor_id', 0)) != self.ego_actor_id:
                 continue

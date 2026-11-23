@@ -184,6 +184,74 @@ export function ExperimentConfig({ preset, state, update, onWeather, onMapChange
         </Card>
       </div>
       <Card className="dr-card gap-0">
+        <div className="card-head">
+          <h2>背景交通流</h2>
+        </div>
+        <div className="form">
+          <label className="check">
+            <Checkbox
+              checked={preset.traffic.enabled}
+              onCheckedChange={(v) =>
+                update(["traffic", "enabled"], v === true)
+              }
+            />
+            启用背景交通流
+          </label>
+          <div className="three">
+            <label className="dr-field">
+              <span>背景车数量</span>
+              <NumberInput
+                className="input mono"
+                min="0"
+                max="100"
+                step="1"
+                disabled={!preset.traffic.enabled}
+                value={preset.traffic.vehicle_count}
+                onValueChange={(value) =>
+                  update(["traffic", "vehicle_count"], Math.round(value))
+                }
+              />
+            </label>
+            <label className="dr-field">
+              <span>随机种子</span>
+              <NumberInput
+                className="input mono"
+                step="1"
+                disabled={!preset.traffic.enabled}
+                value={preset.traffic.seed}
+                onValueChange={(value) =>
+                  update(["traffic", "seed"], Math.trunc(value))
+                }
+              />
+            </label>
+            <label className="dr-field">
+              <span>速度系数</span>
+              <NumberInput
+                className="input mono"
+                min="0.3"
+                max="1.5"
+                step="0.05"
+                disabled={!preset.traffic.enabled}
+                value={preset.traffic.speed_factor}
+                onValueChange={(value) =>
+                  update(["traffic", "speed_factor"], value)
+                }
+              />
+            </label>
+          </div>
+          <label className="check">
+            <Checkbox
+              checked={preset.traffic.enable_lane_change}
+              disabled={!preset.traffic.enabled}
+              onCheckedChange={(v) =>
+                update(["traffic", "enable_lane_change"], v === true)
+              }
+            />
+            允许换道
+          </label>
+        </div>
+      </Card>
+      <Card className="dr-card gap-0">
         <div className="card-head spawn-header">
           <div>
             <h2>主车出生点</h2>
