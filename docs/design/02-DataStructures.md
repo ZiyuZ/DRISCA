@@ -18,7 +18,7 @@ Unreal 在物理更新结束后形成完整世界快照。worker 以约 20 Hz ex
 
 `project_snapshot()` 查找主车车辆记录与研究记录，校验 actor_id、控制来源、研究有效位及有限数值，构造数值化 `DrivingState`。车辆记录提供运动与实际控制，研究记录提供人工输入、传感器和道路细节。车速在 Python 根据速度三元组计算，车道偏移由原生道路计算提供。
 
-控制来源位 0 为 manual/human，2 为 external/python；主车遇到其他来源按契约错误处理。control_mode 保留业务层 manual/autopilot 枚举，external 对应模型驾驶；具体原生来源另由遥测 control_source 展示。当前自研交通算法尚未实现。
+控制来源位 0 为 manual/human，2 为 external/python；主车遇到其他来源按契约错误处理。control_mode 保留业务层 manual/autopilot 枚举，external 对应 `src/drisca/traffic/` 驱动的自研自动驾驶；具体原生来源另由遥测 control_source 展示。
 
 `takeover_requested` 来自研究记录 input_flags bit3，表示采样期间的主动接管动作。碰撞强度沿用最近一次碰撞冲量模长，压线字符串由最新 lane_invasion 事件恢复。离散事件完整保存到 event 表。
 

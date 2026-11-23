@@ -279,7 +279,7 @@ class EgoVehicleConfig(BaseModel, frozen=True, extra='forbid'):
     spawn_map: str = ''                       # 出生点所属地图；为空或与目标地图不一致时视为未选择
     default_speed_limit: float = 33.33         # 默认限速 (m/s，对应 120 km/h)
     dynamic_speed_limit: bool = False          # 开启时使用原生快照中的道路限速 (m/s)，手动主车为 0
-    init_autopilot: bool = False               # 当前自动驾驶尚未实现，启用时在启动前拒绝
+    init_autopilot: bool = False               # 开启后在实验就绪时切入自研自动驾驶（external/python）
 
 
 class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):

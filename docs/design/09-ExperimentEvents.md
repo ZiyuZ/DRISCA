@@ -262,4 +262,4 @@ ExperimentEvent = Annotated[
 
 worker 对空 session_id 的事件只保留本次准备区域的事件，按 worker 创建时返回的 region_id 精确识别；这些事件保留原生 event_id、帧、仿真时间与请求关联，不补写 session_id。其余空 session 的管理端旧事件不写入本次实验。实验开始前的初始天气与区域配置仍保存在 RunConfig。环境事件只有来源为当前控制 worker（model）时才与本 worker 的 command_id 和未完成操作关联；request_id 按连接递增，不能跨连接视为唯一。管理连接发起的环境事件照常记录，但不匹配本 worker 指令。键盘、传感器等既有事件的关联语义不变。
 
-操作者命令通过本次 exchange 的 request_id 与 operation_index 回填 command_id；只有实际命中命令关联时才将 worker 的 model 来源映射为 launcher。键盘和传感器保留原始来源。当前自动驾驶算法尚未实现，P 请求仍记录，启用操作明确报错并保持当前人工驾驶。正常自动相位由帧快照记录，操作者信号调整按一次操作记录一次事件。
+操作者命令通过本次 exchange 的 request_id 与 operation_index 回填 command_id；只有实际命中命令关联时才将 worker 的 model 来源映射为 launcher。键盘和传感器保留原始来源。驾驶人按 `P` 键触发 `driver_request` 后，由 `simulator` 切换 `external/python` 与 `manual/human` 控制模式并记录 `control_mode_changed`。正常自动相位由帧快照记录，操作者信号调整按一次操作记录一次事件。
