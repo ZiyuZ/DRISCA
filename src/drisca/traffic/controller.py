@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import random
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
-from .idm import IDMModel, LeadVehicle
-from .lane_change import LaneChangeDecider
+from .car_following import create_car_following_model
+from .idm import LeadVehicle
+from .lane_change import create_lane_change_decider
 from .lateral import PurePursuitController
 from .longitudinal import SpeedPIDController
 from .planner import LocalRoutePlanner
@@ -59,10 +61,13 @@ class AutopilotController:
         speed_factor: float = 1.0,
         enable_lane_change: bool = False,
         profile: DrivingProfile = BALANCED_PROFILE,
+        car_following_model: str = 'idm',
+        lane_change_model: str = 'gap',
         random_seed: int | None = None,
     ) -> None:
         self._graph = graph
         self._profile = profile
+        rng = random.Random(random_seed) if random_seed is not None else None
         self._planner = LocalRoutePlanner(graph, random_seed=random_seed)
         self._lateral = PurePursuitController(max_steer_rate=profile.max_steer_rate)
         self._longitudinal = SpeedPIDController(
@@ -71,21 +76,9 @@ class AutopilotController:
             max_throttle=profile.max_throttle,
             max_brake=profile.max_brake,
         )
-        self._idm = IDMModel(
-            min_gap_m=profile.min_gap_m,
-            time_headway_s=profile.time_headway_s,
-            max_accel=profile.max_accel,
-            comfort_decel=profile.comfort_decel,
-        )
+        self._cf = create_car_following_model(car_following_model, profile, rng=rng)
         self._lane_change = (
-            LaneChangeDecider(
-                cooldown_s=profile.lane_change_cooldown_s,
-                min_front_gap_m=profile.min_front_gap_m,
-                min_rear_gap_m=profile.min_rear_gap_m,
-                slow_ratio=profile.slow_lead_ratio,
-            )
-            if enable_lane_change
-            else None
+            create_lane_change_decider(lane_change_model, profile, self._cf) if enable_lane_change else None
         )
         self._signals = signals
         self._default_speed_limit_mps = default_speed_limit_mps
@@ -149,7 +142,7 @@ class AutopilotController:
         speed_limit = max(0.0, speed_limit * self._speed_factor)
 
         raw_lead = (
-            self._idm.detect_lead(scene, self_actor_id=self_actor_id, x=x, y=y, yaw_deg=yaw_deg)
+            self._cf.detect_lead(scene, self_actor_id=self_actor_id, x=x, y=y, yaw_deg=yaw_deg)
             if scene is not None and self_actor_id > 0
             else None
         )
@@ -165,6 +158,7 @@ class AutopilotController:
                 x=x,
                 y=y,
                 yaw_deg=yaw_deg,
+                speed_mps=speed_mps,
                 free_speed_mps=speed_limit,
                 lead=lead,
                 dt=dt,
@@ -181,7 +175,7 @@ class AutopilotController:
             path=path,
             stop_distance_m=stop_distance,
         )
-        target_speed = self._idm.desired_speed(
+        target_speed = self._cf.desired_speed(
             speed_mps=speed_mps,
             free_speed_mps=free_target,
             lead=lead,

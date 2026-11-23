@@ -121,6 +121,8 @@ class TrafficManager:
                 speed_factor=cfg.speed_factor * jitter,
                 enable_lane_change=cfg.enable_lane_change,
                 profile=profile,
+                car_following_model=cfg.car_following_model,
+                lane_change_model=cfg.lane_change_model,
                 random_seed=rng.randint(1, 2_147_483_647),
             )
             self._vehicles[actor_id] = _ManagedVehicle(actor_id=actor_id, controller=controller)
@@ -129,7 +131,8 @@ class TrafficManager:
 
         logger.info(
             f'背景交通流已生成：目标 {cfg.vehicle_count} 辆，实际 {spawned} 辆'
-            f'（seed={cfg.seed}，风格={cfg.style}，分布={style_counts}）'
+            f'（seed={cfg.seed}，风格={cfg.style}，跟驰={cfg.car_following_model}，'
+            f'换道={cfg.lane_change_model}，分布={style_counts}）'
         )
         return spawned
 

@@ -86,6 +86,24 @@ class IDMModel:
             speed_mps=float(scene.speeds[idx]),
         )
 
+    def compute_accel(
+        self,
+        *,
+        speed_mps: float,
+        free_speed_mps: float,
+        lead: LeadVehicle | None,
+    ) -> float:
+        """计算 IDM 瞬时加速度 (m/s^2)。"""
+        v = max(0.0, speed_mps)
+        v0 = max(0.5, free_speed_mps)
+        free_term = (v / v0) ** 4
+        if lead is None:
+            return max(-6.0, min(self._max_accel, self._max_accel * (1.0 - free_term)))
+        dv = v - lead.speed_mps
+        s_star = self._s0 + max(0.0, v * self._time_headway + (v * dv) / self._two_sqrt_ab)
+        accel = self._max_accel * (1.0 - free_term - (s_star / max(lead.gap_m, 0.2)) ** 2)
+        return max(-6.0, min(self._max_accel, accel))
+
     def desired_speed(
         self,
         *,
@@ -99,11 +117,7 @@ class IDMModel:
             return free_speed_mps
 
         v = max(0.0, speed_mps)
-        v0 = max(0.5, free_speed_mps)
-        dv = v - lead.speed_mps
-        s_star = self._s0 + max(0.0, v * self._time_headway + (v * dv) / self._two_sqrt_ab)
-        accel = self._max_accel * (1.0 - (v / v0) ** 4 - (s_star / max(lead.gap_m, 0.2)) ** 2)
-        accel = max(-6.0, min(self._max_accel, accel))
+        accel = self.compute_accel(speed_mps=v, free_speed_mps=free_speed_mps, lead=lead)
         target = max(0.0, min(free_speed_mps, v + accel * horizon_s))
         if lead.gap_m < self._s0 and lead.speed_mps < 0.5:
             return 0.0

@@ -423,6 +423,8 @@ class TrafficConfig(BaseModel, frozen=True, extra='forbid'):
     speed_factor: float = Field(default=1.0, ge=0.3, le=1.5)
     enable_lane_change: bool = True
     style: Literal['balanced', 'aggressive', 'conservative', 'sluggish', 'mixed'] = 'balanced'
+    car_following_model: Literal['idm', 'gipps', 'krauss'] = 'idm'
+    lane_change_model: Literal['gap', 'mobil'] = 'gap'
 
 
 class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):

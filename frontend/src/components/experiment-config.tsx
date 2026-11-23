@@ -12,6 +12,7 @@ import { Slider } from "./ui/slider";
 import { SearchSelect } from "./common";
 import { weatherDescription } from "./weather-editor";
 import { catalogMatchesPreset, matchSpawnIndex, spawnBound } from "../lib/spawn";
+import { carFollowingModels, laneChangeModels, trafficStyles } from "../lib/traffic";
 
 type Props = {
   preset: PresetConfig;
@@ -20,21 +21,24 @@ type Props = {
   onWeather: () => void;
   onMapChange: (mapName: string) => void;
   onPickSpawn: () => void;
+  onOpenTraffic: () => void;
 };
-const trafficStyles = [
-  ["balanced", "均衡"],
-  ["aggressive", "激进"],
-  ["conservative", "保守"],
-  ["sluggish", "反应迟钝"],
-  ["mixed", "混合（多风格）"],
-] as const;
 
-export function ExperimentConfig({ preset, state, update, onWeather, onMapChange, onPickSpawn }: Props) {
+export function ExperimentConfig({ preset, state, update, onWeather, onMapChange, onPickSpawn, onOpenTraffic }: Props) {
   const telemetry = state.telemetry;
   const bound = spawnBound(preset);
   const mapLoaded = catalogMatchesPreset(preset, state.catalog.map_name);
   const points = mapLoaded ? state.catalog.spawn_points : [];
   const spawnIndex = bound && mapLoaded ? matchSpawnIndex(points, preset.ego.spawn_point) : null;
+  const traffic = preset.traffic;
+  const trafficStyle = trafficStyles.find(item => item.value === traffic.style)?.label ?? traffic.style;
+  const followingModel = carFollowingModels.find(item => item.value === traffic.car_following_model)?.short
+    ?? traffic.car_following_model;
+  const laneChangeModel = traffic.enable_lane_change
+    ? laneChangeModels.find(item => item.value === traffic.lane_change_model)?.short ?? traffic.lane_change_model
+    : "关闭";
+  const trafficSummary = `${traffic.enabled ? "已启用" : "未启用"} · ${traffic.vehicle_count} 辆 · `
+    + `${trafficStyle} · 跟驰 ${followingModel} · 换道 ${laneChangeModel}`;
   const missingText =
     mapLoaded && points.length === 0
       ? "该地图没有预设出生点，请手动填写完整坐标。"
@@ -194,77 +198,9 @@ export function ExperimentConfig({ preset, state, update, onWeather, onMapChange
         <div className="card-head">
           <h2>背景交通流</h2>
         </div>
-        <div className="form">
-          <label className="check">
-            <Checkbox
-              checked={preset.traffic.enabled}
-              onCheckedChange={(v) =>
-                update(["traffic", "enabled"], v === true)
-              }
-            />
-            启用背景交通流
-          </label>
-          <label className="dr-field">
-            <span>驾驶风格</span>
-            <SharedSelect
-              value={preset.traffic.style}
-              disabled={!preset.traffic.enabled}
-              options={trafficStyles}
-              onValueChange={(value) => update(["traffic", "style"], value)}
-            />
-          </label>
-          <div className="three">
-            <label className="dr-field">
-              <span>背景车数量</span>
-              <NumberInput
-                className="input mono"
-                min="0"
-                max="100"
-                step="1"
-                disabled={!preset.traffic.enabled}
-                value={preset.traffic.vehicle_count}
-                onValueChange={(value) =>
-                  update(["traffic", "vehicle_count"], Math.round(value))
-                }
-              />
-            </label>
-            <label className="dr-field">
-              <span>随机种子</span>
-              <NumberInput
-                className="input mono"
-                step="1"
-                disabled={!preset.traffic.enabled}
-                value={preset.traffic.seed}
-                onValueChange={(value) =>
-                  update(["traffic", "seed"], Math.trunc(value))
-                }
-              />
-            </label>
-            <label className="dr-field">
-              <span>速度系数</span>
-              <NumberInput
-                className="input mono"
-                min="0.3"
-                max="1.5"
-                step="0.05"
-                disabled={!preset.traffic.enabled}
-                value={preset.traffic.speed_factor}
-                onValueChange={(value) =>
-                  update(["traffic", "speed_factor"], value)
-                }
-              />
-            </label>
-          </div>
-          <label className="check">
-            <Checkbox
-              checked={preset.traffic.enable_lane_change}
-              disabled={!preset.traffic.enabled}
-              onCheckedChange={(v) =>
-                update(["traffic", "enable_lane_change"], v === true)
-              }
-            />
-            允许换道
-          </label>
+        <div className="spawn-missing">
+          <span>{trafficSummary}</span>
+          <Button variant="outline" onClick={onOpenTraffic}>前往交通流页配置</Button>
         </div>
       </Card>
       <Card className="dr-card gap-0">

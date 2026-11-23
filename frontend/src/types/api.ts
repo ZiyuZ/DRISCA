@@ -14,6 +14,8 @@ export type TrafficConfig = {
   speed_factor: number;
   enable_lane_change: boolean;
   style: "balanced" | "aggressive" | "conservative" | "sluggish" | "mixed";
+  car_following_model: "idm" | "gipps" | "krauss";
+  lane_change_model: "gap" | "mobil";
 };
 export type CameraViewport = {
   screen_position: [number, number];

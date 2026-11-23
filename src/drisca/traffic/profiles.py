@@ -37,6 +37,11 @@ class DrivingProfile:
     min_front_gap_m: float = 14.0
     min_rear_gap_m: float = 12.0
     slow_lead_ratio: float = 0.72
+    politeness: float = 0.25  # MOBIL 礼让系数
+    mobil_threshold: float = 0.2  # MOBIL 最小加速度收益阈值 (m/s^2)
+    # Gipps / Krauss 专用参数
+    gipps_reaction_s: float = 0.8
+    krauss_dawdle: float = 0.18
     # 感知反应延迟 (s)，用于刻画反应迟钝/分心驾驶人
     reaction_delay_s: float = 0.0
 
@@ -58,6 +63,10 @@ AGGRESSIVE_PROFILE = DrivingProfile(
     min_front_gap_m=9.5,
     min_rear_gap_m=8.0,
     slow_lead_ratio=0.85,
+    politeness=0.05,
+    mobil_threshold=0.1,
+    gipps_reaction_s=0.55,
+    krauss_dawdle=0.08,
     reaction_delay_s=0.0,
 )
 
@@ -76,6 +85,10 @@ CONSERVATIVE_PROFILE = DrivingProfile(
     min_front_gap_m=22.0,
     min_rear_gap_m=18.0,
     slow_lead_ratio=0.60,
+    politeness=0.55,
+    mobil_threshold=0.35,
+    gipps_reaction_s=1.1,
+    krauss_dawdle=0.28,
     reaction_delay_s=0.0,
 )
 
@@ -94,6 +107,10 @@ SLUGGISH_PROFILE = DrivingProfile(
     min_front_gap_m=20.0,
     min_rear_gap_m=16.0,
     slow_lead_ratio=0.62,
+    politeness=0.35,
+    mobil_threshold=0.3,
+    gipps_reaction_s=1.25,
+    krauss_dawdle=0.35,
     reaction_delay_s=0.6,
 )
 

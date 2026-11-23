@@ -1,4 +1,5 @@
 import {
+  CarFront,
   Database,
   Home,
   Link,
@@ -58,6 +59,7 @@ export function AppShell({
   const pages = [
     ["控制台", Home],
     ["方案配置", SlidersHorizontal],
+    ["交通流", CarFront],
     ["数据管理", Database],
   ] as const;
   const configPages = [

@@ -27,6 +27,7 @@ import { ExperimentHome } from "./components/experiment-home";
 import { SettingsPage } from "./components/settings-page";
 import { Toaster } from "./components/ui/sonner";
 import { SpawnPointDialog } from "./components/spawn-point-dialog";
+import { TrafficPage } from "./components/traffic-page";
 import { WeatherEditor } from "./components/weather-editor";
 import { useConfig } from "./hooks/use-config";
 import { useRuntime } from "./hooks/use-runtime";
@@ -207,6 +208,7 @@ function App() {
                     onWeather={() => setModal("weather")}
                     onMapChange={changePresetMap}
                     onPickSpawn={() => setSpawnDialog(true)}
+                    onOpenTraffic={() => setPage("交通流")}
                   />
                 )}
                 {configTab === "camera" && (
@@ -230,6 +232,16 @@ function App() {
                 )}
               </div>
             </PageTabs>
+          )}
+          {page === "交通流" && (
+            <TrafficPage
+              preset={preset}
+              presetName={presetName}
+              saveStatus={presetSave.status}
+              state={state}
+              update={update}
+              onOpenPresets={() => setModal("presets")}
+            />
           )}
           {page === "数据管理" && (
             <DataManager state={state} online={online} />
