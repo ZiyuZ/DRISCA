@@ -333,17 +333,21 @@ class Runtime:
                 },
             },
             weather=to_config(environment.current.weather).model_dump(mode='json'),
-            fog_regions=[self.region_state(region) for region in api.environment_list()],
+            fog_regions=self.read_fog_regions(),
         )
+
+    def read_fog_regions(self) -> list[dict[str, Any]]:
+        """读取当前世界的局部球雾；渐变中按目标值展示，便于确认待生效状态。"""
+        return [self.region_state(region) for region in self._require_api().environment_list()]
 
     @staticmethod
     def region_state(region: RegionSnapshot) -> dict[str, Any]:
-        current = region.current
+        state = region.target if region.remaining_seconds > 0 else region.current
         return {
             'region_id': region.region_id,
-            'center_m': list(current.center_m),
-            'radius_m': current.radius_m,
-            'density': current.weather.fog.density,
+            'center_m': list(state.center_m),
+            'radius_m': state.radius_m,
+            'density': state.weather.fog.density,
             'deleting': region.deleting,
         }
 

@@ -12,12 +12,15 @@ from drisca.core.client import ExchangeResult, NativeApiClient
 from drisca.core.config import RunConfig
 from drisca.core.driving_view import keyboard_mapping
 from drisca.core.protocol import (
+    CreateFogRegionCommand,
+    DeleteFogRegionCommand,
     LauncherCommand,
     SetAutopilotCommand,
     SetTakeoverCommand,
     SetWeatherCommand,
     StopCommand,
     UpdateCameraCommand,
+    UpdateFogRegionCommand,
     UpdateLayoutCommand,
     WorkerReadyEvent,
     WorkerRole,
@@ -280,7 +283,43 @@ class SimulatorApp:
 
     def _operation(self, command: LauncherCommand) -> dict[str, Any] | None:
         if isinstance(command, SetWeatherCommand):
-            return {'method': 'environment.apply', 'params': {'weather': to_payload(command.weather)}}
+            return {
+                'method': 'environment.apply',
+                'params': {
+                    'weather': to_payload(command.weather),
+                    'transition_seconds': command.transition_seconds,
+                },
+            }
+        if isinstance(command, CreateFogRegionCommand):
+            return {
+                'method': 'environment.create',
+                'params': {
+                    'center_m': list(command.center_m),
+                    'radius_m': command.radius_m,
+                    'weather': {'fog': {'density': command.density}},
+                    'transition_seconds': command.transition_seconds,
+                },
+            }
+        if isinstance(command, UpdateFogRegionCommand):
+            params: dict[str, Any] = {
+                'region_id': command.region_id,
+                'transition_seconds': command.transition_seconds,
+            }
+            if command.center_m is not None:
+                params['center_m'] = list(command.center_m)
+            if command.radius_m is not None:
+                params['radius_m'] = command.radius_m
+            if command.density is not None:
+                params['weather'] = {'fog': {'density': command.density}}
+            return {'method': 'environment.update', 'params': params}
+        if isinstance(command, DeleteFogRegionCommand):
+            return {
+                'method': 'environment.delete',
+                'params': {
+                    'region_id': command.region_id,
+                    'transition_seconds': command.transition_seconds,
+                },
+            }
         if isinstance(command, UpdateCameraCommand):
             return {
                 'method': 'driving_view.update',

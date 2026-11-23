@@ -9,6 +9,8 @@ from .environment import (
     EnvironmentCompletedPayload,
     EnvironmentReplacedPayload,
     RegionSnapshot,
+    TransitionSeconds,
+    WorldPoint,
 )
 
 
@@ -437,11 +439,44 @@ class SetTakeoverCommand(BaseModel, frozen=True):
 
 
 class SetWeatherCommand(BaseModel, frozen=True):
-    """由 launcher 运行期动态切换天气"""
+    """由 launcher 运行期动态切换全局天气；weather 已展开为完整数值"""
 
     command_id: str
     type: Literal['set_weather'] = 'set_weather'
     weather: WeatherConfig
+    transition_seconds: TransitionSeconds = 0.0
+
+
+class CreateFogRegionCommand(BaseModel, frozen=True):
+    """由 launcher 运行期创建固定世界空间的局部球雾"""
+
+    command_id: str
+    type: Literal['create_fog_region'] = 'create_fog_region'
+    center_m: WorldPoint
+    radius_m: float = Field(gt=0, le=100_000)
+    density: float = Field(ge=0, le=1)
+    transition_seconds: TransitionSeconds = 0.0
+
+
+class UpdateFogRegionCommand(BaseModel, frozen=True):
+    """由 launcher 运行期调整局部球雾，未给出的字段保持原目标"""
+
+    command_id: str
+    type: Literal['update_fog_region'] = 'update_fog_region'
+    region_id: int = Field(gt=0, le=2**32 - 1)
+    center_m: WorldPoint | None = None
+    radius_m: float | None = Field(default=None, gt=0, le=100_000)
+    density: float | None = Field(default=None, ge=0, le=1)
+    transition_seconds: TransitionSeconds = 0.0
+
+
+class DeleteFogRegionCommand(BaseModel, frozen=True):
+    """由 launcher 运行期删除局部球雾，可指定渐隐时长"""
+
+    command_id: str
+    type: Literal['delete_fog_region'] = 'delete_fog_region'
+    region_id: int = Field(gt=0, le=2**32 - 1)
+    transition_seconds: TransitionSeconds = 0.0
 
 
 class UpdateCameraCommand(BaseModel, frozen=True):
@@ -466,6 +501,9 @@ LauncherCommand = Annotated[
     | SetAutopilotCommand
     | SetTakeoverCommand
     | SetWeatherCommand
+    | CreateFogRegionCommand
+    | UpdateFogRegionCommand
+    | DeleteFogRegionCommand
     | UpdateCameraCommand
     | UpdateLayoutCommand,
     Field(discriminator='type'),

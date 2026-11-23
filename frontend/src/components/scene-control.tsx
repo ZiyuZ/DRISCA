@@ -59,6 +59,9 @@ export function SceneControl({ state, online, host, port, weatherPresets, onConn
         {state.error && <p role="alert" className="text-sm text-destructive">{state.error}</p>}
       </div>
     </Modal>
-    {weatherOpen && state.weather && <LiveWeather weather={state.weather} presets={weatherPresets} onClose={() => setWeatherOpen(false)} />}
+    {weatherOpen && state.weather && (
+      <LiveWeather weather={state.weather} presets={weatherPresets} regions={state.fog_regions}
+        telemetry={state.telemetry} running={state.phase === "running"} onClose={() => setWeatherOpen(false)} />
+    )}
   </>;
 }

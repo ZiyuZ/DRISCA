@@ -1,12 +1,29 @@
 """原生环境接口的状态模型、事件载荷与局部球雾配置转换。"""
 
-from typing import Any, Literal
+import math
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel
+from pydantic import AfterValidator, BaseModel, Field
 
 from drisca.core.config import FogRegionConfig, GlobalWeather
 
 EnvironmentOperation = Literal['apply', 'update', 'create', 'delete']
+
+
+def _finite_seconds(value: float) -> float:
+    if not math.isfinite(value):
+        raise ValueError('渐变时长必须是有限数值')
+    return value
+
+
+def _finite_point(value: tuple[float, float, float]) -> tuple[float, float, float]:
+    if any(not math.isfinite(item) for item in value):
+        raise ValueError('坐标必须是有限数值')
+    return value
+
+
+TransitionSeconds = Annotated[float, Field(ge=0), AfterValidator(_finite_seconds)]
+WorldPoint = Annotated[tuple[float, float, float], AfterValidator(_finite_point)]
 
 
 class RegionFogState(BaseModel, frozen=True, extra='forbid'):

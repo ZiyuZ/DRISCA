@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import math
 import socket
 import time
 from contextlib import asynccontextmanager
@@ -11,10 +12,10 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from drisca.core.config import (
     KEYBOARD_KEY_LABELS,
@@ -32,10 +33,14 @@ from drisca.core.config import (
     save_machine_config,
     save_preset,
 )
+from drisca.core.environment import TransitionSeconds, WorldPoint
 from drisca.core.paths import PRESETS_DIR, PROJECT_ROOT
 from drisca.core.protocol import (
+    CreateFogRegionCommand,
+    DeleteFogRegionCommand,
     SetWeatherCommand,
     UpdateCameraCommand,
+    UpdateFogRegionCommand,
     UpdateLayoutCommand,
     parse_worker_event,
 )
@@ -76,6 +81,31 @@ class SessionSelectionRequest(BaseModel, frozen=True):
 
 class RecordingRequest(BaseModel, frozen=True):
     name: str
+
+
+class WeatherRequest(BaseModel, frozen=True):
+    weather: WeatherConfig
+    transition_seconds: TransitionSeconds = 0.0
+
+
+class FogRegionCreateRequest(BaseModel, frozen=True):
+    center_m: WorldPoint
+    radius_m: float = Field(gt=0, le=100_000)
+    density: float = Field(ge=0, le=1)
+    transition_seconds: TransitionSeconds = 0.0
+
+
+class FogRegionUpdateRequest(BaseModel, frozen=True):
+    center_m: WorldPoint | None = None
+    radius_m: float | None = Field(default=None, gt=0, le=100_000)
+    density: float | None = Field(default=None, ge=0, le=1)
+    transition_seconds: TransitionSeconds = 0.0
+
+    @model_validator(mode='after')
+    def require_change(self) -> 'FogRegionUpdateRequest':
+        if self.center_m is None and self.radius_m is None and self.density is None:
+            raise ValueError('没有需要更新的区域字段')
+        return self
 
 
 class ReplayRequest(RecordingRequest):
@@ -121,6 +151,12 @@ def create_app() -> FastAPI:
     def ensure_running() -> None:
         if rt().state['phase'] != 'running':
             raise HTTPException(409, '实验尚未运行')
+
+    def environment_api():
+        api = rt().api
+        if api is None or rt().state['carla_connecting']:
+            raise HTTPException(409, 'CARLA 尚未连接')
+        return api
 
     def safe_name(name: str) -> str:
         if not name or name in ('.', '..') or Path(name).name != name or '/' in name or '\\' in name:
@@ -337,20 +373,93 @@ def create_app() -> FastAPI:
         return {'ok': True}
 
     @app.post('/api/weather')
-    def weather(config: WeatherConfig):
+    def weather(request: WeatherRequest):
+        config = request.weather
         if config.preset_name != 'Custom':
             config = resolve_weather(config, rt().weather_presets)
         if rt().state['phase'] == 'running':
-            rt().send(SetWeatherCommand(command_id=uuid4().hex, weather=config))
+            rt().send(
+                SetWeatherCommand(
+                    command_id=uuid4().hex,
+                    weather=config,
+                    transition_seconds=request.transition_seconds,
+                )
+            )
         else:
             ensure_idle()
-            api = rt().api
-            if api is None or rt().state['carla_connecting']:
-                raise HTTPException(409, 'CARLA 尚未连接')
-            applied = api.environment_apply(to_payload(config))
-            rt().update(
-                weather=to_config(applied.current.weather, config.preset_name).model_dump(mode='json')
+            api = environment_api()
+            applied = api.environment_apply(to_payload(config), request.transition_seconds)
+            rt().update(weather=to_config(applied.target.weather, config.preset_name).model_dump(mode='json'))
+        return {'ok': True}
+
+    @app.post('/api/weather/regions')
+    def create_fog_region(request: FogRegionCreateRequest):
+        if rt().state['phase'] == 'running':
+            rt().send(
+                CreateFogRegionCommand(
+                    command_id=uuid4().hex,
+                    center_m=request.center_m,
+                    radius_m=request.radius_m,
+                    density=request.density,
+                    transition_seconds=request.transition_seconds,
+                )
             )
+            return {'ok': True}
+        ensure_idle()
+        environment_api().environment_create(
+            center_m=request.center_m,
+            radius_m=request.radius_m,
+            density=request.density,
+            transition_seconds=request.transition_seconds,
+        )
+        rt().update(fog_regions=rt().read_fog_regions())
+        return {'ok': True}
+
+    @app.patch('/api/weather/regions/{region_id}')
+    def update_fog_region(region_id: int, request: FogRegionUpdateRequest):
+        if region_id < 1:
+            raise HTTPException(422, '区域编号无效')
+        if rt().state['phase'] == 'running':
+            rt().send(
+                UpdateFogRegionCommand(
+                    command_id=uuid4().hex,
+                    region_id=region_id,
+                    center_m=request.center_m,
+                    radius_m=request.radius_m,
+                    density=request.density,
+                    transition_seconds=request.transition_seconds,
+                )
+            )
+            return {'ok': True}
+        ensure_idle()
+        environment_api().environment_update_region(
+            region_id,
+            center_m=request.center_m,
+            radius_m=request.radius_m,
+            density=request.density,
+            transition_seconds=request.transition_seconds,
+        )
+        rt().update(fog_regions=rt().read_fog_regions())
+        return {'ok': True}
+
+    @app.delete('/api/weather/regions/{region_id}')
+    def delete_fog_region(region_id: int, transition_seconds: float = Query(0.0)):
+        if region_id < 1:
+            raise HTTPException(422, '区域编号无效')
+        if not math.isfinite(transition_seconds) or transition_seconds < 0:
+            raise HTTPException(422, '渐变时长必须是非负有限数值')
+        if rt().state['phase'] == 'running':
+            rt().send(
+                DeleteFogRegionCommand(
+                    command_id=uuid4().hex,
+                    region_id=region_id,
+                    transition_seconds=transition_seconds,
+                )
+            )
+            return {'ok': True}
+        ensure_idle()
+        environment_api().environment_delete(region_id, transition_seconds)
+        rt().update(fog_regions=rt().read_fog_regions())
         return {'ok': True}
 
     @app.get('/api/sessions')

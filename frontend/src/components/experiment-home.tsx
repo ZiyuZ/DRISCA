@@ -302,7 +302,8 @@ export function ExperimentHome({
         </div>
       </Card>
       {weatherOpen && running && serviceOnline && state.weather && (
-        <LiveWeather weather={state.weather} presets={weatherPresets} onClose={() => setWeatherOpen(false)} />
+        <LiveWeather weather={state.weather} presets={weatherPresets} regions={state.fog_regions}
+          telemetry={state.telemetry} running={running} onClose={() => setWeatherOpen(false)} />
       )}
     </fieldset>
   );
