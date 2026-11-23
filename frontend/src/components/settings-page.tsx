@@ -47,6 +47,7 @@ export function SettingsPage({
     value: string | number,
     path: string[],
     type = "text",
+    hint?: string,
   ) => (
     <label className="dr-field">
       <span>{label}</span>
@@ -65,6 +66,7 @@ export function SettingsPage({
           )
         }
       />}
+      {hint && <small className="field-hint">{hint}</small>}
     </label>
   );
   const wheel = (key: string, value: string | number | boolean) =>
@@ -80,7 +82,7 @@ export function SettingsPage({
             {tab === "connection" && (
               <fieldset disabled={disabled} className="settings-fields grid2 equal">
                 <Card className="dr-card gap-0">
-                  <div className="card-head"><h2>Unreal 运行程序</h2></div>
+                  <div className="card-head"><h2>模拟器运行程序</h2></div>
                   <div className="form">
                     <label className="dr-field"><span>运行版本</span>
                       <SharedSelect value={machine.carla_runtime.kind}
@@ -97,34 +99,45 @@ export function SettingsPage({
                         onValueChange={value => updateMachine(["carla_runtime", "quality"], value)} />
                     </label>
                     {field("启动等待 · 秒", machine.carla_runtime.startup_timeout, ["carla_runtime", "startup_timeout"], "number")}
-                    {field("驾驶接口端口", machine.driving_view.port, ["driving_view", "port"], "number")}
+                    <div className="field-divider" />
+                    {field(
+                      "CARLA 地址",
+                      machine.carla.host,
+                      ["carla", "host"],
+                      "text",
+                      "启动参数，需为本机地址。",
+                    )}
+                    {field(
+                      "RPC 端口",
+                      machine.carla.port,
+                      ["carla", "port"],
+                      "number",
+                      "启动参数，RPC 使用该端口，流传输使用下一端口。",
+                    )}
                   </div>
                 </Card>
                 <Card className="dr-card gap-0">
                   <div className="card-head">
-                    <h2>模拟服务连接</h2>
+                    <h2>模拟器连接</h2>
                   </div>
                   <div className="form">
-                    {field("服务地址", machine.carla.host, ["carla", "host"])}
-                    <div className="grid2 equal" style={{ gap: 12 }}>
-                      {field(
-                        "RPC 端口",
-                        machine.carla.port,
-                        ["carla", "port"],
-                        "number",
-                      )}
-                      {field(
-                        "交通管理端口",
-                        machine.carla.tm_port,
-                        ["carla", "tm_port"],
-                        "number",
-                      )}
-                    </div>
                     {field(
-                      "连接超时 · 秒",
-                      machine.carla.timeout,
-                      ["carla", "timeout"],
+                      "模拟器地址",
+                      machine.driving_view.host,
+                      ["driving_view", "host"],
+                    )}
+                    {field(
+                      "连接端口",
+                      machine.driving_view.port,
+                      ["driving_view", "port"],
                       "number",
+                    )}
+                    {field(
+                      "请求超时 · 秒",
+                      machine.driving_view.timeout,
+                      ["driving_view", "timeout"],
+                      "number",
+                      "普通请求的超时；地图加载使用上面的启动等待。",
                     )}
                     <Button variant="outline" onClick={onConnect}>
                       检查连接
@@ -133,18 +146,19 @@ export function SettingsPage({
                 </Card>
                 <Card className="dr-card gap-0">
                   <div className="card-head">
-                    <h2>控制台服务</h2>
+                    <h2>管理端访问</h2>
                   </div>
                   <div className="form">
-                    {field("监听地址", machine.service.launcher_host, [
+                    {field("访问地址", machine.service.launcher_host, [
                       "service",
                       "launcher_host",
                     ])}
                     {field(
-                      "控制台端口",
+                      "访问端口",
                       machine.service.launcher_port,
                       ["service", "launcher_port"],
                       "number",
+                      "平板、浏览器与桌面窗口通过该地址访问管理端。",
                     )}
                     <label className="check">
                       <Checkbox

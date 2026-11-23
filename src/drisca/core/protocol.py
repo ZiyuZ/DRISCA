@@ -39,6 +39,16 @@ class EventKind(StrEnum):
     CUSTOM_EVENT = 'custom_event'  # 操作者自定义打点记录
 
 
+class NativeEventRef(BaseModel, frozen=True):
+    """原生事件与快照的关联信息，随事件载荷一起保存。"""
+
+    event_id: int
+    world_id: int
+    simulation_time_us: int
+    request_id: int | None = None
+    operation_index: int | None = None
+
+
 class EnabledPayload(BaseModel, frozen=True):
     enabled: bool
 
@@ -58,10 +68,11 @@ class ExperimentEventBase(BaseModel, frozen=True):
 
     type: Literal['experiment_event'] = 'experiment_event'
     kind: EventKind
-    source: Literal['wheel', 'keyboard', 'launcher', 'sensor', 'system']
+    source: Literal['wheel', 'keyboard', 'launcher', 'model', 'sensor', 'system']
     frame_no: int | None = None
     timestamp: float
     command_id: str | None = None
+    native: NativeEventRef | None = None  # 原生事件编号与世界关联，随载荷写入
 
 
 class ToggleAutopilotEvent(ExperimentEventBase, frozen=True):
@@ -70,10 +81,42 @@ class ToggleAutopilotEvent(ExperimentEventBase, frozen=True):
     payload: EnabledPayload
 
 
+class TakeoverPayload(BaseModel, frozen=True):
+    enabled: bool
+    actor_id: int
+    revision: int
+
+
 class ToggleTakeoverEvent(ExperimentEventBase, frozen=True):
     kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
     name: Literal['toggle_takeover'] = 'toggle_takeover'
-    payload: EnabledPayload
+    payload: TakeoverPayload
+
+
+class DriverRequestPayload(BaseModel, frozen=True):
+    action: str
+
+
+class DriverRequestEvent(ExperimentEventBase, frozen=True):
+    """驾驶人按下的模式请求，未经执行，由实验端决定是否响应。"""
+
+    kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
+    name: Literal['driver_request'] = 'driver_request'
+    payload: DriverRequestPayload
+
+
+class ControlModeChangedPayload(BaseModel, frozen=True):
+    actor_id: int
+    previous_mode: Literal['manual', 'external']
+    mode: Literal['manual', 'external']
+    controller: str
+    revision: int
+
+
+class ControlModeChangedEvent(ExperimentEventBase, frozen=True):
+    kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
+    name: Literal['control_mode_changed'] = 'control_mode_changed'
+    payload: ControlModeChangedPayload
 
 
 class ToggleReverseEvent(ExperimentEventBase, frozen=True):
@@ -157,6 +200,86 @@ class LaneInvasionEvent(ExperimentEventBase, frozen=True):
     payload: LaneInvasionPayload
 
 
+class TrafficLightStatePayload(BaseModel, frozen=True):
+    scope: Literal['light']
+    actor_id: int
+    signal_id: str
+    controller_id: str | None = None
+    group_id: int | None = None
+    previous_state: str
+    state: str
+
+
+class TrafficLightStateChangedEvent(ExperimentEventBase, frozen=True):
+    kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
+    name: Literal['traffic_light_state_changed'] = 'traffic_light_state_changed'
+    payload: TrafficLightStatePayload
+
+
+class TrafficTiming(BaseModel, frozen=True):
+    green: float
+    yellow: float
+    red: float
+
+
+class TrafficControllerTimingPayload(BaseModel, frozen=True):
+    scope: Literal['controller']
+    controller_id: str
+    group_id: int | None = None
+    previous: TrafficTiming
+    current: TrafficTiming
+
+
+class TrafficControllerTimingChangedEvent(ExperimentEventBase, frozen=True):
+    kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
+    name: Literal['traffic_controller_timing_changed'] = 'traffic_controller_timing_changed'
+    payload: TrafficControllerTimingPayload
+
+
+class TrafficLightGroupFrozenPayload(BaseModel, frozen=True):
+    scope: Literal['group']
+    group_id: int
+    junction_id: int
+    controller_ids: tuple[str, ...]
+    previous: bool
+    frozen: bool
+
+
+class TrafficLightGroupFrozenEvent(ExperimentEventBase, frozen=True):
+    kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
+    name: Literal['traffic_light_group_frozen'] = 'traffic_light_group_frozen'
+    payload: TrafficLightGroupFrozenPayload
+
+
+class TrafficLightGroupResetPayload(BaseModel, frozen=True):
+    scope: Literal['group']
+    group_id: int
+    junction_id: int
+    controller_ids: tuple[str, ...]
+    previous_frozen: bool
+    frozen: bool
+
+
+class TrafficLightGroupResetEvent(ExperimentEventBase, frozen=True):
+    kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
+    name: Literal['traffic_light_group_reset'] = 'traffic_light_group_reset'
+    payload: TrafficLightGroupResetPayload
+
+
+class TrafficLightAllFrozenPayload(BaseModel, frozen=True):
+    scope: Literal['all']
+    group_ids: tuple[int, ...]
+    controller_ids: tuple[str, ...]
+    previous: bool
+    frozen: bool
+
+
+class TrafficLightAllFrozenEvent(ExperimentEventBase, frozen=True):
+    kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
+    name: Literal['traffic_light_all_frozen'] = 'traffic_light_all_frozen'
+    payload: TrafficLightAllFrozenPayload
+
+
 class CustomExperimentEvent(ExperimentEventBase, frozen=True):
     """自定义剧本打点或其他扩展事件"""
 
@@ -168,6 +291,8 @@ class CustomExperimentEvent(ExperimentEventBase, frozen=True):
 ExperimentEvent = Annotated[
     ToggleAutopilotEvent
     | ToggleTakeoverEvent
+    | DriverRequestEvent
+    | ControlModeChangedEvent
     | ToggleReverseEvent
     | ToggleManualGearEvent
     | ChangeGearEvent
@@ -178,6 +303,11 @@ ExperimentEvent = Annotated[
     | SetWeatherEvent
     | CollisionEvent
     | LaneInvasionEvent
+    | TrafficLightStateChangedEvent
+    | TrafficControllerTimingChangedEvent
+    | TrafficLightGroupFrozenEvent
+    | TrafficLightGroupResetEvent
+    | TrafficLightAllFrozenEvent
     | CustomExperimentEvent,
     Field(discriminator='name'),
 ]
@@ -228,6 +358,7 @@ class TelemetrySnapshotEvent(BaseModel, frozen=True):
     simulator_fps: float = 0.0
     # 核心 HUD 与控制状态
     control_mode: ControlMode = ControlMode.MANUAL
+    control_source: str = ''  # 原生控制来源：manual-human / external-python 等
     input_throttle: float = 0.0
     input_steer: float = 0.0
     input_brake: float = 0.0

@@ -32,7 +32,7 @@ export type SpawnPoint = {
   roll: number;
 };
 export type MachineConfig = {
-  carla: { host: string; port: number; tm_port: number; timeout: number; };
+  carla: { host: string; port: number; };
   driving_view: { host: string; port: number; timeout: number; };
   carla_runtime: {
     kind: "editor" | "packaged";
@@ -142,6 +142,7 @@ export type RuntimeState = {
     maps: string[];
     vehicles: string[];
     spawn_points: SpawnPoint[];
+    weather_presets: Record<string, Weather>;
   };
   export: {
     running: boolean;
@@ -171,7 +172,6 @@ export type Bootstrap = {
   commands: CommandDefinition[];
   keyboard_labels: Record<string, string>;
   wheel_labels: Record<string, string>;
-  weather_presets: Record<string, Weather>;
   state: RuntimeState;
   logs: Record<string, unknown>[];
   events: Record<string, unknown>[];

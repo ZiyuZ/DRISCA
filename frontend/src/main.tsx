@@ -97,12 +97,8 @@ function App() {
           setCollapsed={setCollapsed}
           desktop={desktop}
           state={state}
-          carlaAddress={`${boot.machine.carla.host}:${boot.machine.carla.port}`}
           onBeforeClose={async () => { await Promise.all([presetSave.flush(), machineSave.flush(), controlSave.flush()]); }}
           serviceOnline={online}
-          onConnect={() => {
-            setModal("connect");
-          }}
           onUnreal={() => setModal("unreal")}
           onShare={() => setModal("urls")}
           presetAction={<PresetManager
@@ -122,7 +118,7 @@ function App() {
               preset={running ? activePreset : preset}
               run={run}
               commands={boot.commands}
-              weatherPresets={boot.weather_presets}
+              weatherPresets={state.catalog.weather_presets}
               logs={logs}
               events={events}
               setRun={setRun}
@@ -259,13 +255,17 @@ function App() {
             await api("/api/carla/start", "POST", {});
           })}
           onStop={() => call(() => api("/api/carla/stop", "POST"))}
+          onConnectExisting={() => setModal("connect")}
           onConfigure={() => { setModal(""); setPage("主机配置"); setMachineTab("connection"); }}
         />}
         {modal === "connect" && <SceneControl
-          state={state} online={online} host={machine.carla.host} port={machine.carla.port}
-          weatherPresets={boot.weather_presets} onClose={() => setModal("")}
+          state={state} online={online} host={machine.driving_view.host} port={machine.driving_view.port}
+          weatherPresets={state.catalog.weather_presets} onClose={() => setModal("")}
           onConnect={async (host, port) => {
-            const config = { ...machine, carla: { ...machine.carla, host, port } };
+            const config = {
+              ...machine,
+              driving_view: { ...machine.driving_view, host, port },
+            };
             setMachine(config);
             await machineSave.flush(config);
             await api("/api/connect", "POST");
@@ -317,14 +317,14 @@ function App() {
           onClose={() => setModal("")}
         >
           {preset && (
-            <WeatherEditor weather={preset.world.weather} weatherPresets={boot.weather_presets}
+            <WeatherEditor weather={preset.world.weather} weatherPresets={state.catalog.weather_presets}
               onChange={weather => update(["world", "weather"], weather)} />
           )}
         </Modal>
 
         <Dialog open={state.world_loading}>
           <DialogContent showCloseButton={false} overlayClassName="world-loading-overlay"
-            className="sm:max-w-sm" style={{ zIndex: 201 }}
+            className="window-dialog sm:max-w-sm" style={{ zIndex: 201 }}
             onEscapeKeyDown={event => event.preventDefault()}
             onPointerDownOutside={event => event.preventDefault()}>
             <div className="flex items-center gap-3" role="status" aria-live="polite">

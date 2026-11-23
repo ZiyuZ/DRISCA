@@ -50,8 +50,12 @@ class CameraRigConfig(BaseModel, frozen=True, extra='forbid'):
 class CarlaConnectionConfig(BaseModel, frozen=True, extra='forbid'):
     host: str = '127.0.0.1'
     port: int = 2000
-    tm_port: int = 8000
-    timeout: float = 5.0
+
+
+class DrivingViewConfig(BaseModel, frozen=True, extra='forbid'):
+    host: str = '127.0.0.1'
+    port: int = 7910
+    timeout: float = 5.0  # 原生 WebSocket 普通请求超时，秒
 
 
 class CameraViewportConfig(BaseModel, frozen=True, extra='forbid'):
@@ -242,7 +246,7 @@ class EgoVehicleConfig(BaseModel, frozen=True, extra='forbid'):
     spawn_point: SpawnPoint                  # 预设指定的地图出生位姿
     default_speed_limit: float = 33.33         # 默认限速 (m/s，对应 120 km/h)
     dynamic_speed_limit: bool = False          # 开启时读取 actor.get_speed_limit() / 3.6 转为 m/s
-    init_autopilot: bool = False               # 启动后是否默认进入 CARLA 自动驾驶
+    init_autopilot: bool = False               # 当前自动驾驶尚未实现，启用时在启动前拒绝
 
 
 class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):

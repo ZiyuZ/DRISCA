@@ -27,7 +27,7 @@ just launcher
 
 窗口分辨率、位置、全屏、边框和目标帧率来自 display 节。display.position 保存窗口 X、Y，支持负坐标。这些值作为 Unreal 窗口参数传入，实际桌面尺寸受当前系统与引擎 DPI 行为影响。开发机使用适合屏幕的分辨率。
 
-CARLA RPC 端口来自 carla.port，流传输端口使用其后一位，驾驶接口端口来自 driving_view.port。本机启动使用本机服务地址。修改启动配置后，下次启动 Unreal 生效。
+CARLA RPC 端口来自 carla.port，流传输端口使用其后一位，原生 WebSocket 接口端口来自 driving_view.port。本机启动使用本机服务地址。修改启动配置后，下次启动 Unreal 生效。
 
 ## Unreal 与实验操作
 

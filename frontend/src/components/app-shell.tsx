@@ -24,10 +24,8 @@ type Props = {
   setCollapsed: (value: boolean) => void;
   desktop: boolean;
   state: RuntimeState;
-  carlaAddress: string;
   onBeforeClose: () => Promise<void>;
   serviceOnline: boolean;
-  onConnect: () => void;
   onUnreal: () => void;
   onShare: () => void;
   presetAction: React.ReactNode;
@@ -41,10 +39,8 @@ export function AppShell({
   setCollapsed,
   desktop,
   state,
-  carlaAddress,
   onBeforeClose,
   serviceOnline,
-  onConnect,
   onUnreal,
   onShare,
   presetAction,
@@ -68,6 +64,26 @@ export function AppShell({
     ["主机配置", Monitor],
     ["输入配置", Settings],
   ] as const;
+  const phase = state.unreal.phase;
+  const simulatorState = state.carla_connected
+    ? "已连接"
+    : state.carla_connecting
+      ? "连接中"
+      : phase === "starting"
+        ? "正在启动"
+        : phase === "stopping"
+          ? "正在关闭"
+          : phase === "error"
+            ? "运行异常"
+            : phase === "running"
+              ? "运行中未连接"
+              : "未启动";
+  const simulatorDot = state.carla_connected
+    ? ""
+    : state.carla_connecting || phase === "starting" || phase === "stopping"
+      ? " connecting"
+      : " idle";
+  const collecting = state.worker_state === "running";
   const windowAction = async (action: string) => {
     const webview = (
       window as Window & { pywebview?: { api: Record<string, () => void>; }; }
@@ -98,6 +114,9 @@ export function AppShell({
           <span className="app-separator" />
           <span className="page-title">{page}</span>
         </div>
+        {!serviceOnline && (
+          <span className="title-offline" role="status">管理端连接已断开</span>
+        )}
         <div className="title-actions">
           {presetAction}
           <Hint text="连接地址与二维码">
@@ -178,68 +197,30 @@ export function AppShell({
               ))}
             </nav>
             <div className="host-status">
-              <Hint text="Unreal 运行程序" enabled={collapsed} side="right">
+              <Hint text={`模拟器 · ${simulatorState}，点击启动、关闭或连接`} enabled={collapsed} side="right">
                 <Button variant="ghost" className="host-label host-status-button" onClick={onUnreal}>
-                  <span className={`dot${["starting", "stopping"].includes(state.unreal.phase) ? " connecting" : state.unreal.phase === "running" ? "" : " idle"}`} />
-                  {!collapsed && <span className="connection-label">Unreal {state.unreal.phase === "starting" ? "正在启动" : state.unreal.phase === "stopping" ? "正在关闭" : state.unreal.phase === "running" ? "运行中" : state.unreal.phase === "error" ? "运行异常" : "未启动"}</span>}
+                  <span className={`dot${simulatorDot}`} />
+                  {!collapsed && <span className="connection-label">模拟器{simulatorState}</span>}
                 </Button>
               </Hint>
-              <div className="host-connection">
-                <Hint
-                  text={`CARLA ${state.carla_connecting ? "连接中" : state.carla_connected ? "已连接" : "未连接"} · ${carlaAddress}`}
-                  enabled={collapsed}
-                  side="right"
-                >
-                  <Button
-                    variant="ghost"
-                    className="host-label host-status-button carla-status-button"
-                    aria-label="CARLA 连接与场景控制"
-                    aria-busy={state.carla_connecting}
-                    onClick={onConnect}
-                  >
-                    <span
-                      className={`dot${state.carla_connecting ? " connecting" : state.carla_connected ? "" : " idle"}`}
-                    />
-                    {!collapsed && (
-                      <span className="connection-label">
-                        CARLA 服务器
-                        {state.carla_connecting ? "连接中" : state.carla_connected ? "已连接" : "未连接"}
-                      </span>
-                    )}
-                  </Button>
-                </Hint>
-              </div>
               <Hint
                 enabled={collapsed}
                 side="right"
-                text={
-                  state.worker_state === "running"
-                    ? "simulator 正在运行"
-                    : "simulator 尚未启动"
-                }
+                text={collecting ? "实验采集 · 运行中" : "实验采集 · 未启动"}
               >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="host-label host-status-button"
-                >
-                  <span
-                    className={`dot${state.worker_state === "running" ? "" : " idle"}`}
-                  />
+                <div className="host-label host-status-line" role="status" aria-live="polite">
+                  <span className={`dot${collecting ? "" : " idle"}`} />
                   {!collapsed && (
                     <span className="connection-label">
-                      {state.worker_state === "running"
-                        ? "驾驶端运行中"
-                        : "驾驶端未启动"}
+                      实验采集{collecting ? "运行中" : "未启动"}
                     </span>
                   )}
-                </Button>
+                </div>
               </Hint>
             </div>
           </div>
         </aside>
         <main className="dr-main">
-          {!serviceOnline && <div className="service-alert" role="status">管理服务连接已断开</div>}
           <div
             key={page}
             className={`content${page === "控制台" ? " home-content" : " fixed-content"}`}

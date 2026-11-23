@@ -95,9 +95,14 @@ pre {
 }
 .app-dialog .weather-extra {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
   margin-top: 12px;
+}
+@media (max-width: 560px) {
+  .app-dialog .weather-extra {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .app-dialog .marker-editor {
   display: grid;
@@ -109,11 +114,22 @@ pre {
   align-items: center;
 }
 [data-slot="dialog-overlay"] {
-  top: 38px;
+  top: var(--titlebar-height, 38px);
 }
 [data-slot="dialog-overlay"].world-loading-overlay {
   top: 0;
   z-index: 200;
+}
+/* 对话框在标题栏以下的可用区域内居中，高度受可用区域限制，内容滚动留在对话框内部。 */
+:where([data-slot="dialog-content"].dr-dialog) {
+  top: calc(var(--titlebar-height, 38px) + (100dvh - var(--titlebar-height, 38px)) / 2);
+  max-height: calc(100dvh - var(--titlebar-height, 38px) - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+[data-slot="dialog-content"].window-dialog {
+  top: 50%;
+  max-height: calc(100dvh - 24px);
 }
 [data-slot="command-input"] {
   border: 0;
@@ -388,6 +404,22 @@ pre {
   justify-content: flex-start;
   padding-inline: 3px;
 }
+.prototype-shell .host-status-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  height: 28px;
+  padding-inline: 3px;
+  color: var(--muted-foreground);
+  font-size: inherit;
+}
+.prototype-shell .host-status {
+  gap: 2px;
+}
+.prototype-shell .layout.collapsed .host-status-line {
+  justify-content: center;
+}
 .prototype-shell .layout.collapsed .host-status-button {
   justify-content: center;
 }
@@ -398,13 +430,16 @@ pre {
   font-size: 11px;
   color: var(--muted-foreground);
 }
-.prototype-shell .service-alert {
+.prototype-shell .title-offline {
   flex: none;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--destructive) 35%, transparent);
+  background: color-mix(in srgb, var(--destructive) 10%, transparent);
   color: var(--destructive);
-  background: var(--card);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 .prototype-shell .service-offline .content {
   opacity: 0.55;
@@ -416,10 +451,19 @@ pre {
   padding: 0;
   border: 0;
 }
+.prototype-shell .field-hint {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+.prototype-shell .field-divider {
+  height: 1px;
+  background: var(--border);
+}
 .prototype-shell .mount-save > span:first-child {
   margin-right: auto;
 }
-.prototype-shell .carla-status-button .dot.connecting {
+.prototype-shell .host-status-button .dot.connecting {
   background: var(--primary);
   animation: connection-pulse 1s ease-in-out infinite;
 }
@@ -427,7 +471,7 @@ pre {
   50% { opacity: 0.3; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .prototype-shell .carla-status-button .dot.connecting {
+  .prototype-shell .host-status-button .dot.connecting {
     animation: none;
   }
 }
@@ -435,6 +479,7 @@ pre {
   flex: 1;
   min-width: 0;
   overflow-x: auto;
+  overflow-y: hidden;
 }
 .prototype-shell .page-tabs-row > button {
   flex: none;
@@ -453,6 +498,7 @@ pre {
   border-bottom: 0;
   background: transparent;
   overflow-x: auto;
+  overflow-y: hidden;
 }
 .prototype-shell .tabbed-page {
   gap: 0;

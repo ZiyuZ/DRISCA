@@ -34,8 +34,8 @@ export function SceneControl({ state, online, host, port, weatherPresets, onConn
     <Modal title="场景控制" open onClose={onClose}>
       <div className="grid min-w-0 gap-5">
         <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_7rem]">
-          <Field label="服务器地址" value={address} onChange={setAddress} disabled={!online || !idle || state.carla_connecting || pending} />
-          <Field label="端口" type="number" value={serverPort} onChange={setServerPort} disabled={!online || !idle || state.carla_connecting || pending} />
+          <Field label="模拟器地址" value={address} onChange={setAddress} disabled={!online || !idle || state.carla_connecting || pending} />
+          <Field label="连接端口" type="number" value={serverPort} onChange={setServerPort} disabled={!online || !idle || state.carla_connecting || pending} />
         </div>
         <div className="flex justify-end">
           <Button variant="outline" disabled={!online || !idle || state.carla_connecting || pending || !address.trim() || !Number.isInteger(serverPort) || serverPort <= 1024 || serverPort > 65535}

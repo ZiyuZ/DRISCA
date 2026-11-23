@@ -6,8 +6,6 @@ export_dir = "data/exports"
 [carla]
 host = "127.0.0.1"
 port = 2000
-tm_port = 8000
-timeout = 5.0
 
 [driving_view]
 host = "127.0.0.1"

@@ -74,3 +74,5 @@ Unreal 启动期间持续显示正在连接，直到 CARLA 世界可用或达到
 交互原型位于 `prototypes/launcher/`，开发衔接记录放在 `.local/notes/`。
 
 正式前端源码位于 `frontend/`，使用 Bun、Vite、React、TypeScript、Tailwind CSS 与 shadcn/ui。构建输出到 `src/drisca/launcher/static/`，由 Python 服务同源提供。实验机运行阶段使用构建后的静态资源。
+
+自动驾驶启用请求当前返回明确的操作错误；键盘 P 产生的请求通过事件与日志显示。已运行的人工实验保持当前模式，实际模式状态以最新遥测和控制来源为准。

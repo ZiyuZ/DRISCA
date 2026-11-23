@@ -38,6 +38,7 @@ DRISCA 基于 CARLA，为驾驶行为研究提供实验环境。平台支持实�
 | [系统架构](docs/design/01-Architecture.md) | 进程、模块、实验流程与存储设计 |
 | [核心数据结构与协议契约](docs/design/02-DataStructures.md) | 配置、通信协议与数据模型 |
 | [模块职责与 API 规范](docs/design/03-ModuleAPI.md) | 模块职责与接口设计 |
+| [原生 WebSocket 接口](docs/design/11-NativeAPI.md) | 命令批次、快照布局、道路信号与控制归属 |
 | [桌面管理端设计](docs/design/04-LauncherDesign.md) | 页面布局与操作流程 |
 | [渲染与画面传输链路](docs/reference/RenderingPipeline.md) | 相机画面处理与渲染 |
 | [开发路线图](docs/design/06-Roadmap.md) | 阶段目标与规划 |

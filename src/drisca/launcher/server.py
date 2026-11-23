@@ -40,7 +40,7 @@ from drisca.core.protocol import (
     parse_worker_event,
 )
 from drisca.core.tools import query_recorder_info, replay_recorder
-from drisca.core.weather import list_weather_presets
+from drisca.core.weather import from_payload, to_payload
 from drisca.launcher.commands import COMMANDS, MODELS
 from drisca.launcher.runtime import Runtime
 
@@ -145,7 +145,6 @@ def create_app() -> FastAPI:
             'commands': COMMANDS,
             'keyboard_labels': KEYBOARD_KEY_LABELS,
             'wheel_labels': WHEEL_BUTTON_LABELS,
-            'weather_presets': list_weather_presets(),
             'state': rt().state,
             'logs': list(rt().logs),
             'events': list(rt().events),
@@ -191,15 +190,15 @@ def create_app() -> FastAPI:
         ensure_idle()
         if rt().state['carla_connecting']:
             raise HTTPException(409, '正在连接 CARLA')
-        connection_changed = rt().machine.carla != config.carla
-        if rt().carla_process is not None and (
-            connection_changed or rt().machine.driving_view != config.driving_view
-        ):
-            raise HTTPException(409, '请先关闭 Unreal，再修改 CARLA 与驾驶接口连接参数')
+        connection_changed = (
+            rt().machine.carla != config.carla or rt().machine.driving_view != config.driving_view
+        )
+        if rt().carla_process is not None and connection_changed:
+            raise HTTPException(409, '请先关闭 Unreal，再修改 CARLA 与原生接口连接参数')
         save_machine_config(config)
         rt().machine = config
         if connection_changed:
-            rt().carla = None
+            rt().close_api()
             rt().update(
                 carla_connected=False,
                 carla_detail='',
@@ -208,6 +207,7 @@ def create_app() -> FastAPI:
                     'vehicles': [],
                     'map_name': None,
                     'spawn_points': [],
+                    'weather_presets': {},
                 },
             )
         return config
@@ -253,6 +253,8 @@ def create_app() -> FastAPI:
         if rt().state['carla_connecting'] or not rt().state['carla_connected']:
             raise HTTPException(409, 'CARLA 尚未连接')
         config = load_preset(safe_name(request.preset_name))
+        if config.ego.init_autopilot:
+            raise HTTPException(409, '自动驾驶尚未实现，请在预设中关闭启动即自动驾驶')
         rt().update(
             phase='starting', worker_state='starting', error=None, active_preset_name=request.preset_name
         )
@@ -297,6 +299,8 @@ def create_app() -> FastAPI:
         instruction = next((item for item in cfg.preset.instructions if item.id == instruction_id), None)
         if instruction is None:
             raise HTTPException(404, '指令不存在')
+        if instruction.command == 'autopilot':
+            raise HTTPException(409, '自动驾驶尚未实现，无法执行该指令')
         rt().background(rt().execute, instruction)
         return {'ok': True}
 
@@ -335,17 +339,11 @@ def create_app() -> FastAPI:
             rt().send(SetWeatherCommand(command_id=uuid4().hex, weather=config))
         else:
             ensure_idle()
-            carla = rt().carla
-            if carla is None or rt().state['carla_connecting']:
+            api = rt().api
+            if api is None or rt().state['carla_connecting']:
                 raise HTTPException(409, 'CARLA 尚未连接')
-            carla.apply_weather(config)
-            from drisca.core.weather import from_carla_weather
-
-            rt().update(
-                weather=from_carla_weather(carla.world.get_weather(), config.preset_name).model_dump(
-                    mode='json'
-                )
-            )
+            applied = from_payload(api.set_weather(to_payload(config)))
+            rt().update(weather=applied.model_dump(mode='json'))
         return {'ok': True}
 
     @app.get('/api/sessions')
@@ -458,19 +456,19 @@ def create_app() -> FastAPI:
 
     @app.post('/api/recordings/info')
     def recording_info(request: RecordingRequest):
-        carla = rt().carla
-        if carla is None:
+        api = rt().api
+        if api is None:
             raise HTTPException(409, 'CARLA 尚未连接')
-        return {'text': query_recorder_info(carla, recorder(request.name))}
+        return {'text': query_recorder_info(api, recorder(request.name))}
 
     @app.post('/api/recordings/replay')
     def replay(request: ReplayRequest):
         ensure_idle()
-        carla = rt().carla
-        if carla is None:
+        api = rt().api
+        if api is None:
             raise HTTPException(409, 'CARLA 尚未连接')
         replay_recorder(
-            carla,
+            api,
             recorder(request.name),
             request.start_time,
             request.duration,

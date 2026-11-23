@@ -2,40 +2,27 @@
 
 本文说明逐帧采集的运行状态和 SQLite 数据记录。配置定义见[配置模型](./08-ConfigurationModels.md)，消息定义见[进程通信](./07-Protocol.md)，函数接口见[模块职责与 API 规范](./03-ModuleAPI.md)。
 
-## 设计准则与类型约定
+## 类型、单位与边界
 
-1. Python 3.14 类型特性：
-   - 枚举统一使用标准库 `enum.StrEnum` 与 `enum.IntEnum`（可直接用于 JSON 序列化与 SQLite 参数绑定）。
-   - 跨进程配置与 WebSocket 消息统一使用 `pydantic.BaseModel(frozen=True)`。
-   - 高频创建的数据库行结构统一使用 `@dataclass(slots=True, frozen=True)`，避免每帧构造时的校验开销与字典分配。
-2. 物理量单位统一：
-   - 内部计算与数据库持久化中的所有速度量统一采用国际单位制 `m/s`（米/秒），角度统一指明弧度（`rad`）或角度（`deg`）。
-   - CARLA API 单位转换注意：CARLA 的 `vehicle.get_speed_limit()` 返回值单位为 `km/h`，在开启 `dynamic_speed_limit` 时必须除以 `3.6` 转换为 `m/s` 后再存入运行时状态与数据库。
-   - `km/h` 仅在面向人的展示边界（如平板 HUD、桌面端数据面板与预设输入）由前端或视图层按 `× 3.6` 转换。
-3. C++ 计算对象与持久化标量的边界分离：
-   - 在 `simulator` 内部，运行时状态直接持有 CARLA 的 C++ 对象（`carla.Vector3D`、`carla.Transform`、`carla.Location`、`carla.Waypoint`），直接调用 C++ 绑定的 `.length()`、`.cross()`、`.distance_2d()` 完成几何计算。
-   - 在进入 `storage` 写入队列时，通过显式的纯函数投影为只含基础标量（`int / float / str / bool`）的 `FrameRow`。
+配置与跨进程消息采用冻结的 Pydantic 模型，数据库行采用 `@dataclass(slots=True, frozen=True)`。Python 状态使用普通数值、三元组与 NumPy 结构化数组，原生对象保留在 Unreal。
+
+内部与落盘速度统一为 m/s，展示层乘以 3.6。原生接口在读取 CARLA 限速时将 km/h 转为 m/s。运动量在线使用 float32，时间使用 int64 微秒，帧号与身份使用整数。GNSS 经纬度同样使用 float32，几何分析使用米制世界坐标。
 
 ## 采样与时间
 
-每个世界帧采样一次。`frame_no` 使用 CARLA 世界帧号，`timestamp` 使用采样或事件发生时的 `time.time()` 时间戳。帧与事件通过帧号关联，也可按时间戳查询。会话开始和结束使用相同的时间戳形式，界面按本地时区显示。
+Unreal 在物理更新结束后形成完整世界快照。worker 以约 20 Hz exchange 取得新帧，按 frame_no 去重，每个采到的世界帧最多保存一行。数据 timestamp 来自原生 wall_time_us / 1e6；帧与事件保留实际采样时间和帧号。会话时间由 Launcher 记录，界面按本地时区显示。
 
-驾驶人输入和车辆实际控制分别保存，自动驾驶期间继续记录输入。碰撞、压线和其他离散事件共用 event 表，按名称与类别筛选。
+位姿、速度和实际控制来自同一次运动采样；IMU/GNSS 的最新样本分别保留原始采样帧和仿真时间。Python 运行快照保留这些元信息，当前 FrameRow 列保持既有结构。人工输入与车辆实际控制分别保存。
 
 ## 模拟器运行时状态（`simulator/state.py`）
 
-为了兼顾 CARLA C++ 向量计算的性能与静态类型检查（`ty`），将模拟器内部状态与数据库持久化行解耦：
+`project_snapshot()` 查找主车车辆记录与研究记录，校验 actor_id、控制来源、研究有效位及有限数值，构造数值化 `DrivingState`。车辆记录提供运动与实际控制，研究记录提供人工输入、传感器和道路细节。车速在 Python 根据速度三元组计算，车道偏移由原生道路计算提供。
 
-1. 直接持有 CARLA C++ 对象完成几何运算：
-   `DrivingState` 在 `simulator` 进程内部直接保存 `carla.Vector3D`、`carla.Transform`、`carla.Waypoint | None` 等 C++ 绑定对象。计算车速标量（`velocity.length()`）、计算车道横向偏移（`road_direction.cross(location_vector)` 与 `location.distance_2d(...)`）、计算碰撞冲量强度（`collision_impulse.length()`）均直接调用 C++ 方法。
-2. 移除全局车辆轮询：
-   `simulator` 采集与控制主车（Ego Vehicle）自身的状态。多车状态维护归属后续的 `traffic` 模块。
-3. 原生画面与研究数据分别处理：
-   Unreal 直接渲染主视图与三路后视镜，PostPhysics 汇总最新驾驶状态。Python 按世界帧号读取新状态，结合道路与 IMU/GNSS 数据生成记录；相机图像留在原生渲染链路。
-4. 显式投影方法：
-   `DrivingState` 提供两个无反射的显式转换方法：
-   - `to_frame_row(session_id: str) -> FrameRow`：将当前帧的 C++ 对象属性提取为扁平标量结构，送入 `storage` 写入队列。
-   - `to_telemetry_snapshot(seq: int) -> TelemetrySnapshotEvent`：构造最新的遥测快照放入 WebSocket 发送单槽。
+控制来源位 0 为 manual/human，2 为 external/python；主车遇到其他来源按契约错误处理。control_mode 保留业务层 manual/autopilot 枚举，external 对应模型驾驶；具体原生来源另由遥测 control_source 展示。当前自研交通算法尚未实现。
+
+`takeover_requested` 来自研究记录 input_flags bit3，表示采样期间的主动接管动作。碰撞强度沿用最近一次碰撞冲量模长，压线字符串由最新 lane_invasion 事件恢复。离散事件完整保存到 event 表。
+
+`to_frame_row(session_id)` 将状态投影为存储标量，`to_telemetry_snapshot(seq)` 构造界面快照。两条路径保持独立，Unreal 画面与后视镜始终在原生侧渲染。
 
 ## 数据库表与行模型（`storage/models.py`）
 
@@ -147,7 +134,7 @@ class EventRow:
     timestamp: float               # 事件发生时的 time.time() 时间戳
     kind: str                       # EventKind 取值 ('operator_action' | 'worker_status' | 'run_lifecycle' | 'sensor' | 'custom_event')
     name: str                       # 具体事件名称，如 'toggle_takeover', 'set_weather', 'session_start'
-    source: str                     # 触发来源：'wheel' | 'keyboard' | 'launcher' | 'sensor' | 'system'
+    source: str                     # 触发来源：'wheel' | 'keyboard' | 'launcher' | 'model' | 'sensor' | 'system'
     payload_json: str               # 结构化事件负载的 JSON 文本
 ```
 

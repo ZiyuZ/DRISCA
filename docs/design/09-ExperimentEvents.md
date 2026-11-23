@@ -28,15 +28,24 @@ class SetWeatherPayload(BaseModel, frozen=True):
     weather: WeatherConfig
 
 
+class NativeEventRef(BaseModel, frozen=True):
+    event_id: int
+    world_id: int
+    simulation_time_us: int
+    request_id: int | None = None
+    operation_index: int | None = None
+
+
 class ExperimentEventBase(BaseModel, frozen=True):
     """实验事件公共基类，描述已经发生的操作或状态变化，开启保存时写入 event 表。
     由实际执行该操作的进程上报，launcher 统一处理事件，同一个操作只记录一次。"""
     type: Literal['experiment_event'] = 'experiment_event'
     kind: EventKind
-    source: Literal['wheel', 'keyboard', 'launcher', 'sensor', 'system']
+    source: Literal['wheel', 'keyboard', 'launcher', 'model', 'sensor', 'system']
     frame_no: int | None = None
     timestamp: float
     command_id: str | None = None
+    native: NativeEventRef | None = None
 
 
 class ToggleAutopilotEvent(ExperimentEventBase, frozen=True):
@@ -45,10 +54,16 @@ class ToggleAutopilotEvent(ExperimentEventBase, frozen=True):
     payload: EnabledPayload
 
 
+class TakeoverPayload(BaseModel, frozen=True):
+    enabled: bool
+    actor_id: int
+    revision: int
+
+
 class ToggleTakeoverEvent(ExperimentEventBase, frozen=True):
     kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
     name: Literal['toggle_takeover'] = 'toggle_takeover'
-    payload: EnabledPayload
+    payload: TakeoverPayload
 
 
 class ToggleReverseEvent(ExperimentEventBase, frozen=True):
@@ -165,3 +180,20 @@ ExperimentEvent = Annotated[
 管理端事件保存发生时的时间戳，取得最新遥测时将其世界帧一并保存。初始化和收尾阶段的帧号可为空。碰撞与压线事件的详情分别保存对象、冲量和车道线数组，界面据此更新最近一次提示。
 
 具体事件类直接继承 `ExperimentEventBase`。`name` 表示具体事件类型，`kind` 用于跨事件类型筛选，例如一起查看传感器事件或运行状态事件。负载模型通过字段组合使用。
+
+## 原生事件关联与控制请求
+
+原生事件通过 worker 映射后由 Launcher 统一持久化。native 对象保留 event_id、world_id、simulation_time_us、request_id 与 operation_index，写入 event.payload_json 的 native 键。原生 wall_time_us 转为事件 timestamp；frame_no 保留发生帧。actor_id、revision、scope 与前后状态保存在各自载荷内。
+
+| 事件 | 含义与载荷 |
+| --- | --- |
+| driver_request | 驾驶人请求切换自动化，action 为 toggle_automation；请求与实际应用分别记录 |
+| control_mode_changed | 实际控制来源变化，保留 actor_id、previous_mode、mode、controller、revision |
+| toggle_takeover | 原生主动接管已生效，保留 enabled、actor_id、revision |
+| traffic_light_state_changed | 单灯状态变化，保留实际灯、控制器、组和前后状态 |
+| traffic_controller_timing_changed | 控制器配时变化，保留实际作用域和前后时长 |
+| traffic_light_group_frozen | 灯组冻结变化，保留组、控制器和冻结前后状态 |
+| traffic_light_group_reset | 灯组重置，保留受影响身份与冻结前后状态 |
+| traffic_light_all_frozen | 全部灯组冻结，保留受影响组、控制器和各组前后状态 |
+
+操作者命令通过本次 exchange 的 request_id 与 operation_index 回填 command_id；只有实际命中命令关联时才将 worker 的 model 来源映射为 launcher。键盘和传感器保留原始来源。当前自动驾驶算法尚未实现，P 请求仍记录，启用操作明确报错并保持当前人工驾驶。正常自动相位由帧快照记录，操作者信号调整按一次操作记录一次事件。

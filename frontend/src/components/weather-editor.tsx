@@ -44,26 +44,47 @@ const presets = [
 export const weatherName = (value: string) =>
   presets.find(([key]) => key === value)?.[1] ?? value;
 const primary = [
-  ["cloudiness", "云量 · %", 0, 100],
-  ["precipitation", "降雨 · %", 0, 100],
-  ["wetness", "路面湿度 · %", 0, 100],
-  ["sun_altitude_angle", "太阳高度 · °", -90, 90],
-  ["fog_density", "雾浓度 · %", 0, 100],
-  ["wind_intensity", "风力 · %", 0, 100],
+  ["cloudiness", "云量 · %", 0, 100, 1],
+  ["precipitation", "降雨 · %", 0, 100, 1],
+  ["wetness", "路面湿度 · %", 0, 100, 1],
+  ["sun_altitude_angle", "太阳高度 · °", -90, 90, 1],
+  ["fog_density", "雾浓度 · %", 0, 100, 1],
+  ["wind_intensity", "风力 · %", 0, 100, 1],
 ] as const;
 const extra = [
-  ["precipitation_deposits", "路面积水"],
-  ["dust_storm", "沙尘"],
-  ["sun_azimuth_angle", "太阳方位角"],
-  ["fog_distance", "雾起始距离"],
-  ["fog_falloff", "雾衰减"],
-  ["scattering_intensity", "散射强度"],
-  ["mie_scattering_scale", "米氏散射"],
-  ["rayleigh_scattering_scale", "瑞利散射"],
+  ["precipitation_deposits", "路面积水 · %", 0, 100, 1],
+  ["dust_storm", "沙尘 · %", 0, 100, 1],
+  ["sun_azimuth_angle", "太阳方位角 · °", 0, 360, 1],
+  ["fog_distance", "雾起始距离 · m", 0, 500, 5],
+  ["fog_falloff", "雾衰减", 0, 5, 0.1],
+  ["scattering_intensity", "散射强度", 0, 10, 0.1],
+  ["mie_scattering_scale", "米氏散射", 0, 5, 0.01],
+  ["rayleigh_scattering_scale", "瑞利散射", 0, 5, 0.01],
 ] as const;
+type WeatherRow = (typeof primary)[number] | (typeof extra)[number];
 export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
   const change = (key: string, value: number) => {
     onChange({ ...weather, [key]: value, preset_name: "Custom" });
+  };
+  const row = ([key, label, min, max, step]: WeatherRow) => {
+    const value = Number(weather[key]);
+    return (
+      <label className="weather-field" key={key}>
+        <span>{label}</span>
+        <div className="weather-range">
+          <Slider
+            className="prototype-slider"
+            aria-label={label}
+            min={min}
+            max={max}
+            step={step}
+            value={[Math.min(max, Math.max(min, value))]}
+            onValueChange={([v]) => change(key, v)}
+          />
+          <NumberInput value={value} onValueChange={(v) => change(key, v)} />
+        </div>
+      </label>
+    );
   };
   return (
     <div className="weather-editor">
@@ -77,31 +98,7 @@ export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
           }
         />
       </label>
-      {primary.map(([key, label, min, max]) => {
-        const value = Number(weather[key]);
-        return (
-          <label className="weather-field" key={key}>
-            <span>{label}</span>
-            <div className="weather-range">
-              <Slider
-                className="prototype-slider"
-                aria-label={label}
-                min={min}
-                max={max}
-                step={1}
-                value={[Math.max(min, Math.min(max, value))]}
-                onValueChange={([v]) => change(key, v)}
-              />
-              <NumberInput
-                value={value}
-                min={min}
-                max={max}
-                onValueChange={(value) => change(key, value)}
-              />
-            </div>
-          </label>
-        );
-      })}
+      {primary.map(row)}
       <Collapsible>
         <CollapsibleTrigger asChild>
           <Button variant="ghost" className="px-0">
@@ -110,16 +107,7 @@ export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent className="weather-extra">
-          {extra.map(([key, label]) => (
-            <label className="weather-field" key={key}>
-              <span>{label}</span>
-              <NumberInput
-                step="0.01"
-                value={Number(weather[key])}
-                onValueChange={(value) => change(key, value)}
-              />
-            </label>
-          ))}
+          {extra.map(row)}
         </CollapsibleContent>
       </Collapsible>
     </div>

@@ -22,7 +22,7 @@
 
 需要迁移的现有能力包括地图与出生点、车辆目录和生成、天气、相机与镜面布局、驾驶状态、道路与车道信息、IMU/GNSS、碰撞与压线、Recorder 和已有回放操作。压线和道路计算包含原客户端承担的工作，迁移时复用现有算法并保持数据含义。
 
-单机驾驶通道沿用本机 TCP 与换行分隔的 JSON 请求响应，由 simulator worker 连接 Unreal。状态在 PostPhysics 汇总，`frame_no` 表示刚结束物理更新的世界帧，`timestamp`、`wall_time`、位姿和速度来自同一次采样。worker 连续读取最新快照，按 `frame_no` 丢弃重复帧。读取间隔属于当前实现参数，采样结果保留实际帧号和时间。
+单机通道采用 WebSocket，由 simulator worker 连接 Unreal，JSON 承载命令、结果与事件，固定二进制承载全车运动与主车研究快照。状态在 PostPhysics 汇总，`frame_no` 表示刚结束物理更新的世界帧，`timestamp`、`wall_time`、位姿和速度来自同一次采样。worker 连续读取最新快照，按 `frame_no` 丢弃重复帧。读取间隔属于当前实现参数，采样结果保留实际帧号和时间。
 
 成功调用 `driving_view.start` 的连接持有当前活动视图。活动期间再次调用 `start` 返回 `driving view is already active, use update to change it`，配置调整统一使用 `update`。
 
@@ -30,7 +30,7 @@
 
 本机调参工具沿用已有入口。产品界面的调整通过 Launcher 与 worker 执行。业务消息与连接方向分别描述，后续接口选型见[待讨论事项](./04-Decisions.md)。
 
-官方 Python 客户端在迁移阶段继续承担尚未接入的能力。专用接口覆盖现有功能后，Python 端移除 carla 包依赖和对应对象类型。原生端仍复用 CARLA 内部能力，随上游变化调整这一部分接入代码。
+Python 已通过自有客户端访问原生 API，移除 carla 包和专用 wheel；原生端继续复用 CARLA 内部能力。官方 Traffic Manager 宿主方案取消，自研 Python 交通模块放在 src/drisca/traffic/，道路、信号与 external 批量控制接口为其提供基础。迁移后的 Launcher 已在编辑器版 Town10HD_Opt 完成单车流程联调，Singapore_Intersection 车辆生成问题正在排查。
 
 天气配置的命名预设代表完整的 CARLA 内置天气；`preset_name` 为 `Custom` 时使用各项数值参数。界面选择预设后填入对应参数，修改任意参数会自动切换到 `Custom`。脚本需要修改预设中的某个参数时，先读取该预设参数，再以 `Custom` 提交修改后的完整天气。
 

@@ -6,6 +6,8 @@ DRISCA 由一个父进程和若干子进程组成。管理端 `launcher` 通过 
 
 `simulator` 按世界帧号采集新状态，`launcher` 处理界面操作和网络消息。Unreal 的驾驶输入与画面更新独立运行。
 
+当前原生 API 与 Python 客户端已接入，完整实验流程正在联调。交通模型由 `traffic` 自研，自动驾驶当前显式拒绝启用；方向盘接入等待硬件。
+
 ## 术语
 
 全文使用以下名称。
@@ -47,7 +49,7 @@ flowchart TD
     launcher <-.->|"本地 WebSocket"| traffic
 
     launcher -->|"预检、地图、天气、清理"| carla
-    simulator <-->|"CARLA RPC + 原生驾驶 TCP JSON"| carla
+    simulator <-->|"原生 WebSocket：JSON + 二进制快照"| carla
     traffic <-.->|"读取世界、控制背景车"| carla
 
     simulator -->|"写入数据行"| db
@@ -59,7 +61,7 @@ flowchart TD
 
 `launcher` 管理 Unreal 与实验子进程，并提供操作者页面和业务接口。它在同一个 HTTP 服务中承载操作者控制台、平板 HUD、页面接口与 SSE，以及子进程的本地 WebSocket 接入。`simulator` 与 `traffic` 不开放端口，由 `launcher` 以 `sys.executable -m` 启动，启动后主动连回 `launcher`。
 
-运行期的通道是本地 WebSocket，承载三类内容：下行的控制命令，上行的遥测快照、日志和状态，以及子进程在执行操作后上报的实验事件。主视图与后视镜画面保留在 Unreal 内。worker 另行连接原生驾驶 TCP JSON 接口，读取最新状态并调整视图。
+运行期的通道是本地 WebSocket，承载三类内容：下行的控制命令，上行的遥测快照、日志和状态，以及子进程在执行操作后上报的实验事件。主视图与后视镜画面保留在 Unreal 内。worker 另行连接原生 WebSocket 接口，读取最新状态并调整视图。
 
 `launcher` 同时通过操作系统的 `stdout` 与 `stderr` 管道捕获子进程的输出和退出码。子进程即使在连上 WebSocket 之前因底层扩展或环境问题崩溃，错误输出也能保留下来。
 
@@ -85,7 +87,7 @@ flowchart TD
     traffic -.-> core
     traffic -.-> storage
 
-    core --> carla_pkg[("carla 包")]
+    core --> native_api["WebSocket 客户端 + NumPy 快照"]
     storage --> sqlite_pkg[("sqlite3 标准库")]
 
     style traffic stroke-dasharray: 5 5
@@ -93,11 +95,11 @@ flowchart TD
 
 依赖只能从上往下指，`import` 不能反向。几条具体约束如下。
 
-`core` 提供 CARLA 连接、地图与世界设置、场景清理，以及共享的配置和消息模型。主车生成与控制、传感器创建及回调由 `simulator` 管理。`core` 的依赖集中在 CARLA 与配置、协议解析所需的库。
+`core` 提供原生 WebSocket 客户端、NumPy 快照解码和共享的配置、协议模型。`simulator` 编排主车、视图、采集与存储；车辆创建、传感器计算和道路查询通过接口在 Unreal 内执行。
 
 `storage` 是数据库的唯一入口，负责表结构、版本校验、批量写入、查询和导出。它只依赖标准库 `sqlite3`，不导入 `carla`、硬件或界面框架。CARLA 的原生对象要先投影成扁平的行结构，才能交给 `storage`。
 
-`simulator` 组合原生驾驶状态、道路信息与最新传感器数据，生成数据行和遥测快照。键盘及画面由 Unreal 处理；`wheel_device.py` 保留方向盘设备访问与回正力，硬件接入后继续由 simulator 管理。
+`simulator` 从原生车辆记录与研究记录生成数据行和遥测快照。键盘及画面由 Unreal 处理；`wheel_device.py` 保留方向盘设备访问与回正力，硬件接入后继续由 simulator 管理。
 
 `launcher` 由 Python 后端与 Web 界面组成。后端承载 HTTP、SSE 和子进程 WebSocket；桌面使用 pywebview 无边框窗口加载同一套页面。实验编排使用标准库 `subprocess` 管理子进程，Windows Job Object 管理父子进程退出关系。前后端通信见[管理端前后端通信](./10-LauncherWeb.md)。
 
@@ -195,7 +197,9 @@ sequenceDiagram
 
 显示目标帧率由机器配置的 `target_fps` 指定，Unreal 异步推进世界。Python 读取最新状态，每个采到的世界帧最多保存一行。帧与事件保存发生时的时间戳，会话记录开始和结束时间，具体字段见[运行状态与实验数据](./02-DataStructures.md)。
 
-驾驶状态在 Unreal 的 PostPhysics 汇总，帧号、世界时间、墙钟时间、位姿和速度来自同一次采样。Python 按 `frame_no` 丢弃重复读取，结合最新 IMU 与 GNSS 数据保存。主视图与后视镜由原生渲染链路更新。
+驾驶状态在 Unreal 的 PostPhysics 汇总，帧号、世界时间、墙钟时间、位姿和速度来自同一次采样。Python 按 `frame_no` 丢弃重复读取，研究块包含 IMU/GNSS 及各自采样时刻。主视图与后视镜由原生渲染链路更新。
+
+原生异步世界保持可变帧步长，FixedDeltaSeconds 处于未设置状态。物理子步按 simulation_fps 的最大间隔划分，并以最多覆盖 0.2 秒世界帧的子步数执行。仿真时间取当前世界 GetTimeSeconds，地图加载后重新起算，与原生传感器时间一致。
 
 `traffic` 从不推进世界，只通过 `wait_for_tick()` 或读取世界状态来跟随。它与 `simulator` 是两个进程，没有共享的调度。因此，`traffic` 的控制作用在哪一帧，取决于两个进程的调度时机，不一定固定为下一帧。
 
@@ -229,7 +233,7 @@ sequenceDiagram
 
 操作者在控制台触发语音、接管请求和其他现场操作。自动触发功能随具体实验需求加入。
 
-运行控制位于控制台页，负责自动驾驶、接管、天气、语音和打点。方案配置的相机安装标签负责四路相机位姿与视野，主机配置的驾驶显示标签负责后视镜布局与显隐。方案配置页负责预设管理，并支持从最新遥测拾取出生点。
+运行控制位于控制台页，负责接管、天气、语音和打点，自动驾驶入口保留并明确提示当前状态。方案配置的相机安装标签负责四路相机位姿与视野，主机配置的驾驶显示标签负责后视镜布局与显隐。方案配置页负责预设管理，并支持从最新遥测拾取出生点。
 
 调整相机时，`launcher` 发送 `UpdateCameraCommand`，`simulator` 应用后上报 `UpdateCameraEvent`，再由 `launcher` 在开启保存时写入事件表。调好后，操作者可以保存到当前预设，供后续实验使用。预设页只用于实验前的静态配置编辑。
 
@@ -259,7 +263,7 @@ sequenceDiagram
 
 ## 线程模型
 
-`simulator` 的主线程按世界帧运行，同步推进频率取预设的 `simulation_fps`，默认 60 Hz。每一帧的步骤依次为：处理控制命令队列、采集外设输入、计算并施加控制、推进世界并对齐传感器、更新运行状态、合成画面并上屏。网络、日志和数据库写入都在独立线程中完成。
+`simulator` 主线程以约 20 Hz 执行 exchange，依次处理命令、读取完整原生快照、投影数据与发布遥测。原生连接使用 websockets 同步客户端；worker 到 Launcher 的消息与日志由独立线程处理，数据库由后台存储线程写入。Unreal 异步推进世界，原生 API 在游戏线程推进异步 Beast 操作、应用命令与采样。
 
 ```mermaid
 flowchart LR

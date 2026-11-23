@@ -6,12 +6,12 @@ readme = "README.md"
 requires-python = ">=3.14,<3.15"
 authors = [{ name = "ZiyuZ", email = "19648091+ZiyuZ@users.noreply.github.com" }]
 dependencies = [
-  "carla==1.0",
   "fastapi>=0.163.1",
   "logitech-steering-wheel>=1.0",
   "loguru>=0.8.0",
   "matplotlib>=3.10,<4",
   "networkx>=3.5,<4",
+  "numpy",
   "pydantic>=2.12,<3",
   "pygame-ce>=2.5.8",
   "pywebview>=6.2.1",
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pyyaml>=6.0.2,<7", "ruff", "ty"]
+dev = ["ruff", "ty"]
 
 [build-system]
 requires = ["uv_build>=0.13.8,<0.14.0"]
@@ -45,11 +45,5 @@ lint.per-file-ignores = { "**/{tests,docs,tools,scripts}/*" = [
   "PLC0415",  # import-outside-top-level
 ] }
 
-[tool.ty.environment]
-extra-paths = ["vendor/carla/stubs"]
-
 [tool.uv]
 index = [{ name = "tsinghua", url = "https://pypi.tuna.tsinghua.edu.cn/simple", default = true }, { name = "pytorch-cu130", url = "https://mirror.sjtu.edu.cn/pytorch-wheels/cu130", explicit = true }]
-
-[tool.uv.sources]
-carla = { path = "vendor/carla/carla-1.0-cp314-cp314-win_amd64.whl" }

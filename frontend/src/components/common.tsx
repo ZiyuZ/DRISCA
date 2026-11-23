@@ -11,7 +11,7 @@ export function Modal({ title, open, onClose, children, footer }: {
 }) {
   return (
     <DialogRoot open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="app-dialog flex max-h-[calc(100dvh-76px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent className="app-dialog flex flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
         <DialogHeader className="shrink-0 border-b px-6 py-5 text-left">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription className="sr-only">{title}</DialogDescription>

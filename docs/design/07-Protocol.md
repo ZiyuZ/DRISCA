@@ -173,7 +173,7 @@ LauncherCommand = Annotated[
 ]
 ```
 
-> 命令与事件的区别：`XxxCommand` 表示要求子进程执行某个操作，由 `launcher` 发出。`ExperimentEvent`（`XxxEvent`）表示某个操作已经在子进程中执行生效，由实际执行它的进程在应用之后上报并记录。例如 `launcher` 发出 `SetAutopilotCommand`，`simulator` 切换成功后上报 `ToggleAutopilotEvent(source='launcher')`。事件表记录实际生效的操作，界面依据事件和最新遥测更新。
+> 命令与事件的区别：`XxxCommand` 表示要求子进程执行某个操作，由 `launcher` 发出。`ExperimentEvent`（`XxxEvent`）表示某个操作已经在子进程中执行生效，由实际执行它的进程在应用之后上报并记录。例如 Launcher 发出天气命令，原生应用后产生 set_weather 事件，由 worker 回填来源 command_id 并上报。事件表记录实际生效的操作，界面依据事件和最新遥测更新。
 
 ## 命令错误
 
@@ -191,8 +191,16 @@ LauncherCommand = Annotated[
 
 ## 接管与事件
 
-`control_mode` 表示手动或自动驾驶，`takeover_requested` 表示接管提示状态。操作者可发出接管请求。被试执行接管动作时，直接关闭自动驾驶并进入人工驾驶，同时结束接管提示。键盘与方向盘的 `takeover` 绑定执行这一动作。
+`control_mode` 表示手动或自动驾驶，`takeover_requested` 表示当前采样期间的主动接管动作。操作者可发出接管请求。被试执行接管动作时，直接关闭自动驾驶并进入人工驾驶，同时结束接管提示。键盘与方向盘的 `takeover` 绑定执行这一动作。
 
 碰撞与压线回调每发生一次生成一条事件，同一世界帧可有多条。事件携带发生时的世界帧号和时间戳。操作者打点使用实际时间戳并关联最新遥测帧。管理端收到事件后更新面板，开启保存时写入 event 表。
 
-相机命令中的 `CameraConfig.x/y/z` 使用车辆包围盒比例，由 simulator 在执行时转换为实际安装位置。管理端指令库中的按钮定义与下行命令分别由 launcher 编排和 core 协议表达。
+相机命令中的 `CameraConfig.x/y/z` 使用车辆包围盒比例，由 Unreal 根据主车原生包围盒转换为实际安装位置。管理端指令库中的按钮定义与下行命令分别由 launcher 编排和 core 协议表达。
+
+## 原生接口与新增事件
+
+worker 到 Launcher 保持本地 JSON WebSocket；Launcher/worker 到 Unreal 使用独立原生连接，契约见[原生 WebSocket 接口](./11-NativeAPI.md)。当前启用自动驾驶的命令明确拒绝并保留人工实验，控制连接或研究数据错误按实验失败处理。
+
+ExperimentEventBase.source 增加 model，区分研究模型与操作者操作。原生事件带 native 对象：event_id、world_id、simulation_time_us、request_id、operation_index；Launcher 将其写入已有 payload_json 的 native 键。command_id 仍用于 Launcher 命令关联。遥测增加 control_source，保留业务层 control_mode。
+
+driver_request 记录驾驶人的自动化切换请求；control_mode_changed 记录实际来源变化；toggle_takeover 载荷包含 enabled、actor_id 与 revision。信号操作新增 traffic_light_state_changed、traffic_controller_timing_changed、traffic_light_group_frozen、traffic_light_group_reset、traffic_light_all_frozen，保留实际作用域与前后值。模型定义以 core/protocol.py 为准，事件含义见[实验事件](./09-ExperimentEvents.md)。

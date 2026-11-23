@@ -116,14 +116,14 @@ class CameraRigConfig(BaseModel, frozen=True, extra='forbid'):
 
 
 class CarlaConnectionConfig(BaseModel, frozen=True, extra='forbid'):
+    """CARLA 服务端参数，仅用于启动 Unreal 的 RPC 与流传输端口。"""
+
     host: str = '127.0.0.1'
     port: int = Field(default=2000, gt=1024, le=65535)
-    tm_port: int = Field(default=8000, gt=1024, le=65535)
-    timeout: float = Field(default=5.0, gt=0)
 
 
 class DrivingViewConfig(BaseModel, frozen=True, extra='forbid'):
-    """Unreal 原生驾驶视图的本机 RPC 连接。"""
+    """Unreal 原生 WebSocket API 与驾驶视图的监听地址。"""
 
     host: str = '127.0.0.1'
     port: int = Field(default=7910, gt=1024, le=65535)
@@ -349,8 +349,8 @@ class EgoVehicleConfig(BaseModel, frozen=True, extra='forbid'):
     blueprint: str = ''  # 从已连接 CARLA 的车辆列表选择
     spawn_point: SpawnPoint  # 预设指定的地图出生位姿
     default_speed_limit: float = Field(default=33.33, ge=0)
-    dynamic_speed_limit: bool = False  # 开启时读取 actor.get_speed_limit() / 3.6 转为 m/s
-    init_autopilot: bool = False  # 启动后是否默认进入 CARLA 自动驾驶
+    dynamic_speed_limit: bool = False  # 开启时使用车辆记录的限速（原生已换算为 m/s），手动主车为 0
+    init_autopilot: bool = False  # 原生接口尚未提供自动驾驶，启动时显式拒绝
 
 
 class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):
@@ -392,13 +392,16 @@ class RunConfig(BaseModel, frozen=True, extra='forbid'):
 
 
 def compose_run_config(
-    machine: MachineConfig, control: ControlConfig, preset: PresetConfig, run: RunSettings
+    machine: MachineConfig,
+    control: ControlConfig,
+    preset: PresetConfig,
+    run: RunSettings,
+    weather_presets: dict[str, WeatherConfig],
 ) -> RunConfig:
-    from .weather import from_carla_weather, to_carla_weather
+    from .weather import resolve_weather
 
-    weather = preset.world.weather
-    if weather.preset_name != 'Custom':
-        weather = from_carla_weather(to_carla_weather(weather), weather.preset_name)
+    weather = resolve_weather(preset.world.weather, weather_presets)
+    if weather is not preset.world.weather:
         preset = preset.model_copy(update={'world': preset.world.model_copy(update={'weather': weather})})
     return RunConfig(
         session_id=f'{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}',

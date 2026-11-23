@@ -26,7 +26,7 @@ configs/
 | 位置 | 内容 |
 | --- | --- |
 | `db_path`、`recorder_dir`、`export_dir` | 数据库、录像与导出目录 |
-| `[carla]` | `host`、`port`、`tm_port` 与连接超时 `timeout`，超时单位为秒 |
+| `[carla]` | `host`、`port`，用于 Unreal 的 CARLA RPC 启动参数 |
 | `[display]` | 窗口 `resolution`、`fullscreen`、`borderless` 和显示目标帧率 `target_fps` |
 | `[display.layout]` 与三个后视镜子表 | 后视镜初始显隐、边框、屏幕中心位置与图像尺寸 |
 | `[service]` | `launcher_host`、`launcher_port`、语音开关 `enable_tts`、调试日志 `debug` |
@@ -73,7 +73,7 @@ toggle_reverse = "left_paddle"
 | --- | --- |
 | `[world]` | 地图名、重载地图、同步模式、世界推进频率 |
 | `[world.weather]` | 天气预设名与自定义天气参数 |
-| `[ego]` | 主车蓝图、角色名、限速和初始自动驾驶 |
+| `[ego]` | 主车蓝图、角色名、限速和初始自动驾驶选项；当前保持 `init_autopilot = false` |
 | `[ego.spawn_point]` | 固定出生位置，六个位姿字段完整填写 |
 | `[cameras.front]` 等 | 每路相机的比例安装位置、角度和 FOV |
 | `[[instructions]]` | 实验指令的编号、名称、指令标识与参数 |
@@ -134,3 +134,5 @@ roll = 0.0
 实验指令从程序提供的指令库中选择并填写参数。方案配置的指令与打点标签负责定义按钮及参数；实验开始后在控制台点击执行。接管请求可同时播放预定语音。默认打点为进入路段、离开路段、任务完成和异常情况。
 
 主机配置中的导出目录由实验主机管理。实验记录默认显示最近 30 天，勾选所需会话后点击导出，界面显示进度与输出目录。录像列表读取应用管理的录像，点击行选择并设置回放参数。
+
+原生连接地址和请求超时由 `[driving_view]` 的 `host`、`port`、`timeout` 管理，默认端口为 7910。地图加载和目录请求使用 Unreal 启动超时。

@@ -16,11 +16,12 @@ import win32api  # ty: ignore[import-not-found]
 import win32con
 import win32job  # ty: ignore[import-not-found]
 
-from drisca.core.client import CarlaSession
+from drisca.core.client import NativeApiClient, NativeApiError
 from drisca.core.config import (
     PresetConfig,
     RunSettings,
     WeatherConfig,
+    WorldConfig,
     compose_run_config,
     load_control_config,
     load_machine_config,
@@ -29,7 +30,6 @@ from drisca.core.config import (
 from drisca.core.paths import resolve_db_path
 from drisca.core.protocol import (
     LogEvent,
-    SetAutopilotCommand,
     SetTakeoverCommand,
     SetWeatherCommand,
     StopCommand,
@@ -38,7 +38,7 @@ from drisca.core.protocol import (
     WorkerStatusEvent,
     dump_launcher_command,
 )
-from drisca.core.weather import from_carla_weather, to_carla_weather
+from drisca.core.weather import from_payload, to_payload
 from drisca.launcher.commands import MODELS
 from drisca.launcher.unreal import launch_arguments
 from drisca.storage.db import StorageDB
@@ -52,7 +52,8 @@ class Runtime:
         self.launcher_host = self.machine.service.launcher_host
         self.launcher_port = self.machine.service.launcher_port
         self.control = load_control_config()
-        self.carla: CarlaSession | None = None
+        self.api: NativeApiClient | None = None
+        self.weather_presets: dict[str, WeatherConfig] = {}
         self.run_config = None
         self.process: subprocess.Popen | None = None
         self.carla_process: subprocess.Popen | None = None
@@ -83,7 +84,13 @@ class Runtime:
             'display_layout': None,
             'vehicle_box': None,
             'error': None,
-            'catalog': {'maps': [], 'vehicles': [], 'map_name': None, 'spawn_points': []},
+            'catalog': {
+                'maps': [],
+                'vehicles': [],
+                'map_name': None,
+                'spawn_points': [],
+                'weather_presets': {},
+            },
             'export': {'running': False, 'progress': 0, 'path': None, 'error': None},
         }
         self.job = win32job.CreateJobObject(None, '')
@@ -185,7 +192,7 @@ class Runtime:
                         ready = False
                         break
                 if ready:
-                    # RPC 端口先于世界就绪开放，地图加载期间连接会超时，按截止时间重试。
+                    # 原生接口先于世界就绪开始监听，地图名称为空时按截止时间重试。
                     try:
                         self.connect(starting_unreal=True)
                     except Exception:
@@ -212,11 +219,17 @@ class Runtime:
             raise
         finally:
             self.carla_process = None
-            self.carla = None
+            self.close_api()
             changes: dict[str, Any] = {
                 'carla_connected': False,
                 'carla_connecting': False,
-                'catalog': {'maps': [], 'vehicles': [], 'map_name': None, 'spawn_points': []},
+                'catalog': {
+                    'maps': [],
+                    'vehicles': [],
+                    'map_name': None,
+                    'spawn_points': [],
+                    'weather_presets': {},
+                },
             }
             if expected_stop:
                 changes['unreal'] = {'phase': 'stopped', 'pid': None, 'kind': kind}
@@ -234,29 +247,44 @@ class Runtime:
 
     def stop_carla(self) -> None:
         process = self.carla_process
-        self.carla = None
+        self.close_api()
         self.update(carla_connected=False, carla_detail='')
         if process is not None and process.poll() is None:
             self._terminate_carla(process)
         if not self.carla_closed.wait(timeout=10):
             raise TimeoutError('Unreal 进程监视尚未结束')
 
+    def _require_api(self) -> NativeApiClient:
+        if self.api is None:
+            raise RuntimeError('原生接口尚未连接')
+        return self.api
+
+    def close_api(self) -> None:
+        api, self.api = self.api, None
+        if api is not None:
+            api.close()
+
     def connect(self, *, starting_unreal: bool = False) -> None:
         try:
-            session = CarlaSession(self.machine.carla)
-            session.connect()
-            check = session.preflight_check()
-            if not check.ok:
-                raise RuntimeError(check.error)
-            self.carla = session
+            self.close_api()
+            api = NativeApiClient(
+                self.machine.driving_view,
+                client='drisca-launcher',
+                long_timeout=self.machine.carla_runtime.startup_timeout,
+            )
+            info = api.connect()
+            if not info.map_name:
+                api.close()
+                raise RuntimeError('原生接口已连接，但世界尚未就绪')
+            self.api = api
             self.refresh_world()
             self.update(
                 carla_connected=True,
-                carla_detail=f'{self.machine.carla.host}:{self.machine.carla.port}',
+                carla_detail=f'{self.machine.driving_view.host}:{self.machine.driving_view.port}',
                 error=None,
             )
         except Exception:
-            self.carla = None
+            self.close_api()
             if not starting_unreal:
                 self.update(carla_connected=False, carla_detail='连接失败')
             raise
@@ -265,40 +293,60 @@ class Runtime:
                 self.update(carla_connecting=False)
 
     def refresh_world(self) -> None:
-        assert self.carla is not None
-        world = self.carla.world
-        current_map = world.get_map()
-        points = [
-            dict(
-                x=p.location.x,
-                y=p.location.y,
-                z=p.location.z,
-                pitch=p.rotation.pitch,
-                yaw=p.rotation.yaw,
-                roll=p.rotation.roll,
+        api = self._require_api()
+        catalog = api.catalog()
+        points = []
+        for point in catalog['spawn_points']:
+            location, rotation = point['location'], point['rotation']
+            points.append(
+                {
+                    'x': location[0],
+                    'y': location[1],
+                    'z': location[2],
+                    'pitch': rotation[0],
+                    'yaw': rotation[1],
+                    'roll': rotation[2],
+                }
             )
-            for p in current_map.get_spawn_points()
-        ]
-        catalog = {
-            'maps': sorted(self.carla.client.get_available_maps()),
-            'vehicles': sorted(bp.id for bp in world.get_blueprint_library().filter('vehicle.*')),
-            'map_name': current_map.name,
-            'spawn_points': points,
+        self.weather_presets = {
+            str(item['preset_name']): from_payload(item) for item in catalog['weather_presets']
         }
-        self.update(catalog=catalog, weather=from_carla_weather(world.get_weather()).model_dump(mode='json'))
+        self.update(
+            catalog={
+                'maps': sorted(str(name) for name in catalog['maps']),
+                'vehicles': sorted(str(item['id']) for item in catalog['vehicle_blueprints']),
+                'map_name': str(catalog['current_map']),
+                'spawn_points': points,
+                'weather_presets': {
+                    name: config.model_dump(mode='json') for name, config in self.weather_presets.items()
+                },
+            },
+            weather=from_payload(api.get_weather()).model_dump(mode='json'),
+        )
 
     def load_world(self, map_name: str) -> None:
-        assert self.carla is not None
+        api = self._require_api()
         try:
-            self.carla.client.load_world(map_name)
+            result = api.load_map(map_name)
+            self.log(f'地图已加载：{result.get("world_id")} {map_name}')
             self.refresh_world()
-            self.log(f'地图已加载：{map_name}')
-        except Exception:
-            self.carla = None
-            self.update(carla_connected=False, carla_detail='地图加载失败')
+        except NativeApiError as exc:
+            if exc.code == 'world_changed':
+                self.close_api()
+                self.update(carla_connected=False, carla_detail='世界标识已变化，请重新连接')
             raise
         finally:
             self.update(world_loading=False)
+
+    def prepare_world(self, world_cfg: WorldConfig) -> None:
+        api = self._require_api()
+        current = str(self.state['catalog']['map_name'] or '')
+        if world_cfg.load_map or current.rsplit('/', 1)[-1] != world_cfg.map_name.rsplit('/', 1)[-1]:
+            api.load_map(world_cfg.map_name)
+            self.refresh_world()
+        applied = from_payload(api.set_weather(to_payload(world_cfg.weather)))
+        self.update(weather=applied.model_dump(mode='json'))
+        api.clear_actors()
 
     async def shutdown(self) -> None:
         if self.state['phase'] != 'idle':
@@ -319,6 +367,9 @@ class Runtime:
         self.emit('experiment_event', item)
         cfg = self.run_config
         if cfg is not None and cfg.run.save_data:
+            payload = dict(item.get('payload') or {})
+            if item.get('native') is not None:
+                payload['native'] = item['native']
             db = self.db()
             try:
                 db.append_events(
@@ -331,7 +382,7 @@ class Runtime:
                             item['kind'],
                             item['name'],
                             item['source'],
-                            json.dumps(item.get('payload', {}), ensure_ascii=False),
+                            json.dumps(payload, ensure_ascii=False),
                         )
                     ]
                 )
@@ -352,8 +403,11 @@ class Runtime:
         )
 
     def start(self, preset: PresetConfig, run: RunSettings) -> None:
-        assert self.carla is not None
+        if self.api is None:
+            raise RuntimeError('原生接口尚未连接')
         try:
+            if preset.ego.init_autopilot:
+                raise RuntimeError('自动驾驶尚未实现，请在预设中关闭启动即自动驾驶')
             for instruction in preset.instructions:
                 MODELS[instruction.command].model_validate(instruction.params)
             machine = self.machine.model_copy(
@@ -366,7 +420,7 @@ class Runtime:
                     )
                 }
             )
-            cfg = compose_run_config(machine, self.control, preset, run)
+            cfg = compose_run_config(machine, self.control, preset, run, self.weather_presets)
             self.run_config = cfg
             if run.save_data:
                 db = self.db()
@@ -396,15 +450,12 @@ class Runtime:
                 active_run=cfg.run.model_dump(mode='json'),
                 cameras=cfg.preset.cameras.model_dump(mode='json'),
                 display_layout=cfg.machine.display.layout.model_dump(mode='json'),
-                weather=from_carla_weather(
-                    to_carla_weather(cfg.preset.world.weather), cfg.preset.world.weather.preset_name
-                ).model_dump(mode='json'),
+                weather=cfg.preset.world.weather.model_dump(mode='json'),
             )
             self.lifecycle('session_start')
             self.update(world_loading=True)
             try:
-                self.carla.prepare_world(preset.world)
-                self.refresh_world()
+                self.prepare_world(preset.world)
             finally:
                 self.update(world_loading=False)
             if self.stop_requested.is_set():
@@ -459,12 +510,12 @@ class Runtime:
         reset_error: Exception | None = None
         try:
             if (
-                self.carla is not None
+                self.api is not None
                 and self.state['carla_connected']
                 and (self.carla_process is None or self.carla_process.poll() is None)
             ):
                 try:
-                    self.carla.force_reset_after_experiment()
+                    self.api.clear_actors()
                 except Exception as exc:
                     normal = False
                     reset_error = exc
@@ -558,20 +609,16 @@ class Runtime:
             elif item['name'] == 'update_layout':
                 self.update(display_layout=item['payload'])
             elif item['name'] == 'set_weather':
-                weather = WeatherConfig.model_validate(item['payload']['weather'])
-                self.update(
-                    weather=from_carla_weather(to_carla_weather(weather), weather.preset_name).model_dump(
-                        mode='json'
-                    )
-                )
+                weather = from_payload(item['payload']['weather'])
+                self.update(weather=weather.model_dump(mode='json'))
             self.event(item)
 
     def execute(self, instruction) -> None:
         params: Any = MODELS[instruction.command].model_validate(instruction.params)
         command_id = uuid4().hex
         if instruction.command == 'autopilot':
-            self.send(SetAutopilotCommand(command_id=command_id, enabled=params.enabled))
-        elif instruction.command == 'takeover':
+            raise RuntimeError('自动驾驶尚未实现，无法提交该指令')
+        if instruction.command == 'takeover':
             self.send(SetTakeoverCommand(command_id=command_id, enabled=params.enabled))
             self.speak(params.speech, command_id)
         elif instruction.command == 'weather':

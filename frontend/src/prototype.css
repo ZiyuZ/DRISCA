@@ -24,6 +24,7 @@
   }
 }
 :root {
+  --titlebar-height: 38px;
   --background: oklch(0.969 0.005 255);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -659,21 +660,6 @@
     padding: 14px 5px 0;
     display: grid;
   }
-  .host-connection {
-    display: flex;
-    align-items: center;
-  }
-  .host-connection strong {
-    display: block;
-    font-size: 11px;
-    font-weight: 500;
-  }
-  .host-connection .mono {
-    display: block;
-    font-size: 10px;
-    color: var(--muted-foreground);
-    margin-top: 5px;
-  }
   .collapsed .dr-nav button {
     padding: 10px;
     justify-content: center;
@@ -685,9 +671,6 @@
     padding-left: 0;
     padding-right: 0;
     justify-items: center;
-  }
-  .collapsed .host-connection .dot {
-    margin: 0;
   }
   .dr-main {
     min-height: 0;
@@ -857,8 +840,7 @@
     .layout:not(.collapsed) .dr-sidebar {
       padding: 10px 6px;
     }
-    .layout:not(.collapsed) .dr-sidebar .dr-nav button > span,
-    .layout:not(.collapsed) .host-connection > div {
+    .layout:not(.collapsed) .dr-sidebar .dr-nav button > span {
       display: none;
     }
     .layout:not(.collapsed) .dr-nav button {
@@ -871,9 +853,6 @@
     .host-status {
       justify-items: center;
       padding: 12px 0 0;
-    }
-    .host-connection .dot {
-      margin: 0;
     }
     .content,
     .home-content {
@@ -2039,20 +2018,9 @@
     }
   }
 
-  .host-connection {
-    min-height: 28px;
-  }
-  .host-connection > .dot {
-    margin-right: 0;
-    flex-shrink: 0;
-  }
   .connection-label {
     font-weight: 500;
     white-space: nowrap;
-  }
-  .collapsed .host-connection {
-    flex-direction: column;
-    gap: 8px;
   }
   @keyframes connection-turn {
     to {
@@ -2150,15 +2118,11 @@
     .layout:not(.collapsed) .connection-label {
       display: none;
     }
-    .layout:not(.collapsed) .host-connection {
-      flex-direction: column;
-      gap: 7px;
-    }
   }
 
   .app-titlebar {
-    height: 38px;
-    min-height: 38px;
+    height: var(--titlebar-height, 38px);
+    min-height: var(--titlebar-height, 38px);
   }
   .title-actions {
     gap: 0;
@@ -2168,9 +2132,6 @@
   }
   .connection-label {
     font-size: 10px;
-  }
-  .host-connection {
-    gap: 5px;
   }
   .worker-connection {
     display: flex;

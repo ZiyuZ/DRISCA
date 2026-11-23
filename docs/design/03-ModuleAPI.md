@@ -15,10 +15,11 @@ src/drisca/
 │   ├── paths.py              # 项目标准路径常量
 │   ├── config.py             # MachineConfig / ControlConfig / PresetConfig / RunSettings / RunConfig 与读写函数
 │   ├── protocol.py           # WorkerEvent / LauncherCommand 判别联合类型与序列化
-│   ├── client.py             # CarlaSession：显式生命周期的 CARLA 客户端封装
-│   ├── driving_view.py       # 原生驾驶视图 JSON 客户端、状态与键盘 FKey 映射
-│   ├── weather.py            # WeatherConfig <-> carla.WeatherParameters 转换与预设
-│   └── tools.py              # 录像回放 (replay_recorder) 与路网拓扑导出/绘图静态工具
+│   ├── client.py             # NativeApiClient：原生 WebSocket 客户端
+│   ├── driving_view.py       # 键盘名称到 Unreal FKey 的映射
+│   ├── weather.py            # WeatherConfig 与原生天气 JSON 的转换
+│   ├── snapshot.py           # 固定二进制快照的 NumPy 解码与位标记
+│   └── tools.py              # 原生 Recorder 信息与回放调用
 ├── storage/                  # SQLite 单库持久化层
 │   ├── __init__.py
 │   ├── models.py             # SCHEMA_VERSION（由存储层维护）, SessionRow, FrameRow, EventRow, DDL 定义
@@ -28,11 +29,9 @@ src/drisca/
 │   ├── __init__.py
 │   ├── __main__.py           # 子进程入口：解析 --config，运行 SimulatorApp
 │   ├── app.py                # SimulatorApp：主循环编排、命令消费、生命周期管理
-│   ├── state.py              # DrivingState：C++ 几何计算与 FrameRow/Telemetry 投影
-│   ├── vehicle.py            # EgoVehicle：主车生成、手动/自动驾驶控制、车灯管理
-│   ├── sensors.py            # SensorSuite & CameraRig：传感器监听与四路相机管理
+│   ├── state.py              # DrivingState：数值状态与 FrameRow/Telemetry 投影
+│   ├── events.py             # 原生事件映射、来源与命令关联
 │   ├── wheel_device.py       # 保留的方向盘设备封装，硬件到位后接入
-│   ├── wheel_device.py       # WheelDevice：方向盘设备读写与力反馈
 │   └── ws_client.py          # WorkerWSClient：后台同步 WebSocket 线程与 loguru sink
 ├── launcher/                 # Python 后端、Web 界面与桌面壳
 │   ├── __main__.py           # 启动服务与可选的 pywebview 无边框窗口
@@ -120,59 +119,39 @@ def parse_launcher_command(raw_json: str | bytes) -> LauncherCommand: ...
 
 ### 2.4 `core/client.py`
 
-CARLA 连接由显式创建的 `CarlaSession` 管理：
+`NativeApiClient` 显式连接原生 WebSocket 服务。Launcher 使用管理连接，worker 使用独立控制连接；每连接的请求、JSON 响应与后续二进制快照在同一串行区间内完成。
 
 ```python
-@dataclass(slots=True, frozen=True)
-class PreflightResult:
-    ok: bool
-    server_version: str = ''
-    client_version: str = ''
-    current_map: str = ''
-    available_maps: tuple[str, ...] = ()
-    error: str = ''
-
-
-class CarlaSession:
-    """显式管理单次 CARLA 连接的客户端封装"""
-    def __init__(self, conn_cfg: CarlaConnectionConfig) -> None: ...
-
-    def connect(self) -> None:
-        """检查端口可达性并建立连接，失败抛出 ConnectionError"""
-
-    def preflight_check(self) -> PreflightResult:
-        """供 launcher 启动前预检：返回版本、当前地图与可用地图列表"""
-
-    def prepare_world(self, world_cfg: WorldConfig) -> None:
-        """供 launcher 启动实验前调用：按需加载地图、设置初始天气、清理残留车辆与行人"""
-
-    def set_sync_mode(self, enabled: bool, simulation_fps: int = 60) -> None:
-        """开启或关闭世界与 TrafficManager 的同步模式（fixed_delta_seconds = 1/simulation_fps 或 0）"""
-
-    def force_reset_after_experiment(self, clear_actors: bool = True) -> None:
-        """供 launcher 在子进程退出后调用：强制复位 synchronous_mode = False，并清理全部车辆与行人"""
-
-    def apply_weather(self, weather_cfg: WeatherConfig) -> None:
-        """将 WeatherConfig 转换为 carla.WeatherParameters 并应用到世界"""
-
-    @property
-    def world(self) -> carla.World: ...
-    @property
-    def map(self) -> carla.Map: ...
-    @property
-    def blueprint_library(self) -> carla.BlueprintLibrary: ...
+class NativeApiClient:
+    def __init__(self, config: DrivingViewConfig, *,
+                 client: str = 'drisca-client', long_timeout: float | None = None) -> None: ...
+    def connect(self) -> ServerInfo: ...
+    def close(self) -> None: ...
+    def request(self, method: str, params: dict | None = None,
+                *, timeout: float | None = None) -> dict: ...
+    def catalog(self) -> dict: ...
+    def load_map(self, map_name: str) -> dict: ...
+    def exchange(self, operations: list[dict], *, session_id: str,
+                 timeout: float | None = None) -> ExchangeResult: ...
+    def stop_experiment(self, session_id: str) -> dict: ...
 ```
+
+`ServerInfo` 包含协议版本、服务实例、世界标识和地图名；`ExchangeResult` 包含逐项结果、事件、逐车控制状态、信号状态和 `Snapshot`。普通请求使用 `DrivingViewConfig.timeout`，地图与目录使用 `long_timeout`。原生错误通过带 method、code、message、results 的 `NativeApiError` 暴露。
+
+客户端还提供天气、车辆创建、视图、Recorder 和道路目录的薄方法。`road_graph_all()` 按页取得完整车道图，缓存按世界与采样步长失效。完整原生契约见[原生 WebSocket 接口](./11-NativeAPI.md)。
+
+`core/snapshot.py` 使用明确的小端 dtype 解码 48 字节头、96 字节车辆记录和 128 字节研究记录；数组持有消息缓冲区并供本地数值计算。连接初始化与每次 exchange 校验协议和快照关联信息。
 
 ### 2.5 `core/tools.py`
 
 提供工具函数供 `launcher` 调用：
 
 ```python
-def query_recorder_info(session: CarlaSession, rec_file: Path, show_all: bool = False) -> str:
+def query_recorder_info(session: NativeApiClient, rec_file: Path, show_all: bool = False) -> str:
     """读取 .rec 录像文件的摘要或完整帧信息"""
 
 def replay_recorder(
-    session: CarlaSession,
+    session: NativeApiClient,
     rec_file: Path,
     start_time: float = 0.0,
     duration: float = 0.0,
@@ -283,52 +262,33 @@ class WorkerWSClient:
         """发送完剩余日志与事件后关闭 WebSocket，并等待收发线程结束"""
 ```
 
-### 4.2 原生驾驶视图（`core/driving_view.py`）
+### 4.2 原生驾驶视图与事件
 
-`DrivingViewClient` 由 simulator 使用，通过本机换行分隔的 TCP JSON 请求响应连接 Unreal。键盘映射由 `keyboard_mapping()` 转换为 Unreal `FKey` 名称，在实验开始时传入。
+`core/driving_view.py` 只负责 `KEYBOARD_FKEYS` 与 `keyboard_mapping()`，将输入配置转换为原生 FKey。视图启动、调整和实验停止通过 `NativeApiClient` 完成。
 
-| 方法 | 职责 |
-| --- | --- |
-| `start()` | 绑定实验车辆、相机、布局、键盘与驾驶模式，当前连接持有活动视图 |
-| `update()` | 更新相机安装与后视镜布局 |
-| `get_state()` | 读取 PostPhysics 汇总的最新状态，由 Python 按 `frame_no` 去重 |
-| `get_config()` | 读取原生端实际生效的视图配置 |
-| `set_mode()` | 更新原生视图驾驶模式，与车辆自动驾驶切换由 worker 统一调用 |
-| `stop()` | 停止驾驶视图并释放控制连接，Unreal 恢复默认自由视角 |
-
-活动视图的连接归属、异常断开与重复启动规则见[原生驾驶接口](../research-platform/02-Architecture.md)。画面由 Unreal 直接渲染，Python 保存驾驶数据并发送遥测。
+`simulator/events.py` 将已知原生事件转换为 `ExperimentEvent`，保留原生帧号、墙钟时间、车辆、控制版本与信号作用域。原生 request_id、operation_index 与当前批次的 Launcher command_id 对应，实际生效操作只记录一次。未知事件名直接报错。
 
 ### 4.3 `simulator/app.py`
 
-```python
-class SimulatorApp:
-    """模拟器主控类：管理逐帧驾驶循环与各组件生命周期"""
-    def __init__(self, run_config: RunConfig) -> None: ...
+`SimulatorApp.run()` 连接 Launcher 和原生 API，设置异步世界、创建主车、绑定视图，并按保存选项启动后台写入与 Recorder。传感器和道路计算由 Unreal 完成，首次研究采集就绪后上报 worker ready。
 
-    def run(self) -> None:
-        """
-        1. 建立 CARLA 连接并设置异步推进，创建主车与传感器，绑定原生驾驶视图
-        2. 开启保存时启动存储线程和所选 Recorder，发送 WorkerReadyEvent
-        3. 持续处理管理端命令并读取原生驾驶状态：
-           - 应用驾驶模式、天气、相机与布局调整，成功后上报对应实验事件
-           - 接收原生键盘的自动驾驶与主动接管请求，统一切换驾驶模式并记录事件
-           - 按世界帧号丢弃重复快照，组合道路与最新传感器数据生成 DrivingState
-           - 开启保存时写入数据行，遥测单独发布最新快照
-        4. 停止后完成数据与录像收尾、停止驾驶视图、销毁传感器与主车，最后关闭消息通道
-        """
-```
+主循环以约 20 Hz 收集 Launcher 命令并调用 exchange；帧后响应中的最新完整快照由 `project_snapshot()` 投影为 `DrivingState`，按 frame_no 去重后分别送入数据写入队列和遥测通道。交换等待计入本轮周期，世界、键盘和画面由 Unreal 持续推进。
+
+主车控制版本来自 control_state。主动接管在原生侧立即切人工；过期请求标记 control_superseded，worker 刷新状态后重新决策。自动驾驶算法安排在 traffic 阶段，当前启用请求明确报错，人工实验继续运行。
+
+正常停止先调用 experiment.stop 并交付最后事件，再提交剩余数据与日志并关闭连接。连接异常直接退出，Unreal 释放本次实验对象与归属录像，Launcher 将会话记为 aborted。
 
 ## `launcher` 模块职责
 
 管理端使用 Web 界面与 Python 后端。页面划分见[管理端设计](./04-LauncherDesign.md)，通信方式见[前后端通信](./10-LauncherWeb.md)。上面的管理端文件划分用于说明职责，具体接口随实现确定。
 
-`orchestrator.py` 组合使用 CARLA 接入、配置与存储组件，负责预检、准备世界、生成会话编号、合成运行配置、启动模拟器、接收消息与实验收尾。实验状态依次为 `idle`、`starting`、`running`、`stopping`。
+`runtime.py` 组合使用 CARLA 接入、配置与存储组件，负责预检、准备世界、生成会话编号、合成运行配置、启动模拟器、接收消息与实验收尾。实验状态依次为 `idle`、`starting`、`running`、`stopping`。
 
 进程使用 `subprocess.Popen`，以 `sys.executable -m drisca.simulator --config <path>` 启动，捕获标准输出、错误输出和退出码，并加入 Job Object。正常结束时发送已有停止命令，等待数据和事件提交、子进程退出，再复位世界、清理场景并完成会话记录。停机超时则强制结束进程并标记会话异常。
 
-`web.py` 提供配置读写、实验操作、数据查询与目录导出接口，通过 SSE 推送状态、遥测、日志和事件，沿用本地 WebSocket 接收模拟器消息。桌面窗口与浏览器访问同一服务。
+`server.py` 提供配置读写、实验操作、数据查询与目录导出接口，通过 SSE 推送状态、遥测、日志和事件，沿用本地 WebSocket 接收模拟器消息。桌面窗口与浏览器访问同一服务。
 
-`speech.py` 负责管理端的语音播放。pywebview 桥负责窗口最小化、最大化与关闭，关闭窗口使用编排器的正常停机流程。
+`runtime.py` 负责管理端的语音播放。pywebview 桥负责窗口最小化、最大化与关闭，关闭窗口使用编排器的正常停机流程。
 
 ## 配套约定
 

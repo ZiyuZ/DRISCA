@@ -1,26 +1,24 @@
-"""CARLA 天气参数转换。"""
+"""天气配置与原生 API 载荷之间的转换。"""
 
-import carla
-
-from .config import WeatherConfig
+from drisca.core.config import WeatherConfig
 
 
-def to_carla_weather(config: WeatherConfig) -> carla.WeatherParameters:
+def to_payload(config: WeatherConfig) -> dict[str, object]:
+    """命名预设只提交名称，由原生侧取内置完整值；Custom 提交全部数值字段。"""
     if config.preset_name != 'Custom':
-        return getattr(carla.WeatherParameters, config.preset_name)
-    return carla.WeatherParameters(**config.model_dump(exclude={'preset_name'}))
+        return {'preset_name': config.preset_name}
+    return config.model_dump(mode='json')
 
 
-def from_carla_weather(weather: carla.WeatherParameters, preset_name: str = 'Custom') -> WeatherConfig:
-    return WeatherConfig(
-        preset_name=preset_name,
-        **{name: getattr(weather, name) for name in WeatherConfig.model_fields if name != 'preset_name'},
-    )
+def from_payload(payload: dict) -> WeatherConfig:
+    return WeatherConfig.model_validate(payload)
 
 
-def list_weather_presets() -> dict[str, WeatherConfig]:
-    return {
-        name: from_carla_weather(value, name)
-        for name in dir(carla.WeatherParameters)
-        if isinstance(value := getattr(carla.WeatherParameters, name), carla.WeatherParameters)
-    }
+def resolve_weather(config: WeatherConfig, presets: dict[str, WeatherConfig]) -> WeatherConfig:
+    """把命名预设展开为完整数值，Custom 原样返回。"""
+    if config.preset_name == 'Custom':
+        return config
+    preset = presets.get(config.preset_name)
+    if preset is None:
+        raise ValueError(f'未知天气预设：{config.preset_name}')
+    return preset
