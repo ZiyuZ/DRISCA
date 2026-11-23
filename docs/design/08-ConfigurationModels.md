@@ -287,8 +287,10 @@ class TrafficConfig(BaseModel, frozen=True, extra='forbid'):
     vehicle_count: int = Field(default=0, ge=0, le=100)
     seed: int = 42                             # 车型、出生点与分岔选路的可复现随机种子
     speed_factor: float = Field(default=1.0, ge=0.3, le=1.5)
-    enable_lane_change: bool = True            # 是否允许安全间隙换道
+    enable_lane_change: bool = True            # 是否允许换道
     style: Literal['balanced', 'aggressive', 'conservative', 'sluggish', 'mixed'] = 'balanced'
+    car_following_model: Literal['idm', 'gipps', 'krauss'] = 'idm'
+    lane_change_model: Literal['gap', 'mobil'] = 'gap'
 
 
 class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):
