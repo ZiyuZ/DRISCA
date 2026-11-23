@@ -18,6 +18,7 @@ import win32job  # ty: ignore[import-not-found]
 
 from drisca.core.client import NativeApiClient, NativeApiError
 from drisca.core.config import (
+    EgoVehicleConfig,
     PresetConfig,
     RunSettings,
     WeatherConfig,
@@ -30,6 +31,7 @@ from drisca.core.config import (
 from drisca.core.paths import resolve_db_path
 from drisca.core.protocol import (
     LogEvent,
+    LogLevel,
     SetTakeoverCommand,
     SetWeatherCommand,
     StopCommand,
@@ -43,6 +45,11 @@ from drisca.launcher.commands import MODELS
 from drisca.launcher.unreal import launch_arguments
 from drisca.storage.db import StorageDB
 from drisca.storage.models import SCHEMA_VERSION, EventRow, SessionRow, SessionStatus
+
+
+def map_key(name: str) -> str:
+    """地图名按最后一段比较，兼容目录中的完整包路径。"""
+    return name.rsplit('/', 1)[-1]
 
 
 class Runtime:
@@ -61,6 +68,7 @@ class Runtime:
         self.carla_closed.set()
         self.worker: asyncio.Queue[str] | None = None
         self.worker_closed = threading.Event()
+        self.worker_error: str | None = None
         self.stop_requested = threading.Event()
         self.subscribers: set[asyncio.Queue] = set()
         self.logs: deque = deque(maxlen=500)
@@ -346,7 +354,26 @@ class Runtime:
             self.refresh_world()
         applied = from_payload(api.set_weather(to_payload(world_cfg.weather)))
         self.update(weather=applied.model_dump(mode='json'))
-        api.clear_actors()
+
+    def reset_scene(self) -> None:
+        self._require_api().clear_actors()
+
+    def spawn_point_problem(self, preset: PresetConfig) -> str | None:
+        """出生点与目标地图不一致时返回可直接展示的错误说明。"""
+        if map_key(preset.ego.spawn_map) != map_key(preset.world.map_name):
+            return f'预设出生点不属于目标地图 {map_key(preset.world.map_name)}，请在方案配置中重新选择出生点'
+        return None
+
+    def validate_spawn_point(self, ego: EgoVehicleConfig) -> None:
+        api = self._require_api()
+        point = ego.spawn_point
+        roads = api.road_query([(point.x, point.y, point.z)]).get('roads') or []
+        if not roads or not roads[0].get('valid'):
+            current = map_key(str(self.state['catalog']['map_name'] or ''))
+            raise RuntimeError(
+                f'出生点不在当前地图道路上：{current} '
+                f'({point.x:.2f}, {point.y:.2f}, {point.z:.2f})，请重新选择出生点'
+            )
 
     async def shutdown(self) -> None:
         if self.state['phase'] != 'idle':
@@ -389,7 +416,7 @@ class Runtime:
             finally:
                 db.close()
 
-    def lifecycle(self, name: str) -> None:
+    def lifecycle(self, name: str, payload: dict | None = None) -> None:
         self.event(
             {
                 'kind': 'run_lifecycle',
@@ -398,18 +425,22 @@ class Runtime:
                 'frame_no': None,
                 'timestamp': time.time(),
                 'command_id': None,
-                'payload': {},
+                'payload': payload or {},
             }
         )
 
     def start(self, preset: PresetConfig, run: RunSettings) -> None:
         if self.api is None:
             raise RuntimeError('原生接口尚未连接')
+        self.worker_error = None
         try:
             if preset.ego.init_autopilot:
                 raise RuntimeError('自动驾驶尚未实现，请在预设中关闭启动即自动驾驶')
             for instruction in preset.instructions:
                 MODELS[instruction.command].model_validate(instruction.params)
+            problem = self.spawn_point_problem(preset)
+            if problem is not None:
+                raise RuntimeError(problem)
             machine = self.machine.model_copy(
                 update={
                     'service': self.machine.service.model_copy(
@@ -456,6 +487,8 @@ class Runtime:
             self.update(world_loading=True)
             try:
                 self.prepare_world(preset.world)
+                self.validate_spawn_point(preset.ego)
+                self.reset_scene()
             finally:
                 self.update(world_loading=False)
             if self.stop_requested.is_set():
@@ -520,7 +553,11 @@ class Runtime:
                     normal = False
                     reset_error = exc
             if cfg is not None:
-                self.lifecycle('session_end' if normal else 'session_aborted')
+                detail = None if normal else (self.worker_error or self.state.get('error'))
+                self.lifecycle(
+                    'session_end' if normal else 'session_aborted',
+                    {'error': detail} if detail else None,
+                )
                 if cfg.run.save_data:
                     db = self.db()
                     try:
@@ -534,6 +571,7 @@ class Runtime:
         finally:
             self.run_config = None
             self.process = None
+            self.worker_error = None
             self.stop_requested.clear()
             self.update(
                 phase='idle',
@@ -598,6 +636,10 @@ class Runtime:
             )
         elif isinstance(event, LogEvent):
             item = event.model_dump(mode='json')
+            if event.level in (LogLevel.ERROR, LogLevel.CRITICAL) and event.message.startswith(
+                '驾驶端失败：'
+            ):
+                self.worker_error = event.message
             self.logs.append(item)
             self.emit('log', item)
         else:

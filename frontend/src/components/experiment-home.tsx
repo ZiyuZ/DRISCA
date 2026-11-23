@@ -16,6 +16,7 @@ import type {
 import { Hint } from "./hint";
 import { IconAction } from "./icon-action";
 import { LiveWeather } from "./live-weather";
+import { spawnBound } from "../lib/spawn";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Input } from "./ui/input";
@@ -67,6 +68,8 @@ export function ExperimentHome({
   useEffect(() => { if (!running) setWeatherOpen(false); }, [running]);
   const t = state.telemetry;
   const entries = logTab === "logs" ? logs : events;
+  const spawnReady = !preset || spawnBound(preset);
+  const startBlocked = !state.carla_connected || !spawnReady;
   return (
     <fieldset className="home-layout settings-fields" disabled={!serviceOnline}>
       <div className="control-top-row">
@@ -152,13 +155,15 @@ export function ExperimentHome({
                 : null}
             </div>
             <Hint
-              enabled={!state.carla_connected}
+              enabled={!running && startBlocked}
               text={
                 !state.carla_connected
                   ? "请先连接 CARLA"
-                  : running
-                    ? "结束实验"
-                    : "开始实验"
+                  : !spawnReady
+                    ? "请先选择该地图的出生点"
+                    : running
+                      ? "结束实验"
+                      : "开始实验"
               }
             >
               <span className="start-button-wrap">
@@ -166,7 +171,7 @@ export function ExperimentHome({
                   className="main-experiment-button"
                   variant={running ? "destructive" : "default"}
                   disabled={
-                    busy || (!running && (!state.carla_connected || !preset?.ego.blueprint))
+                    busy || (!running && (!state.carla_connected || !preset?.ego.blueprint || !spawnReady))
                   }
                   onClick={onStartStop}
                 >

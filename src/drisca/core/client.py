@@ -363,6 +363,13 @@ class NativeApiClient:
             timeout=self.long_timeout,
         )
 
+    def road_query(self, locations: list[tuple[float, float, float]]) -> dict[str, Any]:
+        """按世界坐标批量查询道路投影，返回顺序与 locations 一致。"""
+        return self.request(
+            'road.query',
+            {**self._world(), 'locations': [[x, y, z] for x, y, z in locations]},
+        )
+
     def road_graph_all(self, sampling_step: float = 2.0) -> dict[str, Any]:
         """按页取回当前世界的完整车道图，缓存只保留最近一次世界与采样步长。"""
         key = (self._world_id, sampling_step)

@@ -348,6 +348,7 @@ class EgoVehicleConfig(BaseModel, frozen=True, extra='forbid'):
     role_name: str = 'hero'
     blueprint: str = ''  # 从已连接 CARLA 的车辆列表选择
     spawn_point: SpawnPoint  # 预设指定的地图出生位姿
+    spawn_map: str = ''  # 出生点所属地图；为空或与目标地图不一致时视为未选择
     default_speed_limit: float = Field(default=33.33, ge=0)
     dynamic_speed_limit: bool = False  # 开启时使用车辆记录的限速（原生已换算为 m/s），手动主车为 0
     init_autopilot: bool = False  # 原生接口尚未提供自动驾驶，启动时显式拒绝

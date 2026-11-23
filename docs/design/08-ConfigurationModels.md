@@ -244,8 +244,9 @@ class EgoVehicleConfig(BaseModel, frozen=True, extra='forbid'):
     role_name: str = 'hero'
     blueprint: str = ''  # 从已连接 CARLA 的车辆列表选择
     spawn_point: SpawnPoint                  # 预设指定的地图出生位姿
+    spawn_map: str = ''                       # 出生点所属地图；为空或与目标地图不一致时视为未选择
     default_speed_limit: float = 33.33         # 默认限速 (m/s，对应 120 km/h)
-    dynamic_speed_limit: bool = False          # 开启时读取 actor.get_speed_limit() / 3.6 转为 m/s
+    dynamic_speed_limit: bool = False          # 开启时使用原生快照中的道路限速 (m/s)，手动主车为 0
     init_autopilot: bool = False               # 当前自动驾驶尚未实现，启用时在启动前拒绝
 
 
@@ -298,6 +299,8 @@ class RunConfig(BaseModel, frozen=True, extra='forbid'):
 主机配置和输入配置在下一次实验启动时生效。服务监听地址和端口在重启 launcher 后生效。运行期相机、画面布局与天气调整保存在运行状态中，应用后记录事件。方案配置页保存安装参数到预设文件；主机配置页保存画面布局到 machine.toml。
 
 `world.load_map` 表示当前地图与预设相同时是否重载，地图不同时加载目标地图。保存函数在可空字段为 None 时省略对应 TOML 项，未绑定按键写为 `unbound`。
+
+`ego.spawn_map` 记录出生点所属地图。启动前要求它与 `world.map_name` 一致，并在目标地图加载后通过原生道路查询确认坐标落在道路上；不一致或道路外直接报错，不生成车辆。旧预设没有该字段时读作空串，视为尚未选择出生点，需要在方案配置中确认一次。
 
 `SpawnPoint` 专门表达固定出生点，`CameraConfig` 将相机位姿平铺保存，两者在使用处转换为 CARLA 对象。开关事件共用 `EnabledPayload`，各事件继续通过名称区分。
 

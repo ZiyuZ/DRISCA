@@ -76,6 +76,7 @@ export type PresetConfig = {
     role_name: string;
     blueprint: string;
     spawn_point: SpawnPoint;
+    spawn_map: string;
     default_speed_limit: number;
     dynamic_speed_limit: boolean;
     init_autopilot: boolean;

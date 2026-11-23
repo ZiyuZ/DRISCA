@@ -255,6 +255,9 @@ def create_app() -> FastAPI:
         config = load_preset(safe_name(request.preset_name))
         if config.ego.init_autopilot:
             raise HTTPException(409, '自动驾驶尚未实现，请在预设中关闭启动即自动驾驶')
+        problem = rt().spawn_point_problem(config)
+        if problem is not None:
+            raise HTTPException(409, problem)
         rt().update(
             phase='starting', worker_state='starting', error=None, active_preset_name=request.preset_name
         )

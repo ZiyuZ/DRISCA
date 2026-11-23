@@ -52,48 +52,57 @@ class SimulatorApp:
             channel = WorkerWSClient(cfg.launcher_ws_url)
             channel.start()
             stack.callback(channel.close)
-            api = NativeApiClient(cfg.machine.driving_view, client='drisca-worker')
-            info = api.connect()
-            stack.callback(api.close)
-            logger.info(f'原生接口已连接：{info.map_name}，world_id {info.world_id}')
-            api.set_world(cfg.preset.world.simulation_fps)
-            ego_actor_id, describe = self._spawn_ego(api)
-            self.ego_actor_id = ego_actor_id
-            view = api.start_view(
-                session_id=cfg.session_id,
+            try:
+                self._execute(channel, stack)
+            except Exception as exc:
+                # 走既有日志通道把失败原因送到 Launcher，便于事后定位。
+                logger.error(f'驾驶端失败：{exc}')
+                raise
+
+    def _execute(self, channel: WorkerWSClient, stack: ExitStack) -> None:
+        cfg = self.config
+        api = NativeApiClient(cfg.machine.driving_view, client='drisca-worker')
+        info = api.connect()
+        stack.callback(api.close)
+        logger.info(f'原生接口已连接：{info.map_name}，world_id {info.world_id}')
+        api.set_world(cfg.preset.world.simulation_fps)
+        ego_actor_id, describe = self._spawn_ego(api)
+        self.ego_actor_id = ego_actor_id
+        view = api.start_view(
+            session_id=cfg.session_id,
+            ego_actor_id=ego_actor_id,
+            cameras=cfg.preset.cameras.model_dump(mode='json'),
+            layout=cfg.machine.display.layout.model_dump(mode='json'),
+            keyboard=keyboard_mapping(cfg.control.keyboard),
+            mode='manual',
+            dynamic_speed_limit=cfg.preset.ego.dynamic_speed_limit,
+            default_speed_limit_mps=cfg.preset.ego.default_speed_limit,
+        )
+        self._apply_control_state(view.get('control_state'))
+        self._wait_ready(api, channel)
+        writer = None
+        if cfg.run.save_data:
+            assert cfg.db_path is not None
+            writer = BatchDataWriter(Path(cfg.db_path))
+            writer.start()
+            stack.callback(writer.close)
+        if cfg.run.save_data and cfg.run.enable_carla_recorder:
+            directory = Path(cfg.machine.recorder_dir).resolve()
+            directory.mkdir(parents=True, exist_ok=True)
+            api.recorder_start(str(directory / f'{cfg.session_id}.rec'))
+        channel.send_event(
+            WorkerReadyEvent(
                 ego_actor_id=ego_actor_id,
-                cameras=cfg.preset.cameras.model_dump(mode='json'),
-                layout=cfg.machine.display.layout.model_dump(mode='json'),
-                keyboard=keyboard_mapping(cfg.control.keyboard),
-                mode='manual',
-                dynamic_speed_limit=cfg.preset.ego.dynamic_speed_limit,
-                default_speed_limit_mps=cfg.preset.ego.default_speed_limit,
+                ego_type_id=str(describe['blueprint']),
+                vehicle_box=describe['bounding_box'],
             )
-            self._apply_control_state(view.get('control_state'))
-            self._wait_ready(api, channel)
-            writer = None
-            if cfg.run.save_data:
-                assert cfg.db_path is not None
-                writer = BatchDataWriter(Path(cfg.db_path))
-                writer.start()
-                stack.callback(writer.close)
-            if cfg.run.save_data and cfg.run.enable_carla_recorder:
-                directory = Path(cfg.machine.recorder_dir).resolve()
-                directory.mkdir(parents=True, exist_ok=True)
-                api.recorder_start(str(directory / f'{cfg.session_id}.rec'))
-            channel.send_event(
-                WorkerReadyEvent(
-                    ego_actor_id=ego_actor_id,
-                    ego_type_id=str(describe['blueprint']),
-                    vehicle_box=describe['bounding_box'],
-                )
-            )
-            channel.send_event(WorkerStatusEvent(role=WorkerRole.SIMULATOR, state=WorkerState.RUNNING))
-            self._loop(api, channel, writer)
-            final = api.stop_experiment(cfg.session_id)
-            for raw in final.get('events') or ():
-                self._emit(channel, raw, command_id=None, source=str(raw['source']))
-            channel.send_event(WorkerStatusEvent(role=WorkerRole.SIMULATOR, state=WorkerState.STOPPING))
+        )
+        channel.send_event(WorkerStatusEvent(role=WorkerRole.SIMULATOR, state=WorkerState.RUNNING))
+        self._loop(api, channel, writer)
+        final = api.stop_experiment(cfg.session_id)
+        for raw in final.get('events') or ():
+            self._emit(channel, raw, command_id=None, source=str(raw['source']))
+        channel.send_event(WorkerStatusEvent(role=WorkerRole.SIMULATOR, state=WorkerState.STOPPING))
 
     def _spawn_ego(self, api: NativeApiClient) -> tuple[int, dict[str, Any]]:
         ego = self.config.preset.ego

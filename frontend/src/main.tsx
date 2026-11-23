@@ -26,11 +26,14 @@ import { ExperimentConfig } from "./components/experiment-config";
 import { ExperimentHome } from "./components/experiment-home";
 import { SettingsPage } from "./components/settings-page";
 import { Toaster } from "./components/ui/sonner";
+import { SpawnPointDialog } from "./components/spawn-point-dialog";
 import { WeatherEditor } from "./components/weather-editor";
 import { useConfig } from "./hooks/use-config";
 import { useRuntime } from "./hooks/use-runtime";
 import { useScrollbars } from "./hooks/use-scrollbars";
 import { api } from "./lib/api";
+import { mapKey } from "./lib/spawn";
+import type { SpawnPoint } from "./types/api";
 import "./style.css";
 
 const clone = <T,>(value: T): T => structuredClone(value);
@@ -79,6 +82,16 @@ function App() {
     t = state?.telemetry;
   const activePreset = state?.active_preset ?? preset;
   const displayedRun = state?.phase === "idle" ? run : (state?.active_run ?? run);
+  const [spawnDialog, setSpawnDialog] = useState(false);
+  const changePresetMap = (mapName: string) => {
+    update(["world", "map_name"], mapName);
+    if (mapKey(mapName) !== mapKey(preset?.ego.spawn_map ?? "")) setSpawnDialog(true);
+  };
+  const confirmSpawn = (point: SpawnPoint) => {
+    update(["ego", "spawn_point"], point);
+    update(["ego", "spawn_map"], preset?.world.map_name ?? "");
+    setSpawnDialog(false);
+  };
   if (!boot || !machine || !control || !state)
     return (
       <div className="loading">
@@ -192,6 +205,8 @@ function App() {
                     state={state}
                     update={update}
                     onWeather={() => setModal("weather")}
+                    onMapChange={changePresetMap}
+                    onPickSpawn={() => setSpawnDialog(true)}
                   />
                 )}
                 {configTab === "camera" && (
@@ -321,6 +336,22 @@ function App() {
               onChange={weather => update(["world", "weather"], weather)} />
           )}
         </Modal>
+
+        {spawnDialog && preset && (
+          <SpawnPointDialog
+            preset={preset}
+            catalogMap={state.catalog.map_name}
+            spawnPoints={state.catalog.spawn_points}
+            connected={online && state.carla_connected}
+            worldLoading={state.world_loading}
+            phaseIdle={state.phase === "idle"}
+            onLoadMap={() =>
+              call(() => api("/api/world/map", "POST", { map_name: preset.world.map_name }))
+            }
+            onConfirm={confirmSpawn}
+            onClose={() => setSpawnDialog(false)}
+          />
+        )}
 
         <Dialog open={state.world_loading}>
           <DialogContent showCloseButton={false} overlayClassName="world-loading-overlay"

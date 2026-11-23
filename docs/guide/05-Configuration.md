@@ -73,7 +73,7 @@ toggle_reverse = "left_paddle"
 | --- | --- |
 | `[world]` | 地图名、重载地图、同步模式、世界推进频率 |
 | `[world.weather]` | 天气预设名与自定义天气参数 |
-| `[ego]` | 主车蓝图、角色名、限速和初始自动驾驶选项；当前保持 `init_autopilot = false` |
+| `[ego]` | 主车蓝图、角色名、出生点所属地图、限速和初始自动驾驶选项；当前保持 `init_autopilot = false` |
 | `[ego.spawn_point]` | 固定出生位置，六个位姿字段完整填写 |
 | `[cameras.front]` 等 | 每路相机的比例安装位置、角度和 FOV |
 | `[[instructions]]` | 实验指令的编号、名称、指令标识与参数 |
@@ -101,11 +101,13 @@ roll = 0.0
 
 出生点采用地图世界坐标，位置单位 m，角度单位 deg。示例坐标用于说明格式，操作者可从地图出生点列表选择位置，或在方案配置页拾取当前位置后保存。
 
+`ego.spawn_map` 记录出生点所属地图。它与 `world.map_name` 不一致或为空时，启动前需要在方案配置的出生点对话框中确认：目标地图已加载且有点时随机预选，目标地图没有预设点时填写完整坐标。确认后界面把目标地图写入该字段。启动前还会用原生道路查询校验坐标落在道路上，道路外直接报错，不生成车辆。
+
 ### 天气和限速
 
 `world.weather.preset_name` 选择 CARLA 天气预设，例如 `ClearNoon`。选择 `Custom` 时，编辑同一表中的云量、降雨、积水、风、太阳、雾和散射参数，完整字段见示例。
 
-`ego.dynamic_speed_limit = false` 时使用 `default_speed_limit`，文件单位为 m/s；设为 `true` 时读取 CARLA 道路限速。界面以 km/h 展示和输入。
+`ego.dynamic_speed_limit = false` 时使用 `default_speed_limit`，文件单位为 m/s；设为 `true` 时使用原生快照中的道路限速（m/s），手动驾驶的主车通常为 0。界面以 km/h 展示和输入。
 
 ### 相机
 

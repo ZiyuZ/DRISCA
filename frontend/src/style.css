@@ -244,6 +244,15 @@ pre {
 .prototype-shell .spawn-fields > label {
   min-width: 0;
 }
+.prototype-shell .spawn-missing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
 .prototype-shell .spawn-fields input {
   width: 100%;
   min-width: 0;
@@ -455,6 +464,17 @@ pre {
   font-size: 11px;
   line-height: 1.45;
   color: var(--muted-foreground);
+}
+.prototype-shell .field-error {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--destructive);
+}
+.prototype-shell .spawn-load {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
 }
 .prototype-shell .field-divider {
   height: 1px;
