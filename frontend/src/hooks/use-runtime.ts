@@ -21,6 +21,9 @@ export function useRuntime() {
       stream.onmessage = event => {
         const message = JSON.parse(event.data);
         if (message.type === "state") setState(message.data);
+        if (message.type === "telemetry") {
+          setState(current => current ? { ...current, telemetry: message.data } : current);
+        }
         if (message.type === "log") setLogs(items => [...items.slice(-499), message.data]);
         if (message.type === "experiment_event") setEvents(items => [...items.slice(-499), message.data]);
       };

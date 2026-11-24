@@ -1,21 +1,19 @@
 import {
-  CloudSun, Eraser, Gauge,
+  Eraser, Gauge,
   Lock, Pencil, Play,
   Plus,
   SlidersHorizontal,
   Square
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type {
   Bootstrap,
   Instruction,
   PresetConfig,
   RuntimeState,
-  Weather,
 } from "../types/api";
 import { Hint } from "./hint";
 import { IconAction } from "./icon-action";
-import { LiveWeather } from "./live-weather";
 import { spawnBound } from "../lib/spawn";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
@@ -32,7 +30,6 @@ type Props = {
   preset: PresetConfig | null;
   run: Run;
   commands: Bootstrap["commands"];
-  weatherPresets: Record<string, Weather>;
   logs: Entry[];
   events: Entry[];
   setRun: (run: Run) => void;
@@ -52,7 +49,6 @@ export function ExperimentHome({
   preset,
   run,
   commands,
-  weatherPresets,
   logs,
   events,
   setRun,
@@ -64,8 +60,6 @@ export function ExperimentHome({
   onClear,
 }: Props) {
   const [logTab, setLogTab] = useState<"logs" | "events">("logs");
-  const [weatherOpen, setWeatherOpen] = useState(false);
-  useEffect(() => { if (!running) setWeatherOpen(false); }, [running]);
   const t = state.telemetry;
   const entries = logTab === "logs" ? logs : events;
   const spawnReady = !preset || spawnBound(preset);
@@ -90,9 +84,6 @@ export function ExperimentHome({
                       ? "正在结束"
                       : "待启动"}
               </span>
-              <IconAction label="调整实时天气" disabled={!running} onClick={() => setWeatherOpen(true)}>
-                <CloudSun />
-              </IconAction>
             </div>
           </header>
           <label className="dr-field driving-subject">
@@ -311,10 +302,6 @@ export function ExperimentHome({
           {!entries.length && <div className="empty">等待运行记录</div>}
         </div>
       </Card>
-      {weatherOpen && running && serviceOnline && state.weather && (
-        <LiveWeather weather={state.weather} presets={weatherPresets} regions={state.fog_regions}
-          telemetry={state.telemetry} running={running} onClose={() => setWeatherOpen(false)} />
-      )}
     </fieldset>
   );
 }

@@ -193,6 +193,7 @@ export type RuntimeState = {
     error: string | null;
   };
 };
+export type CommandCategory = "weather" | "traffic" | "ego" | "custom";
 export type CommandField = {
   key: string;
   label: string;
@@ -205,6 +206,7 @@ export type CommandDefinition = {
   id: string;
   label: string;
   description: string;
+  category: CommandCategory;
   fields: CommandField[];
 };
 export type Bootstrap = {

@@ -1,5 +1,6 @@
-import type { PresetConfig, RuntimeState } from "../types/api";
+import type { CommandDefinition, PresetConfig, RuntimeState } from "../types/api";
 import { carFollowingModels, laneChangeModels, trafficStyles } from "../lib/traffic";
+import { EventActionPanel } from "./event-action-panel";
 import { NumberInput } from "./number-input";
 import { SharedSelect } from "./shared-select";
 import { Button } from "./ui/button";
@@ -12,10 +13,21 @@ type Props = {
   saveStatus: string;
   state: RuntimeState;
   update: (path: string[], value: unknown) => void;
+  commands: CommandDefinition[];
+  online: boolean;
   onOpenPresets: () => void;
 };
 
-export function TrafficPage({ preset, presetName, saveStatus, state, update, onOpenPresets }: Props) {
+export function TrafficPage({
+  preset,
+  presetName,
+  saveStatus,
+  state,
+  update,
+  commands,
+  online,
+  onOpenPresets,
+}: Props) {
   const traffic = preset?.traffic;
   const style = trafficStyles.find(item => item.value === traffic?.style);
   const following = carFollowingModels.find(item => item.value === traffic?.car_following_model);
@@ -32,8 +44,8 @@ export function TrafficPage({ preset, presetName, saveStatus, state, update, onO
         <span className="save-status" role="status">{preset ? saveStatus : ""}</span>
       </div>
       <div className="tab-scroll">
+        <div className="stack config-page">
         {!preset || !traffic ? (
-          <div className="stack config-page">
             <Card className="dr-card gap-0">
               <div className="card-head">
                 <h2>背景交通流</h2>
@@ -43,9 +55,8 @@ export function TrafficPage({ preset, presetName, saveStatus, state, update, onO
                 <Button variant="outline" onClick={onOpenPresets}>打开方案管理</Button>
               </div>
             </Card>
-          </div>
         ) : (
-          <section className="stack config-page">
+            <>
             {state.phase !== "idle" && (
               <p className="small" role="status">
                 实验进行中；本页修改保存到预设，对下一次实验生效。
@@ -124,8 +135,18 @@ export function TrafficPage({ preset, presetName, saveStatus, state, update, onO
                 </p>
               </div>
             </Card>
-          </section>
+            </>
         )}
+          <EventActionPanel
+            commands={commands}
+            category="traffic"
+            disabled={!online || state.phase !== "running"}
+            title="交通事件"
+            description={state.phase === "running"
+              ? "即时触发已注册的交通事件，结果记录到当前实验。"
+              : "实验运行时可即时触发已注册的交通事件。"}
+          />
+        </div>
       </div>
     </div>
   );

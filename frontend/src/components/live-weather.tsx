@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { RuntimeFogRegion, Telemetry, Weather } from "../types/api";
-import { Modal } from "./common";
 import { NumberInput } from "./number-input";
 import { WeatherEditor } from "./weather-editor";
 import { Button } from "./ui/button";
@@ -13,7 +12,6 @@ type Props = {
   regions: RuntimeFogRegion[];
   telemetry: Telemetry | null;
   running: boolean;
-  onClose: () => void;
 };
 type FogUpdate = { radius_m?: number; density?: number; transition_seconds: number };
 
@@ -21,7 +19,7 @@ const percent = (value: number) => Math.round(value * 10000) / 100;
 const round = (value: number) => Math.round(value * 100) / 100;
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-export function LiveWeather({ weather, presets, regions, telemetry, running, onClose }: Props) {
+export function LiveWeatherControls({ weather, presets, regions, telemetry, running }: Props) {
   const [draft, setDraft] = useState(weather);
   const [transition, setTransition] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -41,11 +39,6 @@ export function LiveWeather({ weather, presets, regions, telemetry, running, onC
     clearTimeout(timer.current);
     timer.current = setTimeout(() => void apply(), 300);
   };
-  const close = () => {
-    clearTimeout(timer.current);
-    void apply();
-    onClose();
-  };
   const submit = async (action: () => Promise<unknown>, success: string) => {
     setBusy(true);
     try {
@@ -57,7 +50,7 @@ export function LiveWeather({ weather, presets, regions, telemetry, running, onC
       setBusy(false);
     }
   };
-  return <Modal title="实时天气" open onClose={close}>
+  return (
     <div className="grid gap-5">
       <label className="weather-field">
         <span>全局渐变时长 · s</span>
@@ -73,7 +66,7 @@ export function LiveWeather({ weather, presets, regions, telemetry, running, onC
         onUpdate={(regionId, body) => void submit(() => api(`/api/weather/regions/${regionId}`, "PATCH", body), "局部球雾已更新")}
         onDelete={(regionId, seconds) => void submit(() => api(`/api/weather/regions/${regionId}?transition_seconds=${seconds}`, "DELETE"), "局部球雾删除已提交")} />
     </div>
-  </Modal>;
+  );
 }
 
 function FogRegionEditor({ regions, telemetry, running, busy, onCreate, onUpdate, onDelete }: {

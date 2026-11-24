@@ -1,25 +1,22 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import type { RuntimeState, Weather } from "../types/api";
+import type { RuntimeState } from "../types/api";
 import { Field, Modal, SearchSelect } from "./common";
 import { Hint } from "./hint";
-import { LiveWeather } from "./live-weather";
 import { Button } from "./ui/button";
 
-export function SceneControl({ state, online, host, port, weatherPresets, onConnect, onClose }: {
+export function SceneControl({ state, online, host, port, onConnect, onClose }: {
   state: RuntimeState;
   online: boolean;
   host: string;
   port: number;
-  weatherPresets: Record<string, Weather>;
   onConnect: (host: string, port: number) => Promise<void>;
   onClose: () => void;
 }) {
   const [address, setAddress] = useState(host);
   const [serverPort, setServerPort] = useState(port);
   const [map, setMap] = useState(state.catalog.map_name ?? "");
-  const [weatherOpen, setWeatherOpen] = useState(false);
   const [pending, setPending] = useState(false);
   useEffect(() => setMap(state.catalog.map_name ?? ""), [state.catalog.map_name]);
   const idle = state.phase === "idle";
@@ -30,7 +27,7 @@ export function SceneControl({ state, online, host, port, weatherPresets, onConn
     catch (error) { toast.error(error instanceof Error ? error.message : String(error)); }
     finally { setPending(false); }
   };
-  return <>
+  return (
     <Modal title="场景控制" open onClose={onClose}>
       <div className="grid min-w-0 gap-5">
         <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_7rem]">
@@ -53,15 +50,9 @@ export function SceneControl({ state, online, host, port, weatherPresets, onConn
                 onClick={() => void request(() => api("/api/world/map", "POST", { map_name: map }))}>切换地图</Button>
             </Hint>
           </div>
-          <Button variant="outline" className="justify-self-start" disabled={!connected || !state.weather || !["idle", "running"].includes(state.phase)}
-            onClick={() => setWeatherOpen(true)}>调整天气</Button>
         </div>}
         {state.error && <p role="alert" className="text-sm text-destructive">{state.error}</p>}
       </div>
     </Modal>
-    {weatherOpen && state.weather && (
-      <LiveWeather weather={state.weather} presets={weatherPresets} regions={state.fog_regions}
-        telemetry={state.telemetry} running={state.phase === "running"} onClose={() => setWeatherOpen(false)} />
-    )}
-  </>;
+  );
 }

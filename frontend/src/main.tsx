@@ -28,7 +28,7 @@ import { SettingsPage } from "./components/settings-page";
 import { Toaster } from "./components/ui/sonner";
 import { SpawnPointDialog } from "./components/spawn-point-dialog";
 import { TrafficPage } from "./components/traffic-page";
-import { WeatherEditor } from "./components/weather-editor";
+import { WeatherPage } from "./components/weather-page";
 import { useConfig } from "./hooks/use-config";
 import { useRuntime } from "./hooks/use-runtime";
 import { useScrollbars } from "./hooks/use-scrollbars";
@@ -132,7 +132,6 @@ function App() {
               preset={running ? activePreset : preset}
               run={run}
               commands={boot.commands}
-              weatherPresets={state.catalog.weather_presets}
               logs={logs}
               events={events}
               setRun={setRun}
@@ -205,7 +204,7 @@ function App() {
                     preset={preset}
                     state={state}
                     update={update}
-                    onWeather={() => setModal("weather")}
+                    onOpenWeather={() => setPage("天气")}
                     onMapChange={changePresetMap}
                     onPickSpawn={() => setSpawnDialog(true)}
                     onOpenTraffic={() => setPage("交通流")}
@@ -233,6 +232,18 @@ function App() {
               </div>
             </PageTabs>
           )}
+          {page === "天气" && (
+            <WeatherPage
+              preset={preset}
+              presetName={presetName}
+              saveStatus={presetSave.status}
+              state={state}
+              update={update}
+              commands={boot.commands}
+              online={online}
+              onOpenPresets={() => setModal("presets")}
+            />
+          )}
           {page === "交通流" && (
             <TrafficPage
               preset={preset}
@@ -240,6 +251,8 @@ function App() {
               saveStatus={presetSave.status}
               state={state}
               update={update}
+              commands={boot.commands}
+              online={online}
               onOpenPresets={() => setModal("presets")}
             />
           )}
@@ -287,7 +300,7 @@ function App() {
         />}
         {modal === "connect" && <SceneControl
           state={state} online={online} host={machine.driving_view.host} port={machine.driving_view.port}
-          weatherPresets={state.catalog.weather_presets} onClose={() => setModal("")}
+          onClose={() => setModal("")}
           onConnect={async (host, port) => {
             const config = {
               ...machine,
@@ -337,18 +350,6 @@ function App() {
               </div>
             ))}
           </div>
-        </Modal>
-        <Modal
-          title="天气设置"
-          open={modal === "weather"}
-          onClose={() => setModal("")}
-        >
-          {preset && (
-            <WeatherEditor weather={preset.world.weather} weatherPresets={state.catalog.weather_presets}
-              regions={preset.world.fog_regions}
-              onRegionsChange={items => update(["world", "fog_regions"], items)}
-              onChange={weather => update(["world", "weather"], weather)} />
-          )}
         </Modal>
 
         {spawnDialog && preset && (

@@ -18,13 +18,13 @@ type Props = {
   preset: PresetConfig;
   state: RuntimeState;
   update: (path: string[], value: unknown) => void;
-  onWeather: () => void;
+  onOpenWeather: () => void;
   onMapChange: (mapName: string) => void;
   onPickSpawn: () => void;
   onOpenTraffic: () => void;
 };
 
-export function ExperimentConfig({ preset, state, update, onWeather, onMapChange, onPickSpawn, onOpenTraffic }: Props) {
+export function ExperimentConfig({ preset, state, update, onOpenWeather, onMapChange, onPickSpawn, onOpenTraffic }: Props) {
   const telemetry = state.telemetry;
   const bound = spawnBound(preset);
   const mapLoaded = catalogMatchesPreset(preset, state.catalog.map_name);
@@ -68,23 +68,13 @@ export function ExperimentConfig({ preset, state, update, onWeather, onMapChange
                 onChange={onMapChange}
               />
             </label>
-            <label className="dr-field">
-              <span>初始天气</span>
-              <Button
-                variant="ghost"
-                className="choice-button"
-                onClick={onWeather}
-              >
-                <span>
-                  {weatherDescription(preset.world.weather, state.catalog.weather_presets)}
-                </span>
-                <span className="small">
-                  {preset.world.fog_regions.length > 0
-                    ? `调整参数 · ${preset.world.fog_regions.length} 处球雾`
-                    : "调整参数"}
-                </span>
-              </Button>
-            </label>
+            <div className="spawn-missing">
+              <span>
+                {weatherDescription(preset.world.weather, state.catalog.weather_presets)}
+                {` · ${preset.world.fog_regions.length} 处球雾`}
+              </span>
+              <Button variant="outline" onClick={onOpenWeather}>前往天气页配置</Button>
+            </div>
             <label className="dr-field">
               <span>同步推进频率 · Hz</span>
               <NumberInput

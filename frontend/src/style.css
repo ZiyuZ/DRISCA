@@ -97,81 +97,81 @@ pre {
 .table-scroll > [data-slot="table-container"] {
   overflow: visible;
 }
-.app-dialog .weather-editor {
+.prototype-shell .weather-editor {
   display: grid;
   gap: 17px;
 }
-.app-dialog .weather-field {
+.prototype-shell .weather-field {
   display: grid;
   gap: 6px;
   font-size: 12px;
 }
-.app-dialog .weather-range {
+.prototype-shell .weather-range {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 76px;
   gap: 14px;
   align-items: center;
 }
-.app-dialog .weather-extra {
+.prototype-shell .weather-extra {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 14px;
   margin-top: 12px;
 }
 @media (max-width: 560px) {
-  .app-dialog .weather-extra {
+  .prototype-shell .weather-extra {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.app-dialog .weather-note {
+.prototype-shell .weather-note {
   font-size: 11px;
   line-height: 1.5;
   color: var(--muted-foreground);
 }
-.app-dialog .fog-regions {
+.prototype-shell .fog-regions {
   display: grid;
   gap: 12px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
-.app-dialog .fog-regions-head {
+.prototype-shell .fog-regions-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
-.app-dialog .fog-regions-head h3 {
+.prototype-shell .fog-regions-head h3 {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
 }
-.app-dialog .fog-regions-head p {
+.prototype-shell .fog-regions-head p {
   margin: 4px 0 0;
   font-size: 11px;
   line-height: 1.5;
   color: var(--muted-foreground);
 }
-.app-dialog .fog-region {
+.prototype-shell .fog-region {
   display: grid;
   gap: 10px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
 }
-.app-dialog .fog-region-head {
+.prototype-shell .fog-region-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-size: 12px;
   font-weight: 600;
 }
-.app-dialog .fog-region-grid {
+.prototype-shell .fog-region-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px 12px;
 }
 @media (max-width: 560px) {
-  .app-dialog .fog-region-grid {
+  .prototype-shell .fog-region-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -551,7 +551,7 @@ pre {
   display: grid;
   gap: 16px;
 }
-.app-dialog .spawn-status {
+.prototype-shell .spawn-status {
   display: grid;
   gap: 4px;
   padding: 12px 14px;
@@ -559,11 +559,11 @@ pre {
   border-radius: 10px;
   background: var(--muted);
 }
-.app-dialog .spawn-status strong {
+.prototype-shell .spawn-status strong {
   font-size: 12px;
   font-weight: 600;
 }
-.app-dialog .spawn-status span {
+.prototype-shell .spawn-status span {
   font-size: 12px;
   line-height: 1.55;
   color: var(--muted-foreground);

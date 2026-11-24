@@ -54,7 +54,7 @@ Unreal 启动期间持续显示正在连接，直到 CARLA 世界可用或达到
 | `POST /api/carla/start`、`POST /api/carla/stop` | 启动或关闭管理端持有的 Unreal，启动正文可指定 kind |
 | `POST /api/world/map` | 空闲时加载服务器地图，正文为 `map_name` |
 | `POST /api/experiment/start`、`POST /api/experiment/stop` | 启动和停止实验 |
-| `POST /api/instructions/{id}/execute`、`POST /api/markers` | 执行预设指令和记录打点 |
+| `POST /api/instructions/{id}/execute`、`POST /api/commands/{id}/trigger`、`POST /api/markers` | 执行预设指令、按参数即时触发已注册事件及记录打点 |
 | `POST /api/cameras/{name}`、`POST /api/display-layout` | 应用相机安装与后视镜布局 |
 | `POST /api/weather` | 调整当前世界全局天气；正文为 `{weather, transition_seconds}`，实验中经模拟器应用，空闲时直接应用到原生环境 |
 | `POST /api/weather/regions`、`PATCH /api/weather/regions/{id}`、`DELETE /api/weather/regions/{id}?transition_seconds=` | 创建、更新和渐隐删除局部球雾；实验中经 worker 命令应用，空闲时直接应用到原生环境 |
@@ -66,7 +66,7 @@ Unreal 启动期间持续显示正在连接，直到 CARLA 世界可用或达到
 | `GET /api/events`、`GET /stream` | 控制台与 HUD 的 SSE 推送 |
 | `/ws/worker/simulator` | 模拟器双向通信 |
 
-配置请求沿用 `core.config` 中的模型。控制台 SSE 消息以 `type` 区分 `state`、`log` 和 `experiment_event`，内容位于 `data`。`state` 包含实验阶段、CARLA 与驾驶端状态、最新遥测、相机安装状态、独立的画面布局状态、车辆包围盒、可选地图与车辆、导出进度。`active_preset_name` 标明本次采用的方案名，`active_preset` 与 `active_run` 保存本次运行采用的预设和实验设置，供控制台显示当前指令、打点和保存状态。编辑页单独维护待保存的配置。启动时获取的地图出生点同时标明所属地图，供预设编辑时核对。
+配置请求沿用 `core.config` 中的模型。控制台 SSE 消息以 `type` 区分 `state`、`telemetry`、`log` 和 `experiment_event`，内容位于 `data`；高频遥测走独立 `telemetry` 通道，仅在状态变化时推送 `state`，避免重复序列化静态目录。`state` 包含实验阶段、CARLA 与驾驶端状态、最新遥测、相机安装状态、独立的画面布局状态、车辆包围盒、可选地图与车辆、导出进度。`active_preset_name` 标明本次采用的方案名，`active_preset` 与 `active_run` 保存本次运行采用的预设和实验设置，供控制台显示当前指令、打点和保存状态。编辑页单独维护待保存的配置。启动时获取的地图出生点同时标明所属地图，供预设编辑时核对。
 
 `bootstrap.weather_presets` 提供原生环境目录中的全局天气预设及完整参数，条目同时带有 `preset_name`。`state.weather` 保存当前世界已应用的全局天气，`state.fog_regions` 保存当前局部球雾区域编号、中心、半径、密度和删除状态。worker 就绪事件附带一次实际区域快照，管理端据此初始化区域列表；启动前由本 worker 创建的准备区域事件按 region_id 保留并进入事件时间轴。模拟器应用后上报 `environment_applied`、`environment_completed` 和 `environment_replaced`，管理端据事件更新实际天气与区域列表并记录事件。零时长 delete 的 applied 直接移除区域，渐隐 delete 在 completed 时移除。
 
