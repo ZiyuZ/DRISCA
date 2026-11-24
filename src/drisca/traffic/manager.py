@@ -72,14 +72,11 @@ class TrafficManager:
             return 0
 
         catalog = api.catalog()
-        raw_blueprints = [
-            str(item['id']) if isinstance(item, dict) else str(item)
-            for item in (catalog.get('vehicle_blueprints') or ())
-        ]
+        raw_blueprints = list(catalog.vehicle_blueprints)
         blueprints = [
             bp for bp in raw_blueprints if not any(tok in bp.lower() for tok in _EXCLUDED_BLUEPRINT_TOKENS)
         ] or raw_blueprints
-        spawn_points = list(catalog.get('spawn_points') or ())
+        spawn_points = list(catalog.spawn_points)
         if not blueprints or not spawn_points:
             logger.warning('地图无可用车型或出生点，跳过背景交通流生成')
             return 0
@@ -93,9 +90,7 @@ class TrafficManager:
         for point in spawn_points:
             if spawned >= cfg.vehicle_count:
                 break
-            loc = point['location']
-            rot = point['rotation']
-            px, py, pz = float(loc[0]), float(loc[1]), float(loc[2])
+            px, py, pz = point.x, point.y, point.z
             if any(math.hypot(px - ox, py - oy) < 15.0 for ox, oy in occupied):
                 continue
             bp = rng.choice(blueprints)
@@ -104,7 +99,7 @@ class TrafficManager:
                     blueprint=bp,
                     transform={
                         'location': [px, py, pz],
-                        'rotation': [float(rot[0]), float(rot[1]), float(rot[2])],
+                        'rotation': [point.pitch, point.yaw, point.roll],
                     },
                     role_name='autopilot',
                     mode='external',

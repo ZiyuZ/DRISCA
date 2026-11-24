@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .geometry import world_to_local_xy
 from .scene import TrafficScene
 
 
@@ -55,15 +56,7 @@ class IDMModel:
         if scene.actor_ids.size <= 1:
             return None
 
-        dx = scene.xy[:, 0] - x
-        dy = scene.xy[:, 1] - y
-        yaw_rad = math.radians(yaw_deg)
-        cos_y = math.cos(yaw_rad)
-        sin_y = math.sin(yaw_rad)
-
-        # CARLA 左手系车身坐标：local_x 向前、local_y 向右
-        local_x = dx * cos_y + dy * sin_y
-        local_y = -dx * sin_y + dy * cos_y
+        local_x, local_y, cos_y, sin_y = world_to_local_xy(scene.xy, x=x, y=y, yaw_deg=yaw_deg)
         heading_dot = scene.headings[:, 0] * cos_y + scene.headings[:, 1] * sin_y
 
         mask = (

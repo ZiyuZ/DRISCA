@@ -1,6 +1,7 @@
 """实验编排与实时状态。"""
 
 import asyncio
+import copy
 import json
 import socket
 import subprocess
@@ -8,7 +9,11 @@ import sys
 import threading
 import time
 from collections import deque
+from collections.abc import Generator
+from contextlib import contextmanager
+from enum import StrEnum
 from importlib.metadata import version
+from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -39,11 +44,26 @@ from drisca.core.protocol import (
     WorkerStatusEvent,
     dump_launcher_command,
 )
-from drisca.core.weather import from_native, from_payload, to_config, to_payload
+from drisca.core.weather import from_native, to_config, to_payload
 from drisca.launcher.commands import MODELS, REGISTRY
 from drisca.launcher.unreal import launch_arguments
 from drisca.storage.db import StorageDB
 from drisca.storage.models import SCHEMA_VERSION, EventRow, SessionRow, SessionStatus
+
+
+class ExperimentPhase(StrEnum):
+    IDLE = 'idle'
+    STARTING = 'starting'
+    RUNNING = 'running'
+    STOPPING = 'stopping'
+
+
+class UnrealPhase(StrEnum):
+    STOPPED = 'stopped'
+    STARTING = 'starting'
+    RUNNING = 'running'
+    STOPPING = 'stopping'
+    FAILED = 'failed'
 
 
 def map_key(name: str) -> str:
@@ -54,6 +74,10 @@ def map_key(name: str) -> str:
 class Runtime:
     def __init__(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
+        self._state_lock = threading.RLock()
+        self._db_lock = threading.RLock()
+        self._db: StorageDB | None = None
+        self._db_path: Path | None = None
         self.machine = load_machine_config()
         self.launcher_host = self.machine.service.launcher_host
         self.launcher_port = self.machine.service.launcher_port
@@ -73,11 +97,11 @@ class Runtime:
         self.logs: deque = deque(maxlen=500)
         self.events: deque = deque(maxlen=500)
         self.state: dict[str, Any] = {
-            'phase': 'idle',
+            'phase': str(ExperimentPhase.IDLE),
             'carla_connected': False,
             'carla_connecting': False,
             'world_loading': False,
-            'unreal': {'phase': 'stopped', 'pid': None, 'kind': None},
+            'unreal': {'phase': str(UnrealPhase.STOPPED), 'pid': None, 'kind': None},
             'clients': {'console': 0, 'hud': 0},
             'carla_detail': '',
             'worker_state': 'stopped',
@@ -105,29 +129,46 @@ class Runtime:
         info = win32job.QueryInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation)
         info['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
         win32job.SetInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation, info)
-        path = resolve_db_path(self.machine.db_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        db = StorageDB(path)
-        db.abort_stale_running_sessions()
-        db.close()
+        with self.db_session() as db:
+            db.abort_stale_running_sessions()
+
+    def snapshot_state(self) -> dict[str, Any]:
+        """返回线程安全的状态深拷贝，供 SSE 首次推送与 HTTP 读取。"""
+        with self._state_lock:
+            return copy.deepcopy(self.state)
 
     def emit(self, kind: str, data) -> None:
+        if self.loop.is_closed():
+            return
         message = {'type': kind, 'data': data}
 
         def send() -> None:
             for queue in tuple(self.subscribers):
-                queue.put_nowait(message)
+                if queue.full():
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                try:
+                    queue.put_nowait(message)
+                except asyncio.QueueFull:
+                    pass
 
-        self.loop.call_soon_threadsafe(send)
+        try:
+            self.loop.call_soon_threadsafe(send)
+        except RuntimeError:
+            pass
 
     def update(self, **changes) -> None:
-        self.state.update(changes)
-        self.emit('state', self.state.copy())
+        with self._state_lock:
+            self.state.update(changes)
+            snapshot = copy.deepcopy(self.state)
+        self.emit('state', snapshot)
 
-    def log(self, message: str, level: str = 'INFO') -> None:
+    def log(self, message: str, level: str = 'INFO', role: str = 'launcher') -> None:
         item = {
             'type': 'log',
-            'role': 'simulator',
+            'role': role,
             'timestamp': time.time(),
             'level': level,
             'message': message,
@@ -146,10 +187,25 @@ class Runtime:
 
         threading.Thread(target=run, daemon=True).start()
 
-    def db(self) -> StorageDB:
+    @contextmanager
+    def db_session(self) -> Generator[StorageDB]:
+        """受锁保护的持久化 SQLite 连接；数据库路径变更时自动重连。"""
         path = resolve_db_path(self.machine.db_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return StorageDB(path)
+        with self._db_lock:
+            if self._db is None or self._db_path != path:
+                if self._db is not None:
+                    self._db.close()
+                path.parent.mkdir(parents=True, exist_ok=True)
+                self._db = StorageDB(path, check_same_thread=False)
+                self._db_path = path
+            yield self._db
+
+    def close_db(self) -> None:
+        with self._db_lock:
+            if self._db is not None:
+                self._db.close()
+                self._db = None
+                self._db_path = None
 
     def assign_process(self, process: subprocess.Popen) -> None:
         handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, False, process.pid)
@@ -303,29 +359,14 @@ class Runtime:
     def refresh_world(self) -> None:
         api = self._require_api()
         catalog = api.catalog()
-        points = []
-        for point in catalog['spawn_points']:
-            location, rotation = point['location'], point['rotation']
-            points.append(
-                {
-                    'x': location[0],
-                    'y': location[1],
-                    'z': location[2],
-                    'pitch': rotation[0],
-                    'yaw': rotation[1],
-                    'roll': rotation[2],
-                }
-            )
-        self.weather_presets = {
-            str(item['preset_name']): from_payload(item) for item in catalog['weather_presets']
-        }
+        self.weather_presets = dict(catalog.weather_presets)
         environment = api.environment_get()
         self.update(
             catalog={
-                'maps': sorted(str(name) for name in catalog['maps']),
-                'vehicles': sorted(str(item['id']) for item in catalog['vehicle_blueprints']),
-                'map_name': str(catalog['current_map']),
-                'spawn_points': points,
+                'maps': list(catalog.maps),
+                'vehicles': list(catalog.vehicle_blueprints),
+                'map_name': catalog.current_map,
+                'spawn_points': [point.model_dump(mode='json') for point in catalog.spawn_points],
                 'weather_presets': {
                     name: config.model_dump(mode='json') for name, config in self.weather_presets.items()
                 },
@@ -395,18 +436,26 @@ class Runtime:
             )
 
     async def shutdown(self) -> None:
-        if self.state['phase'] != 'idle':
+        if self.state['phase'] != str(ExperimentPhase.IDLE):
             await asyncio.to_thread(self.stop)
-            while self.state['phase'] != 'idle':
+            while self.state['phase'] != str(ExperimentPhase.IDLE):
                 await asyncio.sleep(0.05)
-        if self.state['unreal']['phase'] in ('starting', 'running', 'stopping'):
-            self.update(unreal={**self.state['unreal'], 'phase': 'stopping'})
+        if self.state['unreal']['phase'] in (
+            str(UnrealPhase.STARTING),
+            str(UnrealPhase.RUNNING),
+            str(UnrealPhase.STOPPING),
+        ):
+            self.update(unreal={**self.state['unreal'], 'phase': str(UnrealPhase.STOPPING)})
             await asyncio.to_thread(self.stop_carla)
+        self.close_db()
 
     def client_connected(self, role: str, delta: int) -> None:
-        clients = dict(self.state['clients'])
-        clients[role] += delta
-        self.update(clients=clients)
+        with self._state_lock:
+            clients = dict(self.state['clients'])
+            clients[role] = max(0, clients[role] + delta)
+            self.state['clients'] = clients
+            snapshot = copy.deepcopy(self.state)
+        self.emit('state', snapshot)
 
     def event(self, item: dict) -> None:
         self.events.append(item)
@@ -416,8 +465,7 @@ class Runtime:
             payload = dict(item.get('payload') or {})
             if item.get('native') is not None:
                 payload['native'] = item['native']
-            db = self.db()
-            try:
+            with self.db_session() as db:
                 db.append_events(
                     [
                         EventRow(
@@ -432,8 +480,6 @@ class Runtime:
                         )
                     ]
                 )
-            finally:
-                db.close()
 
     def lifecycle(self, name: str, payload: dict | None = None) -> None:
         self.event(
@@ -471,8 +517,7 @@ class Runtime:
             cfg = compose_run_config(machine, self.control, preset, run, self.weather_presets)
             self.run_config = cfg
             if run.save_data:
-                db = self.db()
-                try:
+                with self.db_session() as db:
                     db.create_session(
                         SessionRow(
                             cfg.session_id,
@@ -490,8 +535,6 @@ class Runtime:
                             run.note,
                         )
                     )
-                finally:
-                    db.close()
             self.update(
                 session_id=cfg.session_id,
                 active_preset=cfg.preset.model_dump(mode='json'),
@@ -577,15 +620,12 @@ class Runtime:
                     {'error': detail} if detail else None,
                 )
                 if cfg.run.save_data:
-                    db = self.db()
-                    try:
+                    with self.db_session() as db:
                         db.finish_session(
                             cfg.session_id,
                             SessionStatus.COMMITTED if normal else SessionStatus.ABORTED,
                             time.time(),
                         )
-                    finally:
-                        db.close()
         finally:
             self.run_config = None
             self.process = None
@@ -626,15 +666,16 @@ class Runtime:
 
     def receive(self, event) -> None:
         if isinstance(event, TelemetrySnapshotEvent):
-            self.update(telemetry=event.model_dump(mode='json'))
+            payload = event.model_dump(mode='json')
+            with self._state_lock:
+                self.state['telemetry'] = payload
+            # 高频遥测走独立事件通道，避免每帧重复广播静态 catalog
+            self.emit('telemetry', payload)
         elif isinstance(event, WorkerReadyEvent):
             cfg = self.run_config
             if cfg is not None and cfg.run.save_data:
-                db = self.db()
-                try:
+                with self.db_session() as db:
                     db.update_session_ego(cfg.session_id, event.ego_actor_id, event.ego_type_id)
-                finally:
-                    db.close()
             self.update(
                 phase='stopping' if self.stop_requested.is_set() else 'running',
                 worker_state='stopping' if self.stop_requested.is_set() else 'running',

@@ -319,13 +319,10 @@ def create_app() -> FastAPI:
 
     @app.put('/api/sessions/{session_id}/note')
     def session_note(session_id: str, request: NoteRequest):
-        db = rt().db()
-        try:
-            if not any(row.session_id == session_id for row in db.list_sessions()):
+        with rt().db_session() as db:
+            if db.get_session(session_id) is None:
                 raise HTTPException(404, '会话不存在')
             db.update_session_note(session_id, request.note)
-        finally:
-            db.close()
         return {'ok': True}
 
     @app.post('/api/instructions/{instruction_id}/execute')
@@ -473,9 +470,9 @@ def create_app() -> FastAPI:
 
     @app.get('/api/sessions')
     def sessions(start_date: str = '', end_date: str = '', status: str = '', search: str = ''):
-        db = rt().db()
-        try:
+        with rt().db_session() as db:
             rows = db.list_sessions()
+            frame_counts = db.count_all_session_frames()
             items = []
             for row in rows:
                 date = datetime.fromtimestamp(row.started_at).strftime('%Y-%m-%d')
@@ -485,16 +482,13 @@ def create_app() -> FastAPI:
                     continue
                 if search.lower() not in (row.session_id + row.subject_id).lower():
                     continue
-                items.append({**asdict(row), 'frame_count': db.count_session_frames(row.session_id)})
+                items.append({**asdict(row), 'frame_count': frame_counts.get(row.session_id, 0)})
             return {'total': len(rows), 'items': items}
-        finally:
-            db.close()
 
     @app.get('/api/sessions/{session_id}')
     def session(session_id: str):
-        db = rt().db()
-        try:
-            row = next((item for item in db.list_sessions() if item.session_id == session_id), None)
+        with rt().db_session() as db:
+            row = db.get_session(session_id)
             if row is None:
                 raise HTTPException(404, '会话不存在')
             return {
@@ -503,8 +497,6 @@ def create_app() -> FastAPI:
                 'frame_count': db.count_session_frames(session_id),
                 'run_config': json.loads(row.run_config_json),
             }
-        finally:
-            db.close()
 
     @app.post('/api/sessions/delete')
     def delete_sessions(request: SessionSelectionRequest):
@@ -514,11 +506,8 @@ def create_app() -> FastAPI:
             raise HTTPException(409, '请先结束选中的实验')
         if rt().state['export']['running']:
             raise HTTPException(409, '请等待当前导出完成')
-        db = rt().db()
-        try:
+        with rt().db_session() as db:
             db.delete_sessions(request.session_ids)
-        finally:
-            db.close()
         return {'ok': True}
 
     @app.post('/api/export')
@@ -534,8 +523,7 @@ def create_app() -> FastAPI:
                 PROJECT_ROOT / rt().machine.export_dir / f'{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}'
             ).resolve()
             try:
-                db = rt().db()
-                try:
+                with rt().db_session() as db:
                     existing = {row.session_id for row in db.list_sessions()}
                     if not set(request.session_ids) <= existing:
                         raise ValueError('选中的会话不存在')
@@ -551,8 +539,6 @@ def create_app() -> FastAPI:
                             }
                         ),
                     )
-                finally:
-                    db.close()
                 rt().update(export={'running': False, 'progress': 100, 'path': str(path), 'error': None})
             except Exception as exc:
                 rt().update(export={'running': False, 'progress': 0, 'path': None, 'error': str(exc)})
@@ -606,12 +592,14 @@ def create_app() -> FastAPI:
     @app.get('/api/events')
     async def events():
         async def stream():
-            queue: asyncio.Queue = asyncio.Queue()
+            queue: asyncio.Queue = asyncio.Queue(maxsize=256)
             rt().subscribers.add(queue)
             rt().client_connected('console', 1)
             try:
                 yield (
-                    'data: ' + json.dumps({'type': 'state', 'data': rt().state}, ensure_ascii=False) + '\n\n'
+                    'data: '
+                    + json.dumps({'type': 'state', 'data': rt().snapshot_state()}, ensure_ascii=False)
+                    + '\n\n'
                 )
                 while True:
                     yield 'data: ' + json.dumps(await queue.get(), ensure_ascii=False) + '\n\n'
@@ -676,6 +664,10 @@ def create_app() -> FastAPI:
             pass
         finally:
             sender.cancel()
+            try:
+                await sender
+            except asyncio.CancelledError:
+                pass
             rt().worker = None
             rt().worker_closed.set()
 

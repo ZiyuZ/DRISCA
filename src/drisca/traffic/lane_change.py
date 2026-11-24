@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 from .car_following import CarFollowingModel
+from .geometry import world_to_local_xy
 from .idm import LeadVehicle
 from .profiles import DrivingProfile
 from .road_graph import LaneNode, RoadGraph
@@ -96,14 +95,7 @@ class LaneChangeDecider:
     ) -> bool:
         if scene.actor_ids.size <= 1:
             return True
-        dx = scene.xy[:, 0] - x
-        dy = scene.xy[:, 1] - y
-        yaw_rad = math.radians(yaw_deg)
-        cos_y = math.cos(yaw_rad)
-        sin_y = math.sin(yaw_rad)
-
-        local_x = dx * cos_y + dy * sin_y
-        local_y = -dx * sin_y + dy * cos_y
+        local_x, local_y, _, _ = world_to_local_xy(scene.xy, x=x, y=y, yaw_deg=yaw_deg)
 
         in_target_lane = (
             (scene.actor_ids != self_actor_id)
@@ -246,14 +238,7 @@ class MobilLaneChangeDecider(LaneChangeDecider):
         """向量化查找目标相邻车道最近前车与最近后车。"""
         if scene.actor_ids.size <= 1:
             return None, None
-        dx = scene.xy[:, 0] - x
-        dy = scene.xy[:, 1] - y
-        yaw_rad = math.radians(yaw_deg)
-        cos_y = math.cos(yaw_rad)
-        sin_y = math.sin(yaw_rad)
-
-        local_x = dx * cos_y + dy * sin_y
-        local_y = -dx * sin_y + dy * cos_y
+        local_x, local_y, cos_y, sin_y = world_to_local_xy(scene.xy, x=x, y=y, yaw_deg=yaw_deg)
         heading_dot = scene.headings[:, 0] * cos_y + scene.headings[:, 1] * sin_y
 
         same_lane = (

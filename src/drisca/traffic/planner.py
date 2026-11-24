@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import random
 from dataclasses import dataclass
 
@@ -190,21 +189,22 @@ class LocalRoutePlanner:
 
 
 def _compute_curvatures(xy: np.ndarray) -> np.ndarray:
-    """使用三点外接圆近似计算离散路径的平面曲率绝对值 (1/m)。"""
+    """向量化三点外接圆近似计算离散路径平面曲率绝对值 (1/m)。"""
     n = xy.shape[0]
     curvatures = np.zeros(n, dtype=np.float64)
     if n < 3:
         return curvatures
-    for i in range(1, n - 1):
-        p0, p1, p2 = xy[i - 1], xy[i], xy[i + 1]
-        a = math.hypot(float(p1[0] - p0[0]), float(p1[1] - p0[1]))
-        b = math.hypot(float(p2[0] - p1[0]), float(p2[1] - p1[1]))
-        c = math.hypot(float(p2[0] - p0[0]), float(p2[1] - p0[1]))
-        denom = a * b * c
-        if denom < 1e-6:
-            continue
-        cross = abs(float((p1[0] - p0[0]) * (p2[1] - p0[1]) - (p1[1] - p0[1]) * (p2[0] - p0[0])))
-        curvatures[i] = 2.0 * cross / denom
+    p0, p1, p2 = xy[:-2], xy[1:-1], xy[2:]
+    v1 = p1 - p0
+    v2 = p2 - p1
+    v3 = p2 - p0
+    a = np.hypot(v1[:, 0], v1[:, 1])
+    b = np.hypot(v2[:, 0], v2[:, 1])
+    c = np.hypot(v3[:, 0], v3[:, 1])
+    denom = a * b * c
+    cross = np.abs(v1[:, 0] * v3[:, 1] - v1[:, 1] * v3[:, 0])
+    valid = denom >= 1e-6
+    curvatures[1:-1] = np.where(valid, 2.0 * cross / np.where(valid, denom, 1.0), 0.0)
     curvatures[0] = curvatures[1]
     curvatures[-1] = curvatures[-2]
     return curvatures

@@ -6,6 +6,7 @@ import math
 
 import numpy as np
 
+from .geometry import point_to_local_xy
 from .planner import RoutePath
 
 
@@ -52,15 +53,7 @@ class PurePursuitController:
             min(self._max_lookahead_m, self._lookahead_gain * abs(speed_mps) + self._min_lookahead_m),
         )
         target = self._select_target(path, x, y, lookahead)
-        dx = float(target[0]) - x
-        dy = float(target[1]) - y
-        yaw_rad = math.radians(yaw_deg)
-        cos_y = math.cos(yaw_rad)
-        sin_y = math.sin(yaw_rad)
-
-        # CARLA 左手系：yaw 从 +X 向 +Y 顺时针增加，local_x 向前、local_y 向右
-        local_x = dx * cos_y + dy * sin_y
-        local_y = -dx * sin_y + dy * cos_y
+        local_x, local_y = point_to_local_xy(float(target[0]), float(target[1]), x=x, y=y, yaw_deg=yaw_deg)
         dist = math.hypot(local_x, local_y)
         if dist < 1e-4:
             return self._rate_limit(0.0, dt)

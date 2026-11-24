@@ -12,6 +12,7 @@ from typing import Any, Final
 from websockets.exceptions import WebSocketException
 from websockets.sync.client import ClientConnection, connect
 
+from drisca.core.catalog import NativeCatalog
 from drisca.core.config import DrivingViewConfig
 from drisca.core.environment import (
     EnvironmentList,
@@ -189,8 +190,10 @@ class NativeApiClient:
     def status(self) -> dict[str, Any]:
         return self.request('server.status')
 
-    def catalog(self) -> dict[str, Any]:
-        return self.request('scene.catalog', self._world(), timeout=self.long_timeout)
+    def catalog(self) -> NativeCatalog:
+        return NativeCatalog.from_native(
+            self.request('scene.catalog', self._world(), timeout=self.long_timeout)
+        )
 
     def environment_get(self) -> EnvironmentSnapshot:
         return EnvironmentSnapshot.model_validate(self.request('environment.get', self._world()))

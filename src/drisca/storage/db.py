@@ -15,8 +15,8 @@ class SchemaMismatchError(RuntimeError):
 
 
 class StorageDB:
-    def __init__(self, db_path: Path) -> None:
-        self.connection = sqlite3.connect(db_path)
+    def __init__(self, db_path: Path, *, check_same_thread: bool = True) -> None:
+        self.connection = sqlite3.connect(db_path, check_same_thread=check_same_thread)
         self.connection.execute('PRAGMA busy_timeout=5000')
         version = self.connection.execute('PRAGMA user_version').fetchone()[0]
         tables = self.connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -90,6 +90,12 @@ class StorageDB:
             )
         return [SessionRow(*row[:1], SessionStatus(row[1]), *row[2:]) for row in rows]
 
+    def get_session(self, session_id: str) -> SessionRow | None:
+        row = self.connection.execute('SELECT * FROM session WHERE session_id=?', (session_id,)).fetchone()
+        if row is None:
+            return None
+        return SessionRow(*row[:1], SessionStatus(row[1]), *row[2:])
+
     def list_session_events(self, session_id: str) -> list[EventRow]:
         rows = self.connection.execute(
             'SELECT * FROM event WHERE session_id=? ORDER BY timestamp, rowid', (session_id,)
@@ -100,6 +106,10 @@ class StorageDB:
         return self.connection.execute(
             'SELECT count(*) FROM data WHERE session_id=?', (session_id,)
         ).fetchone()[0]
+
+    def count_all_session_frames(self) -> dict[str, int]:
+        rows = self.connection.execute('SELECT session_id, count(*) FROM data GROUP BY session_id')
+        return {str(session_id): int(count) for session_id, count in rows}
 
     def export_sessions(
         self, output_dir: Path, session_ids: list[str], progress: Callable[[float], None] | None = None
