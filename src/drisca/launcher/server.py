@@ -338,6 +338,10 @@ def create_app() -> FastAPI:
                     transition_seconds=request.transition_seconds,
                 )
             )
+            rt().log(
+                f'已创建团雾：中心={request.center_m}，半径={request.radius_m:g}m，密度={request.density:g}',
+                'INFO',
+            )
             return {'ok': True}
         ensure_idle()
         environment_api().environment_create(
@@ -347,6 +351,10 @@ def create_app() -> FastAPI:
             transition_seconds=request.transition_seconds,
         )
         rt().update(fog_regions=rt().read_fog_regions())
+        rt().log(
+            f'已创建团雾（空闲预览）：中心={request.center_m}，半径={request.radius_m:g}m，密度={request.density:g}',
+            'INFO',
+        )
         return {'ok': True}
 
     @app.patch('/api/weather/regions/{region_id}')
@@ -364,6 +372,10 @@ def create_app() -> FastAPI:
                     transition_seconds=request.transition_seconds,
                 )
             )
+            rt().log(
+                f'已更新团雾 #{region_id}：半径={request.radius_m}，密度={request.density}',
+                'INFO',
+            )
             return {'ok': True}
         ensure_idle()
         environment_api().environment_update_region(
@@ -374,6 +386,10 @@ def create_app() -> FastAPI:
             transition_seconds=request.transition_seconds,
         )
         rt().update(fog_regions=rt().read_fog_regions())
+        rt().log(
+            f'已更新团雾 #{region_id}（空闲预览）：半径={request.radius_m}，密度={request.density}',
+            'INFO',
+        )
         return {'ok': True}
 
     @app.delete('/api/weather/regions/{region_id}')
@@ -390,10 +406,12 @@ def create_app() -> FastAPI:
                     transition_seconds=transition_seconds,
                 )
             )
+            rt().log(f'已删除团雾 #{region_id}（渐隐 {transition_seconds:g}s）', 'INFO')
             return {'ok': True}
         ensure_idle()
         environment_api().environment_delete(region_id, transition_seconds)
         rt().update(fog_regions=rt().read_fog_regions())
+        rt().log(f'已删除团雾 #{region_id}（空闲预览，渐隐 {transition_seconds:g}s）', 'INFO')
         return {'ok': True}
 
     @app.post('/api/traffic/preview/start')
@@ -425,8 +443,11 @@ def create_app() -> FastAPI:
                     + json.dumps({'type': 'state', 'data': rt().snapshot_state()}, ensure_ascii=False)
                     + '\n\n'
                 )
-                while True:
-                    yield 'data: ' + json.dumps(await queue.get(), ensure_ascii=False) + '\n\n'
+                while not rt().closing:
+                    item = await queue.get()
+                    if item is None:
+                        break
+                    yield 'data: ' + json.dumps(item, ensure_ascii=False) + '\n\n'
             finally:
                 rt().subscribers.discard(queue)
                 rt().client_connected('console', -1)
@@ -438,7 +459,7 @@ def create_app() -> FastAPI:
         async def stream():
             rt().client_connected('hud', 1)
             try:
-                while True:
+                while not rt().closing:
                     snapshot = rt().state['telemetry'] or {}
                     data = {
                         'running': rt().state['phase'] == 'running',

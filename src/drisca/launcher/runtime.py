@@ -80,6 +80,7 @@ class Runtime:
         self.worker_closed = threading.Event()
         self.worker_error: str | None = None
         self.stop_requested = threading.Event()
+        self.closing = False
         self.subscribers = self.store.subscribers
         self.logs = self.store.logs
         self.events = self.store.events
@@ -383,7 +384,22 @@ class Runtime:
                 f'({point.x:.2f}, {point.y:.2f}, {point.z:.2f})，请重新选择出生点'
             )
 
+    def close_streams(self) -> None:
+        """通知全部 SSE 长连接主动结束，使 Uvicorn 能够零超时优雅停机。"""
+        self.closing = True
+        for queue in tuple(self.subscribers):
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            try:
+                queue.put_nowait(None)
+            except asyncio.QueueFull:
+                pass
+
     async def shutdown(self) -> None:
+        self.close_streams()
         await asyncio.to_thread(self.stop_traffic_preview)
         if self.state['phase'] != str(ExperimentPhase.IDLE):
             await asyncio.to_thread(self.stop)
