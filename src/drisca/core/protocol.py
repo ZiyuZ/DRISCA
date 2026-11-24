@@ -49,7 +49,7 @@ class TrafficLightState(StrEnum):
     UNKNOWN = 'unknown'
 
     @classmethod
-    def parse(cls, value: str) -> 'TrafficLightState':
+    def parse(cls, value: str) -> TrafficLightState:
         try:
             return cls(value.strip().lower())
         except ValueError:

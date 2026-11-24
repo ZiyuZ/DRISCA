@@ -1,7 +1,5 @@
 """管理端桌面与服务入口。"""
 
-from __future__ import annotations
-
 import socket
 import threading
 import time

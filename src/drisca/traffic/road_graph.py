@@ -1,7 +1,5 @@
 """车道图索引与车辆道路投影。"""
 
-from __future__ import annotations
-
 import math
 from dataclasses import dataclass
 from typing import Any

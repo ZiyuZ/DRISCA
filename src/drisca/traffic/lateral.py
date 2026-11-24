@@ -1,7 +1,5 @@
 """自适应前瞻 Pure Pursuit 横向转向控制器。"""
 
-from __future__ import annotations
-
 import math
 
 import numpy as np

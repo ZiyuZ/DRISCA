@@ -1,7 +1,5 @@
 """多车背景交通流管理器：批量生成、共享快照控制与控制权同步。"""
 
-from __future__ import annotations
-
 import math
 import random
 from dataclasses import dataclass

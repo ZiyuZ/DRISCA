@@ -1,7 +1,5 @@
 """单车自动驾驶组合控制器（支持驾驶风格、IDM 跟驰、感知延迟与安全换道）。"""
 
-from __future__ import annotations
-
 import random
 from collections import deque
 from dataclasses import dataclass

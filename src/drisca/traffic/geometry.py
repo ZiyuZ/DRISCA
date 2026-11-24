@@ -1,7 +1,5 @@
 """CARLA 左手系几何工具（X 向前、Y 向右、Z 向上）。"""
 
-from __future__ import annotations
-
 import math
 
 import numpy as np

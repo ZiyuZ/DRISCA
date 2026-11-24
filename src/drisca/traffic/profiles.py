@@ -1,7 +1,5 @@
 """驾驶风格预设：用物理控制参数与感知反应延迟刻画异质交通流。"""
 
-from __future__ import annotations
-
 import random
 from dataclasses import dataclass
 from enum import StrEnum

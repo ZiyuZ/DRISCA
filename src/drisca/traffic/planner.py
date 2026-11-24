@@ -1,7 +1,5 @@
 """局部前瞻路径拼接与弯道曲率计算。"""
 
-from __future__ import annotations
-
 import random
 from dataclasses import dataclass
 

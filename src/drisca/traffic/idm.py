@@ -1,7 +1,5 @@
 """向量化前车检测与 IDM（Intelligent Driver Model）跟驰模型。"""
 
-from __future__ import annotations
-
 import math
 from dataclasses import dataclass
 

@@ -1,7 +1,5 @@
 """抗饱和 PID 纵向速度控制与弯道、停止线减速。"""
 
-from __future__ import annotations
-
 import math
 
 import numpy as np

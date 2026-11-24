@@ -1,7 +1,5 @@
 """每帧共享的向量化车辆场景视图，供跟驰与换道零重复计算查询。"""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 import numpy as np

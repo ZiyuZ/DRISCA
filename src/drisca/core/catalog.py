@@ -1,7 +1,5 @@
 """原生 scene.catalog 的强类型不可变模型，将裸 JSON 字典隔离在协议边界。"""
 
-from __future__ import annotations
-
 from typing import Any
 
 from pydantic import BaseModel

@@ -1,7 +1,5 @@
 """交通信号灯停止线索引与前方红黄灯距离估算。"""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Any
 

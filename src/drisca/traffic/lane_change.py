@@ -1,7 +1,5 @@
 """可插拔换道决策模型：安全间隙规则（gap）与 MOBIL 激励换道（mobil）。"""
 
-from __future__ import annotations
-
 import numpy as np
 
 from .car_following import CarFollowingModel

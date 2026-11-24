@@ -1,7 +1,5 @@
 """可插拔跟驰模型集合：IDM、Gipps 与 Krauss。"""
 
-from __future__ import annotations
-
 import math
 import random
 from typing import Protocol

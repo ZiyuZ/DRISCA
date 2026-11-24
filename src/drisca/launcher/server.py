@@ -102,7 +102,7 @@ class FogRegionUpdateRequest(BaseModel, frozen=True):
     transition_seconds: TransitionSeconds = 0.0
 
     @model_validator(mode='after')
-    def require_change(self) -> 'FogRegionUpdateRequest':
+    def require_change(self) -> FogRegionUpdateRequest:
         if self.center_m is None and self.radius_m is None and self.density is None:
             raise ValueError('没有需要更新的区域字段')
         return self
