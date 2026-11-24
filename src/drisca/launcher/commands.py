@@ -1,14 +1,12 @@
 """可注册实验指令与事件库（按 category 分为 weather / traffic / ego / custom）。"""
 
-from __future__ import annotations
-
 import math
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -97,6 +95,10 @@ class SpeechParams(BaseModel):
 
 class LocalFogBurstParams(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
+    placement: Literal['fixed', 'ahead'] = 'fixed'
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 2.0
     distance_m: float = Field(default=25.0, ge=0, le=500)
     radius_m: float = Field(default=25.0, gt=0, le=1000)
     density: float = Field(default=0.8, ge=0, le=1)
@@ -174,12 +176,26 @@ def _run_weather(rt: Any, params: WeatherPresetParams, command_id: str) -> None:
 
 @register_command(
     command_id='local_fog_burst',
-    label='前方突发团雾',
-    description='在主车正前方生成局部球雾并在持续时间结束后自动渐隐消散',
+    label='突发团雾',
+    description='按固定世界坐标或主车正前方距离生成局部球雾，可选在持续时间结束后自动渐隐消散',
     category=CommandCategory.WEATHER,
     params_model=LocalFogBurstParams,
     fields=[
-        {'key': 'distance_m', 'label': '前方距离 · m', 'type': 'number', 'required': True, 'default': 25},
+        {
+            'key': 'placement',
+            'label': '定位方式',
+            'type': 'select',
+            'required': True,
+            'default': 'fixed',
+            'options': [
+                {'value': 'fixed', 'label': '固定坐标'},
+                {'value': 'ahead', 'label': '主车前方（调试）'},
+            ],
+        },
+        {'key': 'x', 'label': '固定 X · m', 'type': 'number', 'required': True, 'default': 0},
+        {'key': 'y', 'label': '固定 Y · m', 'type': 'number', 'required': True, 'default': 0},
+        {'key': 'z', 'label': '固定 Z · m', 'type': 'number', 'required': True, 'default': 2},
+        {'key': 'distance_m', 'label': '主车前方距离 · m', 'type': 'number', 'required': True, 'default': 25},
         {'key': 'radius_m', 'label': '球雾半径 · m', 'type': 'number', 'required': True, 'default': 25},
         {'key': 'density', 'label': '雾密度 (0–1)', 'type': 'number', 'required': True, 'default': 0.8},
         {'key': 'fade_in_s', 'label': '渐入时长 · s', 'type': 'number', 'required': True, 'default': 1.5},
@@ -198,25 +214,27 @@ def _run_local_fog_burst(rt: Any, params: LocalFogBurstParams, command_id: str) 
 
     from drisca.core.protocol import CreateFogRegionCommand, DeleteFogRegionCommand
 
-    telemetry = rt.state.get('telemetry')
-    if telemetry is not None:
-        x = float(telemetry['location_x'])
-        y = float(telemetry['location_y'])
-        z = float(telemetry['location_z'])
-        yaw = math.radians(float(telemetry['rotation_yaw']))
+    if params.placement == 'fixed':
+        center = (params.x, params.y, params.z)
     else:
-        spawns = rt.state.get('catalog', {}).get('spawn_points') or []
-        if not spawns:
-            raise RuntimeError('当前无主车遥测且无可用出生点，无法定位突发团雾位置')
-        sp = spawns[0]
-        x, y, z = float(sp['x']), float(sp['y']), float(sp['z'])
-        yaw = math.radians(float(sp['yaw']))
-
-    center = (
-        x + math.cos(yaw) * params.distance_m,
-        y + math.sin(yaw) * params.distance_m,
-        z + 2.0,
-    )
+        telemetry = rt.state.get('telemetry')
+        if telemetry is not None:
+            x = float(telemetry['location_x'])
+            y = float(telemetry['location_y'])
+            z = float(telemetry['location_z'])
+            yaw = math.radians(float(telemetry['rotation_yaw']))
+        else:
+            spawns = rt.state.get('catalog', {}).get('spawn_points') or []
+            if not spawns:
+                raise RuntimeError('当前无主车遥测且无可用出生点，无法按主车前方定位')
+            sp = spawns[0]
+            x, y, z = float(sp['x']), float(sp['y']), float(sp['z'])
+            yaw = math.radians(float(sp['yaw']))
+        center = (
+            x + math.cos(yaw) * params.distance_m,
+            y + math.sin(yaw) * params.distance_m,
+            z + 2.0,
+        )
 
     if rt.state['phase'] == 'running':
         expected_session = rt.state.get('session_id')
