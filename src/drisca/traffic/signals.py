@@ -139,3 +139,49 @@ class SignalTracker:
                     if nearest is None or dist < nearest:
                         nearest = dist
         return nearest
+
+    def nearest_signal(
+        self,
+        path: RoutePath,
+        traffic_lights: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+        *,
+        max_distance_m: float = 120.0,
+    ) -> tuple[int, str, float, TrafficLightState] | None:
+        """返回前方参考路径上最近的任意颜色信号灯 (actor_id, signal_id, distance_m, state)。"""
+        if not self._by_lane or not path.lane_keys:
+            return None
+
+        by_actor: dict[int, tuple[str, TrafficLightState]] = {}
+        by_signal: dict[str, tuple[int, TrafficLightState]] = {}
+        for item in traffic_lights:
+            state = TrafficLightState.parse(str(item.get('state', '')))
+            raw_actor = item.get('actor_id')
+            sig_id = str(item.get('signal_id') or '')
+            if raw_actor is not None:
+                aid = int(raw_actor)
+                by_actor[aid] = (sig_id, state)
+                if sig_id:
+                    by_signal[sig_id] = (aid, state)
+
+        best: tuple[int, str, float, TrafficLightState] | None = None
+        for idx, lane_key in enumerate(path.lane_keys):
+            base_offset = path.lane_start_s[idx]
+            if base_offset > max_distance_m:
+                break
+            entries = self._by_lane.get(lane_key)
+            if not entries:
+                continue
+            for entry in entries:
+                actor_id = entry.actor_id
+                state = TrafficLightState.UNKNOWN
+                if actor_id is not None and actor_id in by_actor:
+                    _, state = by_actor[actor_id]
+                elif entry.signal_id and entry.signal_id in by_signal:
+                    actor_id, state = by_signal[entry.signal_id]
+                if actor_id is None:
+                    continue
+                dist = (entry.stop_s - path.current_lane_s) if idx == 0 else (base_offset + entry.stop_s)
+                if 0.5 <= dist <= max_distance_m:
+                    if best is None or dist < best[2]:
+                        best = (actor_id, entry.signal_id, dist, state)
+        return best

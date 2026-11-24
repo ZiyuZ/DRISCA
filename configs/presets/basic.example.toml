@@ -52,13 +52,17 @@ roll = 0.0
 
 [traffic]
 enabled = false
-vehicle_count = 0
 seed = 42
 speed_factor = 1.0
 enable_lane_change = true
-style = "balanced"
 car_following_model = "idm"
 lane_change_model = "gap"
+
+[traffic.style_counts]
+balanced = 0
+aggressive = 0
+conservative = 0
+sluggish = 0
 
 [cameras]
 

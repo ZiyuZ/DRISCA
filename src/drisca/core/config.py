@@ -11,7 +11,7 @@ from typing import Literal
 from uuid import uuid4
 
 import tomli_w
-from pydantic import BaseModel, Field, JsonValue, field_validator
+from pydantic import BaseModel, Field, JsonValue, field_validator, model_validator
 
 from drisca.core.paths import CONFIG_FILE, CONTROL_FILE, PRESETS_DIR, RUN_CONFIG_DIR, resolve_db_path
 
@@ -425,17 +425,40 @@ class EgoVehicleConfig(BaseModel, frozen=True, extra='forbid'):
     init_autopilot: bool = False  # 开启后在实验就绪时切入自研自动驾驶
 
 
+class TrafficStyleCounts(BaseModel, frozen=True, extra='forbid'):
+    """按驾驶风格划分的背景车数量。"""
+
+    balanced: int = Field(default=0, ge=0, le=100)
+    aggressive: int = Field(default=0, ge=0, le=100)
+    conservative: int = Field(default=0, ge=0, le=100)
+    sluggish: int = Field(default=0, ge=0, le=100)
+
+    @property
+    def total(self) -> int:
+        return self.balanced + self.aggressive + self.conservative + self.sluggish
+
+
 class TrafficConfig(BaseModel, frozen=True, extra='forbid'):
     """背景交通流配置，保存于实验预设的 [traffic] 节。"""
 
     enabled: bool = False
-    vehicle_count: int = Field(default=0, ge=0, le=100)
+    style_counts: TrafficStyleCounts = TrafficStyleCounts()
     seed: int = 42
     speed_factor: float = Field(default=1.0, ge=0.3, le=1.5)
+    diversity: float = Field(default=0.12, ge=0.0, le=0.35)  # 同风格车辆的个体参数随机离散度
     enable_lane_change: bool = True
-    style: Literal['balanced', 'aggressive', 'conservative', 'sluggish', 'mixed'] = 'balanced'
     car_following_model: Literal['idm', 'gipps', 'krauss'] = 'idm'
     lane_change_model: Literal['gap', 'mobil'] = 'gap'
+
+    @property
+    def vehicle_count(self) -> int:
+        return self.style_counts.total
+
+    @model_validator(mode='after')
+    def _validate_total_vehicles(self) -> TrafficConfig:
+        if self.vehicle_count > 100:
+            raise ValueError(f'背景车总数不能超过 100 辆（当前 {self.vehicle_count} 辆）')
+        return self
 
 
 class ExperimentInstructionConfig(BaseModel, frozen=True, extra='forbid'):

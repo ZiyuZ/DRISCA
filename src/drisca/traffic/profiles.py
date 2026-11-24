@@ -1,7 +1,7 @@
 """驾驶风格预设：用物理控制参数与感知反应延迟刻画异质交通流。"""
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 
@@ -10,7 +10,6 @@ class DrivingStyle(StrEnum):
     AGGRESSIVE = 'aggressive'
     CONSERVATIVE = 'conservative'
     SLUGGISH = 'sluggish'
-    MIXED = 'mixed'
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,22 +118,41 @@ BASE_PROFILES: dict[str, DrivingProfile] = {
     DrivingStyle.SLUGGISH: SLUGGISH_PROFILE,
 }
 
-# 混合模式默认比例：50% 均衡、20% 激进、20% 保守、10% 反应迟钝
-_MIXED_POOL: tuple[DrivingProfile, ...] = (
-    BALANCED_PROFILE,
-    AGGRESSIVE_PROFILE,
-    CONSERVATIVE_PROFILE,
-    SLUGGISH_PROFILE,
-)
-_MIXED_WEIGHTS: tuple[float, ...] = (0.5, 0.2, 0.2, 0.1)
 
-
-def resolve_profile(style: str, rng: random.Random | None = None) -> DrivingProfile:
-    """根据风格名称解析单车参数；mixed 模式按既定权重随机抽样。"""
-    if style == DrivingStyle.MIXED:
-        picker = rng if rng is not None else random.Random()
-        return picker.choices(_MIXED_POOL, weights=_MIXED_WEIGHTS, k=1)[0]
+def resolve_profile(style: str) -> DrivingProfile:
+    """根据风格名称解析单车驾驶风格参数。"""
     profile = BASE_PROFILES.get(style)
     if profile is None:
         raise ValueError(f'未知的驾驶风格：{style}')
     return profile
+
+
+def _jitter(rng: random.Random, mean: float, sigma_ratio: float, lo: float, hi: float) -> float:
+    """在 [mean*(1-2σ), mean*(1+2σ)] 内做截断高斯微扰，并夹紧到物理安全区间 [lo, hi]。"""
+    if sigma_ratio <= 0.0:
+        return mean
+    factor = max(1.0 - 2.0 * sigma_ratio, min(1.0 + 2.0 * sigma_ratio, rng.gauss(1.0, sigma_ratio)))
+    return max(lo, min(hi, mean * factor))
+
+
+def sample_profile(style: str, rng: random.Random, *, diversity: float = 0.12) -> DrivingProfile:
+    """在指定驾驶风格均值附近按截断高斯分布抽样个体参数，兼顾车流多样性与种子可复现。"""
+    base = resolve_profile(style)
+    sigma = max(0.0, min(0.35, diversity))
+    if sigma <= 0.0:
+        return base
+    reaction_delay = (
+        _jitter(rng, base.reaction_delay_s, sigma, 0.25, 1.1) if base.reaction_delay_s > 0.0 else 0.0
+    )
+    return replace(
+        base,
+        speed_multiplier=_jitter(rng, base.speed_multiplier, sigma * 0.65, 0.7, 1.35),
+        min_gap_m=_jitter(rng, base.min_gap_m, sigma, 1.4, 5.5),
+        time_headway_s=_jitter(rng, base.time_headway_s, sigma, 0.65, 3.5),
+        max_accel=_jitter(rng, base.max_accel, sigma, 1.0, 4.2),
+        comfort_decel=_jitter(rng, base.comfort_decel, sigma, 1.5, 4.8),
+        lane_change_cooldown_s=_jitter(rng, base.lane_change_cooldown_s, sigma, 1.5, 12.0),
+        politeness=_jitter(rng, base.politeness, sigma, 0.0, 0.85),
+        krauss_dawdle=_jitter(rng, base.krauss_dawdle, sigma, 0.02, 0.5),
+        reaction_delay_s=reaction_delay,
+    )

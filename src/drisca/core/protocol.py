@@ -513,6 +513,22 @@ class UpdateLayoutCommand(BaseModel, frozen=True):
     layout: DisplayLayoutConfig
 
 
+class TrafficActionCommand(BaseModel, frozen=True):
+    """由 launcher 运行期触发背景交通流场景事件"""
+
+    command_id: str
+    type: Literal['traffic_action'] = 'traffic_action'
+    action: Literal[
+        'lead_hard_brake',
+        'adjacent_cut_in',
+        'lead_breakdown',
+        'ahead_signal_change',
+        'dual_lane_slowdown',
+        'red_light_runner',
+    ]
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
 LauncherCommand = Annotated[
     StopCommand
     | SetAutopilotCommand
@@ -522,7 +538,8 @@ LauncherCommand = Annotated[
     | UpdateFogRegionCommand
     | DeleteFogRegionCommand
     | UpdateCameraCommand
-    | UpdateLayoutCommand,
+    | UpdateLayoutCommand
+    | TrafficActionCommand,
     Field(discriminator='type'),
 ]
 

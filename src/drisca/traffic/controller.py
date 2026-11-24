@@ -94,6 +94,10 @@ class AutopilotController:
         self._elapsed_s = 0.0
         self._perception_buffer.clear()
 
+    def switch_lane(self, lane_key: str) -> None:
+        """强制将局部规划器切换到指定目标车道（用于场景事件切入等指令）。"""
+        self._planner.switch_lane(lane_key)
+
     def _apply_reaction_delay(
         self,
         dt: float,
@@ -128,6 +132,8 @@ class AutopilotController:
         traffic_lights: tuple[dict[str, Any], ...] | list[dict[str, Any]],
         scene: TrafficScene | None = None,
         self_actor_id: int = 0,
+        ignore_signals: bool = False,
+        speed_factor_override: float | None = None,
     ) -> VehicleControl:
         """根据当前车辆状态、周边车辆场景与实时信号灯计算本步控制量。"""
         path = self._planner.update(x, y, yaw_deg, road_id=road_id, lane_id=lane_id)
@@ -137,14 +143,15 @@ class AutopilotController:
         speed_limit = self._default_speed_limit_mps
         if self._dynamic_speed_limit and road_speed_limit_mps > 0.1:
             speed_limit = road_speed_limit_mps
-        speed_limit = max(0.0, speed_limit * self._speed_factor)
+        factor = self._speed_factor if speed_factor_override is None else speed_factor_override
+        speed_limit = max(0.0, speed_limit * factor)
 
         raw_lead = (
             self._cf.detect_lead(scene, self_actor_id=self_actor_id, x=x, y=y, yaw_deg=yaw_deg)
             if scene is not None and self_actor_id > 0
             else None
         )
-        raw_stop = self._signals.nearest_stop_distance(path, traffic_lights)
+        raw_stop = None if ignore_signals else self._signals.nearest_stop_distance(path, traffic_lights)
         lead, stop_distance = self._apply_reaction_delay(dt, raw_lead, raw_stop)
 
         if self._lane_change is not None and scene is not None and self_actor_id > 0:

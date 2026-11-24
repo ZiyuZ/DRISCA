@@ -19,6 +19,7 @@ from drisca.core.protocol import (
     SetTakeoverCommand,
     SetWeatherCommand,
     StopCommand,
+    TrafficActionCommand,
     UpdateCameraCommand,
     UpdateFogRegionCommand,
     UpdateLayoutCommand,
@@ -214,7 +215,7 @@ class SimulatorApp:
         deltas: list[float] = []
         exchange_ms: list[float] = []
         while True:
-            operations, command_ids = self._operations(channel.poll_commands())
+            operations, command_ids = self._operations(channel.poll_commands(), api, channel)
             if not self.running and not operations:
                 break
             mode_changed_in_batch = any(op.get('method') == 'vehicle.set_mode' for op in operations)
@@ -271,12 +272,18 @@ class SimulatorApp:
                 and self.last_snapshot is not None
                 and self.last_scene is not None
             ):
+                ego_xy = (
+                    (self.last_driving.location[0], self.last_driving.location[1])
+                    if self.last_driving is not None
+                    else None
+                )
                 operations.extend(
                     self.traffic_manager.step_operations(
                         self.last_snapshot,
                         self.last_scene,
                         self.last_traffic_lights,
                         dt,
+                        ego_xy=ego_xy,
                     )
                 )
             deadline = time.monotonic() + SAMPLE_INTERVAL
@@ -367,19 +374,66 @@ class SimulatorApp:
             )
         )
 
-    def _operations(self, commands: list[LauncherCommand]) -> tuple[list[dict[str, Any]], dict[int, str]]:
+    def _operations(
+        self,
+        commands: list[LauncherCommand],
+        api: NativeApiClient,
+        channel: WorkerWSClient,
+    ) -> tuple[list[dict[str, Any]], dict[int, str]]:
         operations: list[dict[str, Any]] = []
         command_ids: dict[int, str] = {}
         for command in commands:
             if isinstance(command, StopCommand):
                 self.running = False
                 break
+            if isinstance(command, TrafficActionCommand):
+                self._run_traffic_action(command, api, channel)
+                continue
             operation = self._operation(command)
             if operation is None:
                 continue
             command_ids[len(operations)] = command.command_id
             operations.append(operation)
         return operations, command_ids
+
+    def _run_traffic_action(
+        self,
+        command: TrafficActionCommand,
+        api: NativeApiClient,
+        channel: WorkerWSClient,
+    ) -> None:
+        if self.traffic_manager is None or self.last_driving is None:
+            logger.error('交通流或主车状态尚未就绪，无法执行交通事件')
+            return
+        try:
+            detail = self.traffic_manager.trigger_action(
+                api,
+                action=command.action,
+                params=command.params,
+                ego_actor_id=self.ego_actor_id,
+                ego_x=self.last_driving.location[0],
+                ego_y=self.last_driving.location[1],
+                ego_yaw_deg=self.last_driving.rotation[1],
+                ego_road_id=self.last_driving.road_id,
+                ego_lane_id=self.last_driving.lane_id,
+                scene=self.last_scene,
+                traffic_lights=self.last_traffic_lights,
+                default_speed_limit_mps=self.config.preset.ego.default_speed_limit,
+            )
+            from drisca.core.protocol import CustomExperimentEvent, EventKind
+
+            channel.send_event(
+                CustomExperimentEvent(
+                    kind=EventKind.OPERATOR_ACTION,
+                    source='launcher',
+                    frame_no=self.last_driving.frame_no,
+                    timestamp=time.time(),
+                    command_id=command.command_id,
+                    payload={'label': f'traffic:{detail["action"]}', **detail},
+                )
+            )
+        except Exception as exc:
+            logger.error(f'交通事件 {command.action} 执行失败：{exc}')
 
     def _operation(self, command: LauncherCommand) -> dict[str, Any] | None:
         if isinstance(command, SetWeatherCommand):

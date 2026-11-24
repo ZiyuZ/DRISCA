@@ -121,8 +121,10 @@ class TrafficPreviewRunner:
             started_view = True
             manager.apply_control_state(view.get('control_state'))
             self._on_state(True, spawned, None)
+            counts = traffic.style_counts
             self._on_log(
-                f'交通流预览已启动：{spawned} 辆车（风格={traffic.style}，'
+                f'交通流预览已启动：{spawned} 辆车（均衡={counts.balanced}，激进={counts.aggressive}，'
+                f'保守={counts.conservative}，迟缓={counts.sluggish}；'
                 f'跟驰={traffic.car_following_model}，换道={traffic.lane_change_model}）',
                 'INFO',
             )
