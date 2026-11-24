@@ -6,8 +6,6 @@ import math
 import socket
 import time
 from contextlib import asynccontextmanager
-from dataclasses import asdict
-from datetime import datetime
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
@@ -15,7 +13,6 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, model_validator
 
 from drisca.core.config import (
     KEYBOARD_KEY_LABELS,
@@ -25,16 +22,14 @@ from drisca.core.config import (
     DisplayLayoutConfig,
     MachineConfig,
     PresetConfig,
-    RunSettings,
-    WeatherConfig,
+    TrafficConfig,
     list_presets,
     load_preset,
     save_control_config,
     save_machine_config,
     save_preset,
 )
-from drisca.core.environment import TransitionSeconds, WorldPoint
-from drisca.core.paths import PRESETS_DIR, PROJECT_ROOT
+from drisca.core.paths import PRESETS_DIR
 from drisca.core.protocol import (
     CreateFogRegionCommand,
     DeleteFogRegionCommand,
@@ -44,75 +39,19 @@ from drisca.core.protocol import (
     UpdateLayoutCommand,
     parse_worker_event,
 )
-from drisca.core.tools import query_recorder_info, replay_recorder
 from drisca.core.weather import resolve_weather, to_config, to_payload
 from drisca.launcher.commands import COMMANDS, MODELS
+from drisca.launcher.routes_data import build_data_router
 from drisca.launcher.runtime import Runtime
-
-
-class StartRequest(BaseModel, frozen=True):
-    preset_name: str
-    run: RunSettings
-
-
-class NoteRequest(BaseModel, frozen=True):
-    note: str
-
-
-class MarkerRequest(BaseModel, frozen=True):
-    label: str
-
-
-class EnabledRequest(BaseModel, frozen=True):
-    enabled: bool
-
-
-class MapRequest(BaseModel, frozen=True):
-    map_name: str
-
-
-class CarlaStartRequest(BaseModel, frozen=True):
-    kind: Literal['editor', 'packaged'] | None = None
-
-
-class SessionSelectionRequest(BaseModel, frozen=True):
-    session_ids: list[str]
-
-
-class RecordingRequest(BaseModel, frozen=True):
-    name: str
-
-
-class WeatherRequest(BaseModel, frozen=True):
-    weather: WeatherConfig
-    transition_seconds: TransitionSeconds = 0.0
-
-
-class FogRegionCreateRequest(BaseModel, frozen=True):
-    center_m: WorldPoint
-    radius_m: float = Field(gt=0, le=100_000)
-    density: float = Field(ge=0, le=1)
-    transition_seconds: TransitionSeconds = 0.0
-
-
-class FogRegionUpdateRequest(BaseModel, frozen=True):
-    center_m: WorldPoint | None = None
-    radius_m: float | None = Field(default=None, gt=0, le=100_000)
-    density: float | None = Field(default=None, ge=0, le=1)
-    transition_seconds: TransitionSeconds = 0.0
-
-    @model_validator(mode='after')
-    def require_change(self) -> FogRegionUpdateRequest:
-        if self.center_m is None and self.radius_m is None and self.density is None:
-            raise ValueError('没有需要更新的区域字段')
-        return self
-
-
-class ReplayRequest(RecordingRequest):
-    start_time: float
-    duration: float
-    time_factor: float
-    follow_actor_id: int
+from drisca.launcher.schemas import (
+    CarlaStartRequest,
+    FogRegionCreateRequest,
+    FogRegionUpdateRequest,
+    MapRequest,
+    MarkerRequest,
+    StartRequest,
+    WeatherApplyRequest,
+)
 
 
 def create_app() -> FastAPI:
@@ -163,15 +102,12 @@ def create_app() -> FastAPI:
             raise HTTPException(400, '名称无效')
         return name
 
-    def recorder(name: str) -> Path:
-        path = (PROJECT_ROOT / rt().machine.recorder_dir / safe_name(name)).resolve()
-        if not path.is_file():
-            raise HTTPException(404, '录像不存在')
-        return path
-
     @app.get('/api/bootstrap')
     def bootstrap():
-        host = socket.gethostbyname(socket.gethostname())
+        try:
+            host = socket.gethostbyname(socket.gethostname())
+        except OSError:
+            host = '127.0.0.1'
         port = rt().launcher_port
         base = f'http://{host}:{port}'
         return {
@@ -317,14 +253,6 @@ def create_app() -> FastAPI:
         rt().background(rt().stop)
         return {'ok': True}
 
-    @app.put('/api/sessions/{session_id}/note')
-    def session_note(session_id: str, request: NoteRequest):
-        with rt().db_session() as db:
-            if db.get_session(session_id) is None:
-                raise HTTPException(404, '会话不存在')
-            db.update_session_note(session_id, request.note)
-        return {'ok': True}
-
     @app.post('/api/instructions/{instruction_id}/execute')
     def execute(instruction_id: str):
         ensure_running()
@@ -379,7 +307,7 @@ def create_app() -> FastAPI:
         return {'ok': True}
 
     @app.post('/api/weather')
-    def weather(request: WeatherRequest):
+    def weather(request: WeatherApplyRequest):
         config = request.weather
         if config.preset_name != 'Custom':
             config = resolve_weather(config, rt().weather_presets)
@@ -468,126 +396,22 @@ def create_app() -> FastAPI:
         rt().update(fog_regions=rt().read_fog_regions())
         return {'ok': True}
 
-    @app.get('/api/sessions')
-    def sessions(start_date: str = '', end_date: str = '', status: str = '', search: str = ''):
-        with rt().db_session() as db:
-            rows = db.list_sessions()
-            frame_counts = db.count_all_session_frames()
-            items = []
-            for row in rows:
-                date = datetime.fromtimestamp(row.started_at).strftime('%Y-%m-%d')
-                if (start_date and date < start_date) or (end_date and date > end_date):
-                    continue
-                if status and status != row.status:
-                    continue
-                if search.lower() not in (row.session_id + row.subject_id).lower():
-                    continue
-                items.append({**asdict(row), 'frame_count': frame_counts.get(row.session_id, 0)})
-            return {'total': len(rows), 'items': items}
-
-    @app.get('/api/sessions/{session_id}')
-    def session(session_id: str):
-        with rt().db_session() as db:
-            row = db.get_session(session_id)
-            if row is None:
-                raise HTTPException(404, '会话不存在')
-            return {
-                'session': asdict(row),
-                'events': [asdict(e) for e in db.list_session_events(session_id)],
-                'frame_count': db.count_session_frames(session_id),
-                'run_config': json.loads(row.run_config_json),
-            }
-
-    @app.post('/api/sessions/delete')
-    def delete_sessions(request: SessionSelectionRequest):
-        if not request.session_ids:
-            raise HTTPException(422, '请选择会话')
-        if rt().state['session_id'] in request.session_ids:
-            raise HTTPException(409, '请先结束选中的实验')
-        if rt().state['export']['running']:
-            raise HTTPException(409, '请等待当前导出完成')
-        with rt().db_session() as db:
-            db.delete_sessions(request.session_ids)
-        return {'ok': True}
-
-    @app.post('/api/export')
-    def export(request: SessionSelectionRequest):
-        if not request.session_ids:
-            raise HTTPException(422, '请选择会话')
-        if rt().state['export']['running']:
-            raise HTTPException(409, '正在导出')
-        rt().update(export={'running': True, 'progress': 0, 'path': None, 'error': None})
-
-        def work():
-            path = (
-                PROJECT_ROOT / rt().machine.export_dir / f'{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}'
-            ).resolve()
-            try:
-                with rt().db_session() as db:
-                    existing = {row.session_id for row in db.list_sessions()}
-                    if not set(request.session_ids) <= existing:
-                        raise ValueError('选中的会话不存在')
-                    db.export_sessions(
-                        path,
-                        request.session_ids,
-                        lambda progress: rt().update(
-                            export={
-                                'running': True,
-                                'progress': progress,
-                                'path': str(path),
-                                'error': None,
-                            }
-                        ),
-                    )
-                rt().update(export={'running': False, 'progress': 100, 'path': str(path), 'error': None})
-            except Exception as exc:
-                rt().update(export={'running': False, 'progress': 0, 'path': None, 'error': str(exc)})
-                raise
-
-        rt().background(work)
-        return {'ok': True}
-
-    @app.get('/api/recordings')
-    def recordings(search: str = '', page: int = 1, page_size: int = 20):
-        if page < 1 or page_size < 1:
-            raise HTTPException(422, '分页参数无效')
-        directory = PROJECT_ROOT / rt().machine.recorder_dir
-        paths = sorted(
-            (p for p in directory.glob('*.rec') if search.lower() in p.name.lower()),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        return {
-            'total': len(paths),
-            'items': [
-                {'name': p.name, 'size_bytes': p.stat().st_size, 'modified_at': p.stat().st_mtime}
-                for p in paths[(page - 1) * page_size : page * page_size]
-            ],
-        }
-
-    @app.post('/api/recordings/info')
-    def recording_info(request: RecordingRequest):
-        api = rt().api
-        if api is None:
-            raise HTTPException(409, 'CARLA 尚未连接')
-        return {'text': query_recorder_info(api, recorder(request.name))}
-
-    @app.post('/api/recordings/replay')
-    def replay(request: ReplayRequest):
+    @app.post('/api/traffic/preview/start')
+    def start_traffic_preview(traffic: TrafficConfig):
         ensure_idle()
-        api = rt().api
-        if api is None:
+        if rt().state['carla_connecting'] or not rt().state['carla_connected']:
             raise HTTPException(409, 'CARLA 尚未连接')
-        replay_recorder(
-            api,
-            recorder(request.name),
-            request.start_time,
-            request.duration,
-            request.time_factor,
-            request.follow_actor_id,
-            ignore_hero=False,
-        )
+        if traffic.vehicle_count <= 0:
+            raise HTTPException(422, '预览背景车数量必须大于 0')
+        rt().start_traffic_preview(traffic)
         return {'ok': True}
+
+    @app.post('/api/traffic/preview/stop')
+    def stop_traffic_preview():
+        rt().stop_traffic_preview()
+        return {'ok': True}
+
+    app.include_router(build_data_router(rt, ensure_idle, safe_name))
 
     @app.get('/api/events')
     async def events():

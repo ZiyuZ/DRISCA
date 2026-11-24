@@ -57,6 +57,10 @@ class TrafficManager:
     def vehicle_count(self) -> int:
         return len(self._vehicles)
 
+    @property
+    def actor_ids(self) -> tuple[int, ...]:
+        return tuple(self._vehicles)
+
     def spawn_background(
         self,
         api: NativeApiClient,

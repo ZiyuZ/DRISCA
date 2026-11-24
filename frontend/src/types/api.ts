@@ -172,6 +172,11 @@ export type RuntimeState = {
   cameras: PresetConfig["cameras"] | null;
   weather: Weather | null;
   fog_regions: RuntimeFogRegion[];
+  traffic_preview: {
+    running: boolean;
+    vehicle_count: number;
+    error: string | null;
+  };
   display_layout: DisplayLayout | null;
   vehicle_box: {
     location: { x: number; y: number; z: number; };

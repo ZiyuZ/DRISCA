@@ -1,17 +1,14 @@
 """实验编排与实时状态。"""
 
 import asyncio
-import copy
 import json
 import socket
 import subprocess
 import sys
 import threading
 import time
-from collections import deque
 from collections.abc import Generator
 from contextlib import contextmanager
-from enum import StrEnum
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any, Literal
@@ -23,9 +20,11 @@ import win32job  # ty: ignore[import-not-found]
 
 from drisca.core.client import NativeApiClient, NativeApiError
 from drisca.core.config import (
+    CameraRigConfig,
     EgoVehicleConfig,
     PresetConfig,
     RunSettings,
+    TrafficConfig,
     WeatherConfig,
     WorldConfig,
     compose_run_config,
@@ -46,24 +45,11 @@ from drisca.core.protocol import (
 )
 from drisca.core.weather import from_native, to_config, to_payload
 from drisca.launcher.commands import MODELS, REGISTRY
+from drisca.launcher.state import ExperimentPhase, StateStore, UnrealPhase
+from drisca.launcher.traffic_preview import TrafficPreviewRunner
 from drisca.launcher.unreal import launch_arguments
 from drisca.storage.db import StorageDB
 from drisca.storage.models import SCHEMA_VERSION, EventRow, SessionRow, SessionStatus
-
-
-class ExperimentPhase(StrEnum):
-    IDLE = 'idle'
-    STARTING = 'starting'
-    RUNNING = 'running'
-    STOPPING = 'stopping'
-
-
-class UnrealPhase(StrEnum):
-    STOPPED = 'stopped'
-    STARTING = 'starting'
-    RUNNING = 'running'
-    STOPPING = 'stopping'
-    FAILED = 'failed'
 
 
 def map_key(name: str) -> str:
@@ -74,7 +60,8 @@ def map_key(name: str) -> str:
 class Runtime:
     def __init__(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
-        self._state_lock = threading.RLock()
+        self.store = StateStore(loop)
+        self._state_lock = self.store.lock
         self._db_lock = threading.RLock()
         self._db: StorageDB | None = None
         self._db_path: Path | None = None
@@ -93,38 +80,16 @@ class Runtime:
         self.worker_closed = threading.Event()
         self.worker_error: str | None = None
         self.stop_requested = threading.Event()
-        self.subscribers: set[asyncio.Queue] = set()
-        self.logs: deque = deque(maxlen=500)
-        self.events: deque = deque(maxlen=500)
-        self.state: dict[str, Any] = {
-            'phase': str(ExperimentPhase.IDLE),
-            'carla_connected': False,
-            'carla_connecting': False,
-            'world_loading': False,
-            'unreal': {'phase': str(UnrealPhase.STOPPED), 'pid': None, 'kind': None},
-            'clients': {'console': 0, 'hud': 0},
-            'carla_detail': '',
-            'worker_state': 'stopped',
-            'session_id': None,
-            'active_preset': None,
-            'active_preset_name': None,
-            'active_run': None,
-            'telemetry': None,
-            'cameras': None,
-            'weather': None,
-            'fog_regions': [],
-            'display_layout': None,
-            'vehicle_box': None,
-            'error': None,
-            'catalog': {
-                'maps': [],
-                'vehicles': [],
-                'map_name': None,
-                'spawn_points': [],
-                'weather_presets': {},
-            },
-            'export': {'running': False, 'progress': 0, 'path': None, 'error': None},
-        }
+        self.subscribers = self.store.subscribers
+        self.logs = self.store.logs
+        self.events = self.store.events
+        self.state = self.store.state
+        self.traffic_preview = TrafficPreviewRunner(
+            on_state=lambda running, count, err: self.update(
+                traffic_preview={'running': running, 'vehicle_count': count, 'error': err}
+            ),
+            on_log=self.log,
+        )
         self.job = win32job.CreateJobObject(None, '')
         info = win32job.QueryInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation)
         info['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
@@ -134,48 +99,29 @@ class Runtime:
 
     def snapshot_state(self) -> dict[str, Any]:
         """返回线程安全的状态深拷贝，供 SSE 首次推送与 HTTP 读取。"""
-        with self._state_lock:
-            return copy.deepcopy(self.state)
+        return self.store.snapshot()
 
     def emit(self, kind: str, data) -> None:
-        if self.loop.is_closed():
-            return
-        message = {'type': kind, 'data': data}
-
-        def send() -> None:
-            for queue in tuple(self.subscribers):
-                if queue.full():
-                    try:
-                        queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        pass
-                try:
-                    queue.put_nowait(message)
-                except asyncio.QueueFull:
-                    pass
-
-        try:
-            self.loop.call_soon_threadsafe(send)
-        except RuntimeError:
-            pass
+        self.store.emit(kind, data)
 
     def update(self, **changes) -> None:
-        with self._state_lock:
-            self.state.update(changes)
-            snapshot = copy.deepcopy(self.state)
-        self.emit('state', snapshot)
+        self.store.update(**changes)
 
     def log(self, message: str, level: str = 'INFO', role: str = 'launcher') -> None:
-        item = {
-            'type': 'log',
-            'role': role,
-            'timestamp': time.time(),
-            'level': level,
-            'message': message,
-            'command_id': None,
-        }
-        self.logs.append(item)
-        self.emit('log', item)
+        self.store.append_log(message, level=level, role=role)
+
+    def start_traffic_preview(self, traffic: TrafficConfig) -> None:
+        self._require_api()
+        self.traffic_preview.start(
+            self.machine.driving_view,
+            traffic,
+            cameras=CameraRigConfig(),
+            layout=self.machine.display.layout,
+            control=self.control,
+        )
+
+    def stop_traffic_preview(self) -> None:
+        self.traffic_preview.stop()
 
     def background(self, function, *args) -> None:
         def run() -> None:
@@ -310,6 +256,7 @@ class Runtime:
         process.wait()
 
     def stop_carla(self) -> None:
+        self.stop_traffic_preview()
         process = self.carla_process
         self.close_api()
         self.update(carla_connected=False, carla_detail='')
@@ -391,6 +338,7 @@ class Runtime:
         }
 
     def load_world(self, map_name: str) -> None:
+        self.stop_traffic_preview()
         api = self._require_api()
         try:
             result = api.load_map(map_name)
@@ -436,6 +384,7 @@ class Runtime:
             )
 
     async def shutdown(self) -> None:
+        await asyncio.to_thread(self.stop_traffic_preview)
         if self.state['phase'] != str(ExperimentPhase.IDLE):
             await asyncio.to_thread(self.stop)
             while self.state['phase'] != str(ExperimentPhase.IDLE):
@@ -450,12 +399,7 @@ class Runtime:
         self.close_db()
 
     def client_connected(self, role: str, delta: int) -> None:
-        with self._state_lock:
-            clients = dict(self.state['clients'])
-            clients[role] = max(0, clients[role] + delta)
-            self.state['clients'] = clients
-            snapshot = copy.deepcopy(self.state)
-        self.emit('state', snapshot)
+        self.store.adjust_client(role, delta)
 
     def event(self, item: dict) -> None:
         self.events.append(item)
@@ -495,6 +439,7 @@ class Runtime:
         )
 
     def start(self, preset: PresetConfig, run: RunSettings) -> None:
+        self.stop_traffic_preview()
         if self.api is None:
             raise RuntimeError('原生接口尚未连接')
         self.worker_error = None
@@ -666,11 +611,7 @@ class Runtime:
 
     def receive(self, event) -> None:
         if isinstance(event, TelemetrySnapshotEvent):
-            payload = event.model_dump(mode='json')
-            with self._state_lock:
-                self.state['telemetry'] = payload
-            # 高频遥测走独立事件通道，避免每帧重复广播静态 catalog
-            self.emit('telemetry', payload)
+            self.store.update_telemetry(event.model_dump(mode='json'))
         elif isinstance(event, WorkerReadyEvent):
             cfg = self.run_config
             if cfg is not None and cfg.run.save_data:
