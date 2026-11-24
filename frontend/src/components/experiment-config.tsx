@@ -12,7 +12,7 @@ import { Slider } from "./ui/slider";
 import { SearchSelect } from "./common";
 import { weatherDescription } from "./weather-editor";
 import { catalogMatchesPreset, matchSpawnIndex, spawnBound } from "../lib/spawn";
-import { carFollowingModels, laneChangeModels, trafficStyles } from "../lib/traffic";
+import { carFollowingModels, laneChangeModels, totalTrafficVehicles, trafficStyles } from "../lib/traffic";
 
 type Props = {
   preset: PresetConfig;
@@ -31,14 +31,18 @@ export function ExperimentConfig({ preset, state, update, onOpenWeather, onMapCh
   const points = mapLoaded ? state.catalog.spawn_points : [];
   const spawnIndex = bound && mapLoaded ? matchSpawnIndex(points, preset.ego.spawn_point) : null;
   const traffic = preset.traffic;
-  const trafficStyle = trafficStyles.find(item => item.value === traffic.style)?.label ?? traffic.style;
+  const totalVehicles = totalTrafficVehicles(traffic.style_counts);
+  const styleParts = trafficStyles
+    .filter(item => traffic.style_counts[item.value] > 0)
+    .map(item => `${item.label} ${traffic.style_counts[item.value]}`);
+  const styleText = styleParts.length > 0 ? `（${styleParts.join(" / ")}）` : "";
   const followingModel = carFollowingModels.find(item => item.value === traffic.car_following_model)?.short
     ?? traffic.car_following_model;
   const laneChangeModel = traffic.enable_lane_change
     ? laneChangeModels.find(item => item.value === traffic.lane_change_model)?.short ?? traffic.lane_change_model
     : "关闭";
-  const trafficSummary = `${traffic.enabled ? "已启用" : "未启用"} · ${traffic.vehicle_count} 辆 · `
-    + `${trafficStyle} · 跟驰 ${followingModel} · 换道 ${laneChangeModel}`;
+  const trafficSummary = `${traffic.enabled ? "已启用" : "未启用"} · ${totalVehicles} 辆${styleText} · `
+    + `跟驰 ${followingModel} · 换道 ${laneChangeModel}`;
   const missingText =
     mapLoaded && points.length === 0
       ? "该地图没有预设出生点，请手动填写完整坐标。"
@@ -71,7 +75,7 @@ export function ExperimentConfig({ preset, state, update, onOpenWeather, onMapCh
             <div className="spawn-missing">
               <span>
                 {weatherDescription(preset.world.weather, state.catalog.weather_presets)}
-                {` · ${preset.world.fog_regions.length} 处球雾`}
+                {` · ${preset.world.fog_regions.length} 处团雾`}
               </span>
               <Button variant="outline" onClick={onOpenWeather}>前往天气页配置</Button>
             </div>

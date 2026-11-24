@@ -9,9 +9,6 @@ import { Button } from "./ui/button";
 type Props = {
   weather: Weather;
   presets: Record<string, Weather>;
-  regions: RuntimeFogRegion[];
-  telemetry: Telemetry | null;
-  running: boolean;
 };
 type FogUpdate = { radius_m?: number; density?: number; transition_seconds: number };
 
@@ -19,10 +16,9 @@ const percent = (value: number) => Math.round(value * 10000) / 100;
 const round = (value: number) => Math.round(value * 100) / 100;
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-export function LiveWeatherControls({ weather, presets, regions, telemetry, running }: Props) {
+export function LiveWeatherControls({ weather, presets }: Props) {
   const [draft, setDraft] = useState(weather);
   const [transition, setTransition] = useState(0);
-  const [busy, setBusy] = useState(false);
   const pending = useRef<{ weather: Weather; transition_seconds: number } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const apply = async () => {
@@ -39,6 +35,27 @@ export function LiveWeatherControls({ weather, presets, regions, telemetry, runn
     clearTimeout(timer.current);
     timer.current = setTimeout(() => void apply(), 300);
   };
+  return (
+    <div className="grid gap-5">
+      <label className="weather-field">
+        <span>全局渐变时长 · s</span>
+        <div className="weather-range">
+          <span className="text-sm text-muted-foreground">下一次天气调整使用该时长</span>
+          <NumberInput className="input mono" min="0" step="0.5" value={transition}
+            onValueChange={setTransition} />
+        </div>
+      </label>
+      <WeatherEditor weather={draft} weatherPresets={presets} onChange={change} />
+    </div>
+  );
+}
+
+export function LiveFogRegionManager({ regions, telemetry, running }: {
+  regions: RuntimeFogRegion[];
+  telemetry: Telemetry | null;
+  running: boolean;
+}) {
+  const [busy, setBusy] = useState(false);
   const submit = async (action: () => Promise<unknown>, success: string) => {
     setBusy(true);
     try {
@@ -51,21 +68,15 @@ export function LiveWeatherControls({ weather, presets, regions, telemetry, runn
     }
   };
   return (
-    <div className="grid gap-5">
-      <label className="weather-field">
-        <span>全局渐变时长 · s</span>
-        <div className="weather-range">
-          <span className="text-sm text-muted-foreground">下一次天气调整使用该时长</span>
-          <NumberInput className="input mono" min="0" step="0.5" value={transition}
-            onValueChange={setTransition} />
-        </div>
-      </label>
-      <WeatherEditor weather={draft} weatherPresets={presets} onChange={change} />
-      <FogRegionEditor regions={regions} telemetry={telemetry} running={running} busy={busy}
-        onCreate={(body) => void submit(() => api("/api/weather/regions", "POST", body), "局部球雾已创建")}
-        onUpdate={(regionId, body) => void submit(() => api(`/api/weather/regions/${regionId}`, "PATCH", body), "局部球雾已更新")}
-        onDelete={(regionId, seconds) => void submit(() => api(`/api/weather/regions/${regionId}?transition_seconds=${seconds}`, "DELETE"), "局部球雾删除已提交")} />
-    </div>
+    <FogRegionEditor
+      regions={regions}
+      telemetry={telemetry}
+      running={running}
+      busy={busy}
+      onCreate={(body) => void submit(() => api("/api/weather/regions", "POST", body), "团雾已创建")}
+      onUpdate={(regionId, body) => void submit(() => api(`/api/weather/regions/${regionId}`, "PATCH", body), "团雾已更新")}
+      onDelete={(regionId, seconds) => void submit(() => api(`/api/weather/regions/${regionId}?transition_seconds=${seconds}`, "DELETE"), "团雾删除已提交")}
+    />
   );
 }
 
@@ -93,14 +104,8 @@ function FogRegionEditor({ regions, telemetry, running, busy, onCreate, onUpdate
   };
   return (
     <section className="fog-regions">
-      <div className="fog-regions-head">
-        <div>
-          <h3>局部球雾</h3>
-          <p>独立于全局天气。运行中经驾驶端命令应用，空闲时直接应用到当前世界。</p>
-        </div>
-      </div>
       {regions.length === 0
-        ? <p className="weather-note">当前没有局部球雾。</p>
+        ? <p className="weather-note">当前没有已创建的团雾。</p>
         : regions.map(region => (
           <FogRegionRow key={region.region_id} region={region} busy={busy}
             onUpdate={body => onUpdate(region.region_id, body)}
@@ -108,7 +113,7 @@ function FogRegionEditor({ regions, telemetry, running, busy, onCreate, onUpdate
         ))}
       <div className="fog-region">
         <div className="fog-region-head">
-          <span>新增区域</span>
+          <span>快速新增团雾</span>
           {running && telemetry
             ? <Button variant="ghost" disabled={busy} onClick={fillFront}>主车前方 25m</Button>
             : <span className="weather-note">运行中且有遥测时可填入主车前方</span>}

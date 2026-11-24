@@ -15,8 +15,6 @@ type Props = {
   weather: Weather;
   weatherPresets: Record<string, Weather>;
   onChange: (weather: Weather) => void;
-  regions?: FogRegion[];
-  onRegionsChange?: (regions: FogRegion[]) => void;
 };
 const presets = [
   ["Default", "默认"],
@@ -101,7 +99,7 @@ export function weatherDescription(weather: Weather, presets: Record<string, Wea
   return `${light} · ${weatherName(name).replace(/正午|傍晚|夜间/g, "")}`;
 }
 
-export function WeatherEditor({ weather, weatherPresets, onChange, regions, onRegionsChange }: Props) {
+export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
   const id = useId();
   const weatherValue = matchingWeather(weather, weatherPresets) ?? "Custom";
   const row = ({ path, label, min, max, step, percent }: Row) => {
@@ -167,12 +165,11 @@ export function WeatherEditor({ weather, weatherPresets, onChange, regions, onRe
       <p className="weather-note">
         日照与天气独立组合；太阳高度可继续微调。雾密度范围 0–100，直接控制高度雾；起始距离与密度均未标定为能见距离。雪效待实现。
       </p>
-      {regions && onRegionsChange && <FogRegionsEditor regions={regions} onChange={onRegionsChange} />}
     </div>
   );
 }
 
-function FogRegionsEditor({ regions, onChange }: { regions: FogRegion[]; onChange: (regions: FogRegion[]) => void }) {
+export function FogRegionsEditor({ regions, onChange }: { regions: FogRegion[]; onChange: (regions: FogRegion[]) => void }) {
   const update = (index: number, changes: Partial<FogRegion>) =>
     onChange(regions.map((region, current) => current === index ? { ...region, ...changes } : region));
   const center = (index: number, axis: number, value: number) => {
@@ -185,17 +182,17 @@ function FogRegionsEditor({ regions, onChange }: { regions: FogRegion[]; onChang
     <section className="fog-regions">
       <div className="fog-regions-head">
         <div>
-          <h3>局部球雾</h3>
-          <p>固定世界坐标的球形区域，实验启动前由驾驶端创建，实验结束随会话清理。</p>
+          <h3>初始团雾列表</h3>
+          <p>固定世界坐标的团雾区域，实验启动前自动创建，实验结束随会话清理。</p>
         </div>
         <Button
           variant="outline"
           onClick={() => onChange([...regions, { center_m: [0, 0, 0], radius_m: 50, density: 0.5, transition_seconds: 0 }])}
         >
-          添加区域
+          添加团雾
         </Button>
       </div>
-      {regions.length === 0 && <p className="weather-note">未配置局部球雾。</p>}
+      {regions.length === 0 && <p className="weather-note">未配置初始团雾。</p>}
       {regions.map((region, index) => (
         <div className="fog-region" key={index}>
           <div className="fog-region-head">

@@ -1,3 +1,5 @@
+import type { TrafficStyleCounts } from "../types/api";
+
 export const trafficStyles = [
   {
     value: "balanced",
@@ -19,12 +21,10 @@ export const trafficStyles = [
     label: "反应迟钝",
     description: "含约 0.6 秒感知延迟，反应与起步更慢。",
   },
-  {
-    value: "mixed",
-    label: "混合（多风格）",
-    description: "按 50/20/20/10 分配均衡、激进、保守与反应迟钝车辆。",
-  },
 ] as const;
+
+export const totalTrafficVehicles = (counts: TrafficStyleCounts | undefined): number =>
+  counts ? counts.balanced + counts.aggressive + counts.conservative + counts.sluggish : 0;
 
 export const carFollowingModels = [
   {

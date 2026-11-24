@@ -7,13 +7,19 @@ export type Camera = {
   roll: number;
   fov: number;
 };
+export type TrafficStyleCounts = {
+  balanced: number;
+  aggressive: number;
+  conservative: number;
+  sluggish: number;
+};
 export type TrafficConfig = {
   enabled: boolean;
-  vehicle_count: number;
+  style_counts: TrafficStyleCounts;
   seed: number;
   speed_factor: number;
+  diversity: number;
   enable_lane_change: boolean;
-  style: "balanced" | "aggressive" | "conservative" | "sluggish" | "mixed";
   car_following_model: "idm" | "gipps" | "krauss";
   lane_change_model: "gap" | "mobil";
 };
@@ -199,13 +205,14 @@ export type RuntimeState = {
   };
 };
 export type CommandCategory = "weather" | "traffic" | "ego" | "custom";
+export type CommandFieldOption = string | { value: string; label: string; };
 export type CommandField = {
   key: string;
   label: string;
   type: "text" | "number" | "boolean" | "select";
   required: boolean;
   default: string | number | boolean | null;
-  options?: string[];
+  options?: CommandFieldOption[];
 };
 export type CommandDefinition = {
   id: string;
