@@ -364,9 +364,9 @@ class NativeApiClient:
         session_id: str,
         timeout: float | None = None,
     ) -> ExchangeResult:
-        params = {**self._world(), 'session_id': session_id, 'operations': operations}
         limit = self._timeout(timeout)
         with self._lock:
+            params = {**self._world(), 'session_id': session_id, 'operations': operations}
             request_id, result = self._call('exchange', params, limit)
             if result.get('snapshot') is not True:
                 self._close_locked()
@@ -519,7 +519,11 @@ class NativeApiClient:
         if not isinstance(raw, str):
             self._close_locked()
             raise NativeApiError(method, 'invalid_response', '收到非预期的二进制响应')
-        response = json.loads(raw)
+        try:
+            response = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            self._close_locked()
+            raise NativeApiError(method, 'invalid_response', f'响应 JSON 解析失败：{exc}') from exc
         if response.get('id') != request_id:
             self._close_locked()
             raise NativeApiError(method, 'invalid_response', '响应编号与请求不一致')

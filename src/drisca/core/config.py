@@ -344,9 +344,20 @@ class SurfaceConfig(BaseModel, frozen=True, extra='forbid'):
 
 
 class FogConfig(BaseModel, frozen=True, extra='forbid'):
-    density: float = Field(default=0.0, ge=0, le=100)  # UE 高度雾密度；范围留供极浓雾调校
+    density: float = Field(default=0.0, ge=0)  # UE 高度雾密度；不设硬上限，超过 20 记警告
     distance_m: float = Field(default=0.0, ge=0, le=1_000_000)
     height_falloff: float = Field(default=0.2, ge=0, le=10_000)
+
+    @field_validator('density')
+    @classmethod
+    def _warn_extreme_density(cls, value: float) -> float:
+        if not math.isfinite(value):
+            raise ValueError('雾密度必须是有限数值')
+        if value > 20.0:
+            from loguru import logger
+
+            logger.warning(f'全局雾密度 {value:g} 超过建议上限 20，可能导致车内出现雾效')
+        return value
 
 
 class ScatteringConfig(BaseModel, frozen=True, extra='forbid'):

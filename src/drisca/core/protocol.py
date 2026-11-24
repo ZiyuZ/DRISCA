@@ -39,6 +39,23 @@ class ControlMode(StrEnum):
     AUTOPILOT = 'autopilot'
 
 
+class TrafficLightState(StrEnum):
+    """原生信号灯状态枚举，与 DriscaApiTrafficLights.cpp 返回值一致。"""
+
+    RED = 'red'
+    YELLOW = 'yellow'
+    GREEN = 'green'
+    OFF = 'off'
+    UNKNOWN = 'unknown'
+
+    @classmethod
+    def parse(cls, value: str) -> 'TrafficLightState':
+        try:
+            return cls(value.strip().lower())
+        except ValueError:
+            return cls.UNKNOWN
+
+
 class EventKind(StrEnum):
     OPERATOR_ACTION = 'operator_action'
     WORKER_STATUS = 'worker_status'  # 子进程就绪与状态变化（由 launcher 记录）

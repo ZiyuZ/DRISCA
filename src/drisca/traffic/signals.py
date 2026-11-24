@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from drisca.core.protocol import TrafficLightState
+
 from .planner import RoutePath
 from .road_graph import RoadGraph
 
@@ -104,10 +106,10 @@ class SignalTracker:
         if not self._by_lane or not traffic_lights or not path.lane_keys:
             return None
 
-        by_actor: dict[int, str] = {}
-        by_signal: dict[str, str] = {}
+        by_actor: dict[int, TrafficLightState] = {}
+        by_signal: dict[str, TrafficLightState] = {}
         for item in traffic_lights:
-            state = str(item.get('state', ''))
+            state = TrafficLightState.parse(str(item.get('state', '')))
             if item.get('actor_id') is not None:
                 by_actor[int(item['actor_id'])] = state
             if item.get('signal_id'):
@@ -122,10 +124,14 @@ class SignalTracker:
             if not entries:
                 continue
             for entry in entries:
-                state = by_actor.get(entry.actor_id, '') if entry.actor_id is not None else ''
-                if not state and entry.signal_id:
-                    state = by_signal.get(entry.signal_id, '')
-                if state not in ('Red', 'Yellow'):
+                state = (
+                    by_actor.get(entry.actor_id, TrafficLightState.UNKNOWN)
+                    if entry.actor_id is not None
+                    else TrafficLightState.UNKNOWN
+                )
+                if state is TrafficLightState.UNKNOWN and entry.signal_id:
+                    state = by_signal.get(entry.signal_id, TrafficLightState.UNKNOWN)
+                if state not in (TrafficLightState.RED, TrafficLightState.YELLOW):
                     continue
                 if idx == 0:
                     dist = entry.stop_s - path.current_lane_s

@@ -72,7 +72,10 @@ class TrafficManager:
             return 0
 
         catalog = api.catalog()
-        raw_blueprints = [str(b) for b in (catalog.get('vehicles') or ())]
+        raw_blueprints = [
+            str(item['id']) if isinstance(item, dict) else str(item)
+            for item in (catalog.get('vehicle_blueprints') or ())
+        ]
         blueprints = [
             bp for bp in raw_blueprints if not any(tok in bp.lower() for tok in _EXCLUDED_BLUEPRINT_TOKENS)
         ] or raw_blueprints
@@ -90,7 +93,9 @@ class TrafficManager:
         for point in spawn_points:
             if spawned >= cfg.vehicle_count:
                 break
-            px, py, pz = float(point['x']), float(point['y']), float(point['z'])
+            loc = point['location']
+            rot = point['rotation']
+            px, py, pz = float(loc[0]), float(loc[1]), float(loc[2])
             if any(math.hypot(px - ox, py - oy) < 15.0 for ox, oy in occupied):
                 continue
             bp = rng.choice(blueprints)
@@ -99,7 +104,7 @@ class TrafficManager:
                     blueprint=bp,
                     transform={
                         'location': [px, py, pz],
-                        'rotation': [float(point['pitch']), float(point['yaw']), float(point['roll'])],
+                        'rotation': [float(rot[0]), float(rot[1]), float(rot[2])],
                     },
                     role_name='autopilot',
                     mode='external',

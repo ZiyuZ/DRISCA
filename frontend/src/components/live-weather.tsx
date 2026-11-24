@@ -134,7 +134,7 @@ function FogRegionEditor({ regions, telemetry, running, busy, onCreate, onUpdate
           ))}
           <label className="dr-field">
             <span>半径 · m</span>
-            <NumberInput className="input mono" min="0.1" step="1" value={radius} onValueChange={setRadius} />
+            <NumberInput className="input mono" min="0.1" step="any" value={radius} onValueChange={setRadius} />
           </label>
           <label className="dr-field">
             <span>雾强度 · %</span>
@@ -147,8 +147,9 @@ function FogRegionEditor({ regions, telemetry, running, busy, onCreate, onUpdate
         </div>
         <Button className="justify-self-start" disabled={busy}
           onClick={() => onCreate({ center_m: center, radius_m: radius, density: density / 100, transition_seconds: transition })}>
-          创建区域
+          创建并应用
         </Button>
+        <p className="small">创建后立即生效，无需再点“应用更新”。</p>
       </div>
     </section>
   );
@@ -168,6 +169,7 @@ function FogRegionRow({ region, busy, onUpdate, onDelete }: {
     setDensity(percent(region.density));
   }, [region.radius_m, region.density]);
   const disabled = busy || region.deleting;
+  const dirty = radius !== region.radius_m || density !== percent(region.density);
   return (
     <div className="fog-region">
       <div className="fog-region-head">
@@ -179,7 +181,7 @@ function FogRegionRow({ region, busy, onUpdate, onDelete }: {
       <div className="fog-region-grid">
         <label className="dr-field">
           <span>半径 · m</span>
-          <NumberInput className="input mono" disabled={disabled} min="0.1" step="1" value={radius} onValueChange={setRadius} />
+          <NumberInput className="input mono" disabled={disabled} min="0.1" step="any" value={radius} onValueChange={setRadius} />
         </label>
         <label className="dr-field">
           <span>雾强度 · %</span>
@@ -190,11 +192,14 @@ function FogRegionRow({ region, busy, onUpdate, onDelete }: {
           <NumberInput className="input mono" disabled={disabled} min="0" step="0.5" value={transition} onValueChange={setTransition} />
         </label>
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Button disabled={disabled}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button disabled={disabled || !dirty}
           onClick={() => onUpdate({ radius_m: radius, density: density / 100, transition_seconds: transition })}>
           应用更新
         </Button>
+        <span className="small" role="status">
+          {region.deleting ? "渐隐中" : dirty ? "参数已修改，待应用" : "未修改"}
+        </span>
         <Button variant="outline" disabled={disabled} aria-label={`删除区域 ${region.region_id}`}
           onClick={() => onDelete(transition)}>
           渐隐删除

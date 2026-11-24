@@ -58,6 +58,8 @@ class StorageDB:
             self.connection.execute('UPDATE session SET note=? WHERE session_id=?', (note, session_id))
 
     def delete_sessions(self, session_ids: list[str]) -> None:
+        if not session_ids:
+            return
         placeholders = ','.join('?' for _ in session_ids)
         with self.connection:
             for table in ('data', 'event', 'session'):
@@ -74,7 +76,8 @@ class StorageDB:
     def abort_stale_running_sessions(self) -> int:
         with self.connection:
             cursor = self.connection.execute(
-                "UPDATE session SET status='aborted', finished_at=? WHERE status='running'", (time.time(),)
+                'UPDATE session SET status=?, finished_at=? WHERE status=?',
+                (SessionStatus.ABORTED, time.time(), SessionStatus.RUNNING),
             )
         return cursor.rowcount
 
@@ -101,6 +104,8 @@ class StorageDB:
     def export_sessions(
         self, output_dir: Path, session_ids: list[str], progress: Callable[[float], None] | None = None
     ) -> None:
+        if not session_ids:
+            raise ValueError('导出会话列表不能为空')
         output_dir.mkdir(parents=True, exist_ok=True)
         placeholders = ','.join('?' for _ in session_ids)
         for index, (table, filename) in enumerate(

@@ -218,6 +218,10 @@ class SimulatorApp:
             if not self.running and not operations:
                 break
             mode_changed_in_batch = any(op.get('method') == 'vehicle.set_mode' for op in operations)
+            if mode_changed_in_batch:
+                # 收到显式模式切换命令时清空旧的待切换意图，避免下一帧意外反转模式
+                self._pending_init_autopilot = False
+                self._pending_mode_toggle = False
             if self.running and not mode_changed_in_batch:
                 if self._pending_init_autopilot:
                     self._pending_init_autopilot = False
@@ -296,6 +300,7 @@ class SimulatorApp:
                     simulator_fps=loop_frames / elapsed if elapsed > 0 else 0.0,
                     invaded_lane_marking=self.invaded_lane_marking,
                 )
+                self.invaded_lane_marking = ''
                 self.last_driving = driving
                 snapshot = result.snapshot
                 stamp = (snapshot.frame_no, snapshot.simulation_time_us, snapshot.wall_time_us)

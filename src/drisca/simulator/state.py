@@ -195,8 +195,7 @@ def project_snapshot(
         raise ValueError('主车研究采集未就绪')
     if not validity & RESEARCH_VALID_VIEW_ACTIVE:
         raise ValueError('主车驾驶视图不在活动状态')
-    if not validity & RESEARCH_VALID_ROAD:
-        raise ValueError('主车位置没有对应道路')
+    road_valid = bool(validity & RESEARCH_VALID_ROAD)
 
     flags = int(vehicle['flags'])
     source = control_source(flags)
@@ -233,12 +232,12 @@ def project_snapshot(
         longitude=float(research['longitude']),
         latitude=float(research['latitude']),
         altitude=float(research['altitude']),
-        road_id=int(vehicle['road_id']),
-        lane_id=int(vehicle['lane_id']),
-        lane_width=float(research['lane_width']),
-        lane_type=lane_type_name(int(research['lane_type'])),
-        road_direction=_vec3(research, 'road_direction'),
-        lane_offset=float(research['lane_offset']),
+        road_id=int(vehicle['road_id']) if road_valid else 0,
+        lane_id=int(vehicle['lane_id']) if road_valid else 0,
+        lane_width=float(research['lane_width']) if road_valid else 0.0,
+        lane_type=lane_type_name(int(research['lane_type'])) if road_valid else 'NONE',
+        road_direction=_vec3(research, 'road_direction') if road_valid else (0.0, 0.0, 0.0),
+        lane_offset=float(research['lane_offset']) if road_valid else 0.0,
         speed_limit=speed_limit,
         collision_intensity=float(research['collision_intensity']),
         invaded_lane_marking=invaded_lane_marking,

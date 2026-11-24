@@ -33,17 +33,14 @@ from drisca.core.paths import resolve_db_path
 from drisca.core.protocol import (
     LogEvent,
     LogLevel,
-    SetAutopilotCommand,
-    SetTakeoverCommand,
-    SetWeatherCommand,
     StopCommand,
     TelemetrySnapshotEvent,
     WorkerReadyEvent,
     WorkerStatusEvent,
     dump_launcher_command,
 )
-from drisca.core.weather import from_native, from_payload, resolve_weather, to_config, to_payload
-from drisca.launcher.commands import MODELS
+from drisca.core.weather import from_native, from_payload, to_config, to_payload
+from drisca.launcher.commands import MODELS, REGISTRY
 from drisca.launcher.unreal import launch_arguments
 from drisca.storage.db import StorageDB
 from drisca.storage.models import SCHEMA_VERSION, EventRow, SessionRow, SessionStatus
@@ -705,18 +702,14 @@ class Runtime:
         self.update(fog_regions=[regions[key] for key in sorted(regions)])
 
     def execute(self, instruction) -> None:
-        params: Any = MODELS[instruction.command].model_validate(instruction.params)
-        command_id = uuid4().hex
-        if instruction.command == 'autopilot':
-            self.send(SetAutopilotCommand(command_id=command_id, enabled=params.enabled))
-        elif instruction.command == 'takeover':
-            self.send(SetTakeoverCommand(command_id=command_id, enabled=params.enabled))
-            self.speak(params.speech, command_id)
-        elif instruction.command == 'weather':
-            weather = resolve_weather(WeatherConfig(preset_name=params.preset), self.weather_presets)
-            self.send(SetWeatherCommand(command_id=command_id, weather=weather))
-        elif instruction.command == 'speech':
-            self.speak(params.text, command_id)
+        self.trigger_command(instruction.command, instruction.params)
+
+    def trigger_command(self, command_name: str, raw_params: dict[str, Any]) -> None:
+        spec = REGISTRY.get(command_name)
+        if spec is None:
+            raise RuntimeError(f'未知的实验事件或指令：{command_name}')
+        params = spec.params_model.model_validate(raw_params)
+        spec.handler(self, params, uuid4().hex)
 
     def speak(self, text: str, command_id: str) -> None:
         if self.machine.service.enable_tts:

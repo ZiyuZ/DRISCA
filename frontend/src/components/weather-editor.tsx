@@ -60,7 +60,7 @@ const primary: Row[] = [
   { path: ["precipitation", "rain"], label: "降雨 · %", min: 0, max: 100, step: 1, percent: true },
   { path: ["surface", "wetness"], label: "路面湿润 · %", min: 0, max: 100, step: 1, percent: true },
   { path: ["sun", "elevation_deg"], label: "太阳高度 · °", min: -90, max: 90, step: 1 },
-  { path: ["fog", "density"], label: "雾密度参数", min: 0, max: 100, step: 0.001 },
+  { path: ["fog", "density"], label: "雾密度参数", min: 0, max: 10, step: 0.001 },
   { path: ["wind"], label: "风 · %", min: 0, max: 100, step: 1, percent: true },
 ];
 const extra: Row[] = [
@@ -122,7 +122,7 @@ export function WeatherEditor({ weather, weatherPresets, onChange, regions, onRe
             value={[Math.min(max, Math.max(min, value))]}
             onValueChange={([v]) => change(v)}
           />
-          <NumberInput id={`${id}-${path.join("-")}`} value={value} onValueChange={change} />
+          <NumberInput id={`${id}-${path.join("-")}`} min={min} max={max} value={value} onValueChange={change} />
         </div>
       </div>
     );
@@ -221,7 +221,7 @@ function FogRegionsEditor({ regions, onChange }: { regions: FogRegion[]; onChang
               <NumberInput
                 className="input mono"
                 min="0.1"
-                step="1"
+                step="any"
                 value={region.radius_m}
                 onValueChange={value => update(index, { radius_m: value })}
               />

@@ -30,7 +30,7 @@ class BatchDataWriter:
 
     def close(self) -> None:
         if self.thread.is_alive():
-            self.queue.put_nowait(None)
+            self.queue.put(None, timeout=5.0)
         self.thread.join()
         if self.error is not None:
             raise RuntimeError('数据写入线程失败') from self.error

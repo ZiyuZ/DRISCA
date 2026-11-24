@@ -278,26 +278,36 @@ export function ExperimentHome({
           </IconAction>
         </div>
         <div className="log-list mono">
-          {[...entries].reverse().map((entry, index) => (
-            <div className="log-row" key={index}>
-              <span className="log-time">
-                {typeof entry.timestamp === "number"
-                  ? new Date(entry.timestamp * 1000).toLocaleTimeString(
-                    "zh-CN",
-                    { hour12: false },
-                  )
-                  : "—"}
-              </span>
-              <span className="log-level">
-                {logTab === "logs" ? String(entry.level ?? "") : "EVENT"}
-              </span>
-              <span>
-                {logTab === "logs"
-                  ? String(entry.message ?? "")
-                  : `${entry.name ?? ""} ${entry.source ?? ""} ${JSON.stringify(entry.payload ?? "")}`}
-              </span>
-            </div>
-          ))}
+          {[...entries].reverse().map((entry, index) => {
+            const level = logTab === "logs" ? String(entry.level ?? "").toUpperCase() : "EVENT";
+            const levelClass = level === "ERROR" || level === "CRITICAL"
+              ? "error"
+              : level === "WARNING"
+                ? "warning"
+                : level === "DEBUG"
+                  ? "debug"
+                  : level === "EVENT"
+                    ? "event"
+                    : "info";
+            return (
+              <div className="log-row" key={index}>
+                <span className="log-time">
+                  {typeof entry.timestamp === "number"
+                    ? new Date(entry.timestamp * 1000).toLocaleTimeString(
+                      "zh-CN",
+                      { hour12: false },
+                    )
+                    : "—"}
+                </span>
+                <span className={`log-level ${levelClass}`}>{level}</span>
+                <span>
+                  {logTab === "logs"
+                    ? String(entry.message ?? "")
+                    : `${entry.name ?? ""} ${entry.source ?? ""} ${JSON.stringify(entry.payload ?? "")}`}
+                </span>
+              </div>
+            );
+          })}
           {!entries.length && <div className="empty">等待运行记录</div>}
         </div>
       </Card>

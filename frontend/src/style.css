@@ -31,6 +31,25 @@ table,
 .log-list {
   user-select: text;
 }
+.prototype-shell .log-level {
+  color: var(--chart-3);
+}
+.prototype-shell .log-level.info {
+  color: var(--chart-3);
+}
+.prototype-shell .log-level.debug {
+  color: color-mix(in srgb, var(--muted-foreground) 62%, var(--card));
+}
+.prototype-shell .log-level.warning {
+  color: var(--chart-4);
+}
+.prototype-shell .log-level.error,
+.prototype-shell .log-level.critical {
+  color: var(--destructive);
+}
+.prototype-shell .log-level.event {
+  color: var(--primary);
+}
 .app {
   height: 100dvh;
 }
@@ -527,6 +546,106 @@ pre {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+}
+.app-dialog .spawn-dialog {
+  display: grid;
+  gap: 16px;
+}
+.app-dialog .spawn-status {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--muted);
+}
+.app-dialog .spawn-status strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.app-dialog .spawn-status span {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted-foreground);
+}
+.app-dialog .spawn-load-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--primary) 6%, var(--card));
+}
+.app-dialog .spawn-load-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.app-dialog .spawn-load-copy strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.app-dialog .spawn-load-copy span {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+.app-dialog .spawn-mode {
+  gap: 12px;
+}
+.app-dialog .spawn-tab-panel {
+  display: grid;
+  gap: 12px;
+  padding-top: 2px;
+}
+.app-dialog .spawn-point-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+.app-dialog .spawn-point-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+}
+.app-dialog .spawn-point-row span {
+  color: var(--muted-foreground);
+}
+.app-dialog .spawn-point-row strong {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.app-dialog .spawn-section {
+  display: grid;
+  gap: 8px;
+}
+.app-dialog .spawn-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.app-dialog .spawn-section-head strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.app-dialog .spawn-section-head span {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.app-dialog .spawn-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
 }
 .prototype-shell .field-divider {
   height: 1px;

@@ -130,7 +130,7 @@ def create_app() -> FastAPI:
 
     @app.middleware('http')
     async def world_loading(request: Request, call_next):
-        if request.method in ('POST', 'PUT', 'DELETE') and rt().state['world_loading']:
+        if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and rt().state['world_loading']:
             return JSONResponse(status_code=409, content={'detail': '正在加载世界，请稍候'})
         return await call_next(request)
 
@@ -337,6 +337,19 @@ def create_app() -> FastAPI:
         if instruction is None:
             raise HTTPException(404, '指令不存在')
         rt().background(rt().execute, instruction)
+        return {'ok': True}
+
+    @app.post('/api/commands/{command_id}/trigger')
+    def trigger_command(command_id: str, params: dict[str, object]):
+        if command_id not in MODELS:
+            raise HTTPException(404, f'未注册的事件或指令：{command_id}')
+        try:
+            MODELS[command_id].model_validate(params)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        if rt().state['carla_connecting'] or not rt().state['carla_connected']:
+            raise HTTPException(409, 'CARLA 尚未连接')
+        rt().background(rt().trigger_command, command_id, params)
         return {'ok': True}
 
     @app.post('/api/markers')
