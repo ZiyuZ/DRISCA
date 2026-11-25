@@ -5,6 +5,7 @@
 """
 
 import json
+import socket
 import threading
 from dataclasses import dataclass
 from typing import Any, Final
@@ -84,6 +85,7 @@ class ExchangeResult:
     traffic_controllers: tuple[dict[str, Any], ...]
     snapshot: Snapshot
     selected_actor_id: int | None = None
+    selected_signal_actor_id: int | None = None
 
 
 def _outcomes(raw: list[dict[str, Any]] | None) -> tuple[OperationOutcome, ...]:
@@ -142,6 +144,10 @@ class NativeApiClient:
                     close_timeout=self.config.timeout,
                     ping_interval=None,
                 )
+                try:
+                    self._socket.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                except OSError:
+                    pass
             except (OSError, TimeoutError, WebSocketException) as exc:
                 raise ConnectionError(f'原生接口连接失败：{self.url}') from exc
             self._next_id = 1
@@ -362,6 +368,8 @@ class NativeApiClient:
         cameras: dict[str, Any] | None = None,
         layout: dict[str, Any] | None = None,
         view_mode: str | None = None,
+        ego_actor_id: int | None = None,
+        actor_id_space: str | None = None,
     ) -> dict[str, Any]:
         params = self._world()
         if cameras is not None:
@@ -370,6 +378,10 @@ class NativeApiClient:
             params['layout'] = layout
         if view_mode is not None:
             params['view_mode'] = view_mode
+        if ego_actor_id is not None:
+            params['ego_actor_id'] = ego_actor_id
+        if actor_id_space is not None:
+            params['actor_id_space'] = actor_id_space
         return self.request('driving_view.update', params)
 
     def exchange(
@@ -399,6 +411,10 @@ class NativeApiClient:
             selected_actor_id = (
                 int(raw_selected) if isinstance(raw_selected, int) and raw_selected > 0 else None
             )
+            raw_signal = result.get('selected_signal_actor_id')
+            selected_signal_actor_id = (
+                int(raw_signal) if isinstance(raw_signal, int) and raw_signal > 0 else None
+            )
             return ExchangeResult(
                 request_id=request_id,
                 world_id=world_id,
@@ -410,7 +426,18 @@ class NativeApiClient:
                 traffic_controllers=tuple(result.get('traffic_controllers') or ()),
                 snapshot=snapshot,
                 selected_actor_id=selected_actor_id,
+                selected_signal_actor_id=selected_signal_actor_id,
             )
+
+    def set_traffic_light_state(self, actor_id: int, state: str) -> dict[str, Any]:
+        return self.request(
+            'traffic_light.set_state', {**self._world(), 'actor_id': actor_id, 'state': state}
+        )
+
+    def freeze_traffic_light_group(self, group_id: int, frozen: bool) -> dict[str, Any]:
+        return self.request(
+            'traffic_light_group.freeze', {**self._world(), 'group_id': group_id, 'frozen': frozen}
+        )
 
     def stop_experiment(self, session_id: str) -> dict[str, Any]:
         return self.request('experiment.stop', {**self._world(), 'session_id': session_id})
@@ -451,6 +478,10 @@ class NativeApiClient:
                 'ignore_hero': ignore_hero,
             },
         )
+
+    def recorder_stop_replay(self) -> dict[str, Any]:
+        """停止正在进行的原生录像回放并释放跟随视角。"""
+        return self.request('recorder.stop_replay', self._world())
 
     def road_graph(
         self,

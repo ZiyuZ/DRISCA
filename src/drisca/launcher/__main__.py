@@ -217,9 +217,9 @@ def main() -> None:
             js_api=bridge,
             frameless=True,
             easy_drag=False,
-            width=1440,
-            height=900,
-            min_size=(900, 600),
+            width=1200,
+            height=780,
+            min_size=(840, 560),
         )
         assert bridge._window is not None
         bridge._window.events.shown += bridge._on_shown

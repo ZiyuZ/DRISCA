@@ -25,23 +25,29 @@ class UnrealPhase(StrEnum):
 
 
 class SystemStatus(StrEnum):
-    """面向侧栏的单一显式系统状态。"""
+    """面向侧栏的单一显式互斥系统状态。"""
 
     DISCONNECTED = 'disconnected'
     CONNECTING = 'connecting'
     CONNECTED = 'connected'
+    PREVIEWING = 'previewing'
+    REPLAYING = 'replaying'
     RUNNING = 'running'
     ERROR = 'error'
 
 
 def compute_system_status(state: dict[str, Any]) -> str:
-    """由连接、Unreal 进程与实验阶段统一派生单一显式状态。"""
+    """由连接、Unreal 进程、实验、预览与回放阶段统一派生单一显式状态。"""
     phase = state.get('phase')
     if phase in (ExperimentPhase.RUNNING, ExperimentPhase.STARTING, ExperimentPhase.STOPPING):
         return str(SystemStatus.RUNNING)
     unreal_phase = (state.get('unreal') or {}).get('phase')
     if unreal_phase in ('error', UnrealPhase.FAILED):
         return str(SystemStatus.ERROR)
+    if (state.get('replay') or {}).get('running'):
+        return str(SystemStatus.REPLAYING)
+    if (state.get('traffic_preview') or {}).get('running'):
+        return str(SystemStatus.PREVIEWING)
     if state.get('carla_connected'):
         return str(SystemStatus.CONNECTED)
     if state.get('carla_connecting') or unreal_phase in (UnrealPhase.STARTING, UnrealPhase.STOPPING):
@@ -79,6 +85,8 @@ def initial_state() -> dict[str, Any]:
         'weather': None,
         'fog_regions': [],
         'traffic_preview': {'running': False, 'vehicle_count': 0, 'follow_actor_id': None, 'error': None},
+        'replay': {'running': False, 'name': None, 'error': None},
+        'selected_signal': None,
         'view_mode': 'free',
         'display_layout': None,
         'vehicle_box': None,

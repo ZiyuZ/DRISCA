@@ -10,9 +10,15 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException
 
 from drisca.core.paths import PROJECT_ROOT
-from drisca.core.tools import query_recorder_info, replay_recorder
+from drisca.core.tools import query_recorder_info
 from drisca.launcher.runtime import Runtime
-from drisca.launcher.schemas import NoteRequest, RecorderInfoRequest, ReplayRequest, SessionSelectionRequest
+from drisca.launcher.schemas import (
+    NoteRequest,
+    RecorderInfoRequest,
+    ReplayFollowRequest,
+    ReplayRequest,
+    SessionSelectionRequest,
+)
 
 
 def build_data_router(
@@ -158,18 +164,44 @@ def build_data_router(
     @router.post('/api/recordings/replay')
     def replay(request: ReplayRequest):
         ensure_idle()
-        api = get_runtime().api
+        rt = get_runtime()
+        api = rt.api
         if api is None:
             raise HTTPException(409, 'CARLA 尚未连接')
-        replay_recorder(
+        rt.stop_traffic_preview()
+        rec_path = recorder_path(request.name)
+        session_id = rec_path.stem
+        with rt.db_session() as db:
+            session = db.get_session(session_id)
+            events = db.list_session_events(session_id) if session is not None else []
+        rt.replay_runner.start(
             api,
-            recorder_path(request.name),
-            request.start_time,
-            request.duration,
-            request.time_factor,
-            request.follow_actor_id,
-            ignore_hero=False,
+            rec_path=rec_path,
+            session=session,
+            events=events,
+            start_time=request.start_time,
+            duration=request.duration,
+            time_factor=request.time_factor,
+            follow_actor_id=request.follow_actor_id,
+            follow_ego=request.follow_ego,
         )
         return {'ok': True}
+
+    @router.post('/api/recordings/stop')
+    def stop_replay():
+        rt = get_runtime()
+        rt.replay_runner.stop(rt.api)
+        return {'ok': True}
+
+    @router.post('/api/recordings/follow')
+    def replay_follow(request: ReplayFollowRequest):
+        rt = get_runtime()
+        try:
+            actor_id = rt.replay_runner.set_follow(request.target)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {'ok': True, 'follow_actor_id': actor_id}
 
     return router

@@ -51,6 +51,8 @@ from drisca.launcher.schemas import (
     MarkerRequest,
     PreviewFollowRequest,
     StartRequest,
+    TrafficLightFreezeRequest,
+    TrafficLightStateRequest,
     ViewModeRequest,
     WeatherApplyRequest,
 )
@@ -448,6 +450,42 @@ def create_app() -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(409, str(exc)) from exc
         return {'ok': True, 'view_mode': request.mode}
+
+    @app.post('/api/traffic-lights/{actor_id}/state')
+    def set_traffic_light_state(actor_id: int, request: TrafficLightStateRequest):
+        if actor_id < 1:
+            raise HTTPException(422, '信号灯编号无效')
+        if rt().traffic_preview.running:
+            rt().traffic_preview.queue_operation(
+                {
+                    'method': 'traffic_light.set_state',
+                    'params': {'actor_id': actor_id, 'state': request.state},
+                }
+            )
+            rt().log(f'已切换信号灯 #{actor_id} -> {request.state}', 'INFO')
+            return {'ok': True}
+        ensure_idle()
+        environment_api().set_traffic_light_state(actor_id, request.state)
+        rt().log(f'已切换信号灯 #{actor_id} -> {request.state}', 'INFO')
+        return {'ok': True}
+
+    @app.post('/api/traffic-lights/groups/{group_id}/freeze')
+    def freeze_traffic_light_group(group_id: int, request: TrafficLightFreezeRequest):
+        if group_id < 0:
+            raise HTTPException(422, '灯组编号无效')
+        if rt().traffic_preview.running:
+            rt().traffic_preview.queue_operation(
+                {
+                    'method': 'traffic_light_group.freeze',
+                    'params': {'group_id': group_id, 'frozen': request.frozen},
+                }
+            )
+            rt().log(f'已{"冻结" if request.frozen else "解冻"}信号灯组 #{group_id}', 'INFO')
+            return {'ok': True}
+        ensure_idle()
+        environment_api().freeze_traffic_light_group(group_id, request.frozen)
+        rt().log(f'已{"冻结" if request.frozen else "解冻"}信号灯组 #{group_id}', 'INFO')
+        return {'ok': True}
 
     app.include_router(build_data_router(rt, ensure_idle, safe_name))
 

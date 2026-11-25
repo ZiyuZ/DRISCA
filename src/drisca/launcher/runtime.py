@@ -45,6 +45,7 @@ from drisca.core.protocol import (
 )
 from drisca.core.weather import from_native, to_config, to_payload
 from drisca.launcher.commands import MODELS, REGISTRY
+from drisca.launcher.replay import ReplayRunner
 from drisca.launcher.state import ExperimentPhase, StateStore, UnrealPhase
 from drisca.launcher.traffic_preview import TrafficPreviewRunner
 from drisca.launcher.unreal import launch_arguments
@@ -95,6 +96,13 @@ class Runtime:
                 }
             ),
             on_log=self.log,
+            on_signal=lambda sig: self.update(selected_signal=sig),
+        )
+        self.replay_runner = ReplayRunner(
+            on_log=self.log,
+            on_state=lambda running, name, err: self.update(
+                replay={'running': running, 'name': name, 'error': err}
+            ),
         )
         self.job = win32job.CreateJobObject(None, '')
         info = win32job.QueryInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation)
@@ -153,7 +161,11 @@ class Runtime:
             self.traffic_preview.set_view_mode(mode)
             self.update(view_mode=mode)
             return
-        raise RuntimeError('当前未处于实验或交通流预览状态，无法切换视角')
+        if self.replay_runner.running:
+            self.replay_runner.set_view_mode(mode)
+            self.update(view_mode=mode)
+            return
+        raise RuntimeError('当前未处于实验、交通流预览或录像回放状态，无法切换视角')
 
     def background(self, function, *args, **kwargs) -> None:
         def run() -> None:
@@ -288,6 +300,7 @@ class Runtime:
         process.wait()
 
     def stop_carla(self) -> None:
+        self.replay_runner.stop()
         self.stop_traffic_preview()
         process = self.carla_process
         self.close_api()
@@ -373,6 +386,7 @@ class Runtime:
         }
 
     def load_world(self, map_name: str) -> None:
+        self.replay_runner.stop()
         self.stop_traffic_preview()
         api = self._require_api()
         try:
@@ -434,6 +448,7 @@ class Runtime:
 
     async def shutdown(self) -> None:
         self.close_streams()
+        await asyncio.to_thread(self.replay_runner.stop)
         await asyncio.to_thread(self.stop_traffic_preview)
         if self.state['phase'] != str(ExperimentPhase.IDLE):
             await asyncio.to_thread(self.stop)
@@ -489,6 +504,7 @@ class Runtime:
         )
 
     def start(self, preset: PresetConfig, run: RunSettings) -> None:
+        self.replay_runner.stop()
         self.stop_traffic_preview()
         if self.api is None:
             raise RuntimeError('原生接口尚未连接')

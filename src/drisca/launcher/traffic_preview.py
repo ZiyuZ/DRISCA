@@ -27,16 +27,23 @@ class TrafficPreviewRunner:
         *,
         on_state: Callable[[bool, int, str | None, int | None], None],
         on_log: Callable[[str, str], None],
+        on_signal: Callable[[dict[str, object] | None], None] | None = None,
     ) -> None:
         self._on_state = on_state
         self._on_log = on_log
+        self._on_signal = on_signal
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._pending_view_mode: str | None = None
         self._pending_follow_id: int | None = None
+        self._pending_ops: list[dict[str, object]] = []
         self._actor_ids: tuple[int, ...] = ()
         self._follow_index = 0
+
+    def queue_operation(self, op: dict[str, object]) -> None:
+        with self._lock:
+            self._pending_ops.append(op)
 
     @property
     def running(self) -> bool:
@@ -171,6 +178,7 @@ class TrafficPreviewRunner:
             last_scene = None
             last_lights: tuple[dict, ...] = ()
             selected_actor_id: int | None = None
+            last_signal_payload: dict[str, object] | None = None
             while not self._stop_event.is_set():
                 deadline = time.monotonic() + PREVIEW_INTERVAL
                 ops = (
@@ -187,6 +195,7 @@ class TrafficPreviewRunner:
                 with self._lock:
                     next_mode, self._pending_view_mode = self._pending_view_mode, None
                     next_follow, self._pending_follow_id = self._pending_follow_id, None
+                    extra_ops, self._pending_ops = self._pending_ops, []
                 if next_mode is not None or next_follow is not None:
                     update_params: dict[str, object] = {}
                     if next_mode is not None:
@@ -194,12 +203,39 @@ class TrafficPreviewRunner:
                     if next_follow is not None:
                         update_params['ego_actor_id'] = next_follow
                     ops.append({'method': 'driving_view.update', 'params': update_params})
+                if extra_ops:
+                    ops.extend(extra_ops)
                 result = api.exchange(ops, session_id=session_id)
                 manager.apply_control_state(result.control_state)
                 last_snapshot = result.snapshot
                 last_scene = TrafficScene.from_vehicles(result.snapshot.vehicles)
                 last_lights = result.traffic_lights
                 selected_actor_id = result.selected_actor_id
+                signal_payload: dict[str, object] | None = None
+                if result.selected_signal_actor_id is not None:
+                    matched = next(
+                        (
+                            item
+                            for item in result.traffic_lights
+                            if int(item.get('actor_id', 0)) == result.selected_signal_actor_id
+                        ),
+                        None,
+                    )
+                    signal_payload = {
+                        'actor_id': result.selected_signal_actor_id,
+                        'signal_id': str((matched or {}).get('signal_id') or ''),
+                        'state': str((matched or {}).get('state') or 'unknown'),
+                        'frozen': bool((matched or {}).get('frozen', False)),
+                        'group_id': (
+                            int(matched['group_id'])
+                            if matched and matched.get('group_id') is not None
+                            else None
+                        ),
+                    }
+                if signal_payload != last_signal_payload:
+                    last_signal_payload = signal_payload
+                    if self._on_signal is not None:
+                        self._on_signal(signal_payload)
                 if manager.respawn_lost(
                     api,
                     ego_xy=None,
@@ -219,6 +255,9 @@ class TrafficPreviewRunner:
             with self._lock:
                 self._actor_ids = ()
                 self._pending_follow_id = None
+                self._pending_ops.clear()
+            if self._on_signal is not None:
+                self._on_signal(None)
             try:
                 if started_view:
                     # 停止预览前先切回自由视角，避免清理车辆期间视角停滞卡住

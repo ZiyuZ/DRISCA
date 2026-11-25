@@ -34,6 +34,16 @@ class PreviewFollowRequest(BaseModel):
     delta: Literal[-1, 1] = 1
 
 
+class TrafficLightStateRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    state: Literal['red', 'yellow', 'green', 'off']
+
+
+class TrafficLightFreezeRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    frozen: bool
+
+
 class MarkerRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     label: str
@@ -56,6 +66,12 @@ class ReplayRequest(BaseModel):
     duration: float = 0.0
     time_factor: float = 1.0
     follow_actor_id: int = 0
+    follow_ego: bool = False
+
+
+class ReplayFollowRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    target: Literal['free', 'hero', 'prev', 'next']
 
 
 class RecorderInfoRequest(BaseModel):
