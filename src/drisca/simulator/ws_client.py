@@ -38,6 +38,7 @@ class WorkerWSClient:
         self.thread.start()
         self.ready.wait()
         self._check()
+        logger.remove()
         self.sink_id = logger.add(self._log, catch=False)
 
     def _log(self, message: Any) -> None:

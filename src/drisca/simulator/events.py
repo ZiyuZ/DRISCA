@@ -25,6 +25,7 @@ from drisca.core.protocol import (
     TrafficLightStateChangedEvent,
     UpdateCameraEvent,
     UpdateLayoutEvent,
+    UpdateViewModeEvent,
 )
 
 _EVENT_MODELS = {
@@ -35,6 +36,7 @@ _EVENT_MODELS = {
     'toggle_light': ToggleLightEvent,
     'update_camera': UpdateCameraEvent,
     'update_layout': UpdateLayoutEvent,
+    'update_view_mode': UpdateViewModeEvent,
     'environment_applied': EnvironmentAppliedEvent,
     'environment_completed': EnvironmentCompletedEvent,
     'environment_replaced': EnvironmentReplacedEvent,

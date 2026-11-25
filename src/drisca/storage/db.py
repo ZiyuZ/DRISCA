@@ -14,6 +14,18 @@ class SchemaMismatchError(RuntimeError):
     """数据库结构版本不匹配。"""
 
 
+_EXACT_FLOAT_COLUMNS = frozenset(
+    {'timestamp', 'start_time', 'end_time', 'simulation_time', 'gnss_latitude', 'gnss_longitude'}
+)
+
+
+def _format_csv_row(row: tuple[object, ...], exact_indices: set[int]) -> list[object]:
+    return [
+        round(value, 6) if isinstance(value, float) and idx not in exact_indices else value
+        for idx, value in enumerate(row)
+    ]
+
+
 class StorageDB:
     def __init__(self, db_path: Path, *, check_same_thread: bool = True) -> None:
         self.connection = sqlite3.connect(db_path, check_same_thread=check_same_thread)
@@ -124,9 +136,11 @@ class StorageDB:
             cursor = self.connection.execute(
                 f'SELECT * FROM {table} WHERE session_id IN ({placeholders})', session_ids
             )
+            columns = [column[0] for column in cursor.description]
+            exact_indices = {idx for idx, name in enumerate(columns) if name in _EXACT_FLOAT_COLUMNS}
             with (output_dir / filename).open('w', encoding='utf-8', newline='') as stream:
                 writer = csv.writer(stream)
-                writer.writerow([column[0] for column in cursor.description])
-                writer.writerows(cursor)
+                writer.writerow(columns)
+                writer.writerows(_format_csv_row(row, exact_indices) for row in cursor)
             if progress is not None:
                 progress(index / 3 * 100)

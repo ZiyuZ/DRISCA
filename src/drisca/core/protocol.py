@@ -185,6 +185,16 @@ class UpdateLayoutEvent(ExperimentEventBase, frozen=True):
     payload: DisplayLayoutConfig
 
 
+class UpdateViewModePayload(BaseModel, frozen=True):
+    view_mode: Literal['free', 'cockpit', 'chase']
+
+
+class UpdateViewModeEvent(ExperimentEventBase, frozen=True):
+    kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
+    name: Literal['update_view_mode'] = 'update_view_mode'
+    payload: UpdateViewModePayload
+
+
 class UpdateCameraEvent(ExperimentEventBase, frozen=True):
     kind: Literal[EventKind.OPERATOR_ACTION] = EventKind.OPERATOR_ACTION
     name: Literal['update_camera'] = 'update_camera'
@@ -332,6 +342,7 @@ ExperimentEvent = Annotated[
     | ToggleHandbrakeEvent
     | ToggleLightEvent
     | UpdateLayoutEvent
+    | UpdateViewModeEvent
     | UpdateCameraEvent
     | EnvironmentAppliedEvent
     | EnvironmentCompletedEvent
@@ -513,6 +524,17 @@ class UpdateLayoutCommand(BaseModel, frozen=True):
     layout: DisplayLayoutConfig
 
 
+ViewMode = Literal['free', 'cockpit', 'chase']
+
+
+class SetViewModeCommand(BaseModel, frozen=True):
+    """由 launcher 运行期切换主视口视角模式"""
+
+    command_id: str
+    type: Literal['set_view_mode'] = 'set_view_mode'
+    view_mode: ViewMode
+
+
 class TrafficActionCommand(BaseModel, frozen=True):
     """由 launcher 运行期触发背景交通流场景事件"""
 
@@ -539,6 +561,7 @@ LauncherCommand = Annotated[
     | DeleteFogRegionCommand
     | UpdateCameraCommand
     | UpdateLayoutCommand
+    | SetViewModeCommand
     | TrafficActionCommand,
     Field(discriminator='type'),
 ]

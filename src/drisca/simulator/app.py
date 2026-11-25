@@ -17,6 +17,7 @@ from drisca.core.protocol import (
     LauncherCommand,
     SetAutopilotCommand,
     SetTakeoverCommand,
+    SetViewModeCommand,
     SetWeatherCommand,
     StopCommand,
     TrafficActionCommand,
@@ -56,6 +57,7 @@ class SimulatorApp:
         self.last_scene: TrafficScene | None = None
         self.last_driving: DrivingState | None = None
         self.last_traffic_lights: tuple[dict[str, Any], ...] = ()
+        self.last_selected_actor_id: int | None = None
         self._pending_mode_toggle = False
         self._pending_init_autopilot = run_config.preset.ego.init_autopilot
 
@@ -90,6 +92,7 @@ class SimulatorApp:
             layout=cfg.machine.display.layout.model_dump(mode='json'),
             keyboard=keyboard_mapping(cfg.control.keyboard),
             mode='manual',
+            suppress_screen_messages=not cfg.machine.service.debug,
             dynamic_speed_limit=cfg.preset.ego.dynamic_speed_limit,
             default_speed_limit_mps=cfg.preset.ego.default_speed_limit,
         )
@@ -284,6 +287,7 @@ class SimulatorApp:
                         self.last_traffic_lights,
                         dt,
                         ego_xy=ego_xy,
+                        selected_actor_id=self.last_selected_actor_id,
                     )
                 )
             deadline = time.monotonic() + SAMPLE_INTERVAL
@@ -291,9 +295,22 @@ class SimulatorApp:
             result = api.exchange(operations, session_id=cfg.session_id)
             exchange_ms.append((time.monotonic() - started) * 1000)
             self.last_traffic_lights = result.traffic_lights
+            self.last_selected_actor_id = result.selected_actor_id
             self.last_snapshot = result.snapshot
             self.last_scene = TrafficScene.from_vehicles(result.snapshot.vehicles)
             self._apply_control_state(result.control_state)
+            if self.running and self.traffic_manager is not None:
+                ego_xy = (
+                    (self.last_driving.location[0], self.last_driving.location[1])
+                    if self.last_driving is not None
+                    else None
+                )
+                self.traffic_manager.respawn_lost(
+                    api,
+                    ego_xy=ego_xy,
+                    scene=self.last_scene,
+                    default_speed_limit_mps=cfg.preset.ego.default_speed_limit,
+                )
             self._forward_events(channel, result, command_ids)
             if result.frame_no != last_frame:
                 last_frame = result.frame_no
@@ -419,6 +436,7 @@ class SimulatorApp:
                 scene=self.last_scene,
                 traffic_lights=self.last_traffic_lights,
                 default_speed_limit_mps=self.config.preset.ego.default_speed_limit,
+                debug=self.config.machine.service.debug,
             )
             from drisca.core.protocol import CustomExperimentEvent, EventKind
 
@@ -483,6 +501,11 @@ class SimulatorApp:
             return {
                 'method': 'driving_view.update',
                 'params': {'layout': command.layout.model_dump(mode='json')},
+            }
+        if isinstance(command, SetViewModeCommand):
+            return {
+                'method': 'driving_view.update',
+                'params': {'view_mode': command.view_mode},
             }
         if isinstance(command, SetTakeoverCommand):
             if not command.enabled:

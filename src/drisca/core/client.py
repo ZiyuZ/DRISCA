@@ -83,6 +83,7 @@ class ExchangeResult:
     traffic_lights: tuple[dict[str, Any], ...]
     traffic_controllers: tuple[dict[str, Any], ...]
     snapshot: Snapshot
+    selected_actor_id: int | None = None
 
 
 def _outcomes(raw: list[dict[str, Any]] | None) -> tuple[OperationOutcome, ...]:
@@ -288,11 +289,15 @@ class NativeApiClient:
     def clear_actors(self) -> dict[str, Any]:
         return self.request('scene.clear_actors', self._world())
 
-    def load_map(self, map_name: str) -> dict[str, Any]:
+    def load_map(self, map_name: str, *, suppress_screen_messages: bool = False) -> dict[str, Any]:
         with self._lock:
             _, result = self._call(
                 'scene.load_map',
-                {**self._world(), 'map_name': map_name},
+                {
+                    **self._world(),
+                    'map_name': map_name,
+                    'suppress_screen_messages': suppress_screen_messages,
+                },
                 self.long_timeout,
             )
             self._world_id = int(result['world_id'])
@@ -324,11 +329,13 @@ class NativeApiClient:
         self,
         *,
         session_id: str,
-        ego_actor_id: int,
+        ego_actor_id: int = 0,
         cameras: dict[str, Any],
         layout: dict[str, Any],
         keyboard: dict[str, str],
         mode: str = 'manual',
+        view_mode: str = 'cockpit',
+        suppress_screen_messages: bool = False,
         dynamic_speed_limit: bool = False,
         default_speed_limit_mps: float = 33.33,
     ) -> dict[str, Any]:
@@ -342,6 +349,8 @@ class NativeApiClient:
                 'layout': layout,
                 'keyboard': keyboard,
                 'mode': mode,
+                'view_mode': view_mode,
+                'suppress_screen_messages': suppress_screen_messages,
                 'dynamic_speed_limit': dynamic_speed_limit,
                 'default_speed_limit_mps': default_speed_limit_mps,
             },
@@ -352,12 +361,15 @@ class NativeApiClient:
         *,
         cameras: dict[str, Any] | None = None,
         layout: dict[str, Any] | None = None,
+        view_mode: str | None = None,
     ) -> dict[str, Any]:
         params = self._world()
         if cameras is not None:
             params['cameras'] = cameras
         if layout is not None:
             params['layout'] = layout
+        if view_mode is not None:
+            params['view_mode'] = view_mode
         return self.request('driving_view.update', params)
 
     def exchange(
@@ -383,6 +395,10 @@ class NativeApiClient:
             world_id = int(result.get('world_id', 0))
             frame_no = int(result.get('frame_no', 0))
             self._check_snapshot(request_id, snapshot, world_id, frame_no)
+            raw_selected = result.get('selected_actor_id')
+            selected_actor_id = (
+                int(raw_selected) if isinstance(raw_selected, int) and raw_selected > 0 else None
+            )
             return ExchangeResult(
                 request_id=request_id,
                 world_id=world_id,
@@ -393,6 +409,7 @@ class NativeApiClient:
                 traffic_lights=tuple(result.get('traffic_lights') or ()),
                 traffic_controllers=tuple(result.get('traffic_controllers') or ()),
                 snapshot=snapshot,
+                selected_actor_id=selected_actor_id,
             )
 
     def stop_experiment(self, session_id: str) -> dict[str, Any]:
