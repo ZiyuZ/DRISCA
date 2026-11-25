@@ -30,7 +30,7 @@ class IDMModel:
         comfort_decel: float = 2.8,
         vehicle_length_m: float = 4.6,
         detection_range_m: float = 48.0,
-        lateral_corridor_m: float = 1.9,
+        lateral_corridor_m: float = 2.15,
     ) -> None:
         self._s0 = min_gap_m
         self._time_headway = time_headway_s
@@ -57,24 +57,27 @@ class IDMModel:
         local_x, local_y, cos_y, sin_y = world_to_local_xy(scene.xy, x=x, y=y, yaw_deg=yaw_deg)
         heading_dot = scene.headings[:, 0] * cos_y + scene.headings[:, 1] * sin_y
 
-        mask = (
+        in_corridor = (
             (scene.actor_ids != self_actor_id)
             & (local_x > 1.0)
             & (local_x <= self._detection_range_m)
             & (np.abs(local_y) <= self._lateral_corridor_m)
-            & (heading_dot > 0.35)
         )
-        indices = np.flatnonzero(mask)
+        # 同向车辆全距跟驰；斜停/静止或近距横向占道车辆不限航向均纳入避让
+        relevant = (heading_dot > 0.35) | (scene.speeds < 1.5) | (local_x <= 22.0)
+        indices = np.flatnonzero(in_corridor & relevant)
         if indices.size == 0:
             return None
 
         best_local = int(np.argmin(local_x[indices]))
         idx = int(indices[best_local])
         gap = max(0.1, float(local_x[idx]) - self._vehicle_length_m)
+        # 非同向占道车辆的沿程有效前向速度取非负投影，避免误判为快速远离
+        effective_speed = max(0.0, float(scene.speeds[idx]) * float(heading_dot[idx]))
         return LeadVehicle(
             actor_id=int(scene.actor_ids[idx]),
             gap_m=gap,
-            speed_mps=float(scene.speeds[idx]),
+            speed_mps=effective_speed,
         )
 
     def compute_accel(

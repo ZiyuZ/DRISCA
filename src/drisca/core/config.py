@@ -447,6 +447,7 @@ class TrafficConfig(BaseModel, frozen=True, extra='forbid'):
     speed_factor: float = Field(default=1.0, ge=0.3, le=1.5)
     diversity: float = Field(default=0.12, ge=0.0, le=0.35)  # 同风格车辆的个体参数随机离散度
     enable_lane_change: bool = True
+    auto_respawn: bool = True  # 背景车离开非封闭地图边界或侧翻销毁后自动补充
     car_following_model: Literal['idm', 'gipps', 'krauss'] = 'idm'
     lane_change_model: Literal['gap', 'mobil'] = 'gap'
 

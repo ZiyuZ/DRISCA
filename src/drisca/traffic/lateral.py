@@ -50,6 +50,13 @@ class PurePursuitController:
             self._min_lookahead_m,
             min(self._max_lookahead_m, self._lookahead_gain * abs(speed_mps) + self._min_lookahead_m),
         )
+        # 急弯/路口自动缩短前瞻距离，避免切内弯擦撞路缘或信号灯杆
+        if path.curvatures.size > 0:
+            near_mask = path.s_values <= max(12.0, lookahead * 1.3)
+            if np.any(near_mask):
+                max_curv = float(np.max(path.curvatures[near_mask]))
+                if max_curv > 0.03:
+                    lookahead = max(3.2, lookahead / (1.0 + 7.0 * max_curv))
         target = self._select_target(path, x, y, lookahead)
         local_x, local_y = point_to_local_xy(float(target[0]), float(target[1]), x=x, y=y, yaw_deg=yaw_deg)
         dist = math.hypot(local_x, local_y)

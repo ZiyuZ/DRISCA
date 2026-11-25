@@ -84,6 +84,7 @@ class AutopilotController:
         self._speed_factor = speed_factor * profile.speed_multiplier
         self._elapsed_s = 0.0
         self._perception_buffer: deque[tuple[float, LeadVehicle | None, float | None]] = deque()
+        self._last_path_points: list[list[float]] = []
 
     def reset(self) -> None:
         self._planner.reset()
@@ -93,6 +94,11 @@ class AutopilotController:
             self._lane_change.reset()
         self._elapsed_s = 0.0
         self._perception_buffer.clear()
+        self._last_path_points = []
+
+    def planned_points(self) -> list[list[float]]:
+        """返回最近一步局部规划路径的稀疏世界坐标点 [[x, y, z], ...]，供自由视角轨迹高亮。"""
+        return self._last_path_points
 
     def switch_lane(self, lane_key: str) -> None:
         """强制将局部规划器切换到指定目标车道（用于场景事件切入等指令）。"""
@@ -180,6 +186,10 @@ class AutopilotController:
             path=path,
             stop_distance_m=stop_distance,
         )
+        pts = path.points[::2]
+        self._last_path_points = [
+            [round(float(p[0]), 2), round(float(p[1]), 2), round(float(p[2]) + 0.35, 2)] for p in pts
+        ]
         target_speed = self._cf.desired_speed(
             speed_mps=speed_mps,
             free_speed_mps=free_target,

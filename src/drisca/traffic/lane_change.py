@@ -53,10 +53,13 @@ class LaneChangeDecider:
             return None
         if current_lane is None or current_lane.is_junction or lead is None:
             return None
-        if lead.gap_m > 28.0 or lead.speed_mps >= free_speed_mps * self._slow_ratio:
+        blocked = lead.speed_mps < 0.8 and lead.gap_m < 18.0
+        if not blocked and (lead.gap_m > 28.0 or lead.speed_mps >= free_speed_mps * self._slow_ratio):
             return None
 
-        for target_key, lateral_offset in self._candidate_lanes(graph, current_lane):
+        front_gap = min(self._min_front_gap_m, 8.0) if blocked and speed_mps < 3.5 else self._min_front_gap_m
+        rear_gap = min(self._min_rear_gap_m, 8.0) if blocked and speed_mps < 3.5 else self._min_rear_gap_m
+        for target_key, lateral_offset in self._candidate_lanes(graph, current_lane, allow_solid=blocked):
             if self._is_side_clear(
                 scene,
                 self_actor_id=self_actor_id,
@@ -64,18 +67,34 @@ class LaneChangeDecider:
                 y=y,
                 yaw_deg=yaw_deg,
                 lateral_center_m=lateral_offset,
+                min_front_gap_m=front_gap,
+                min_rear_gap_m=rear_gap,
             ):
                 self._cooldown_remaining = self._cooldown_s
                 return target_key
         return None
 
-    def _candidate_lanes(self, graph: RoadGraph, current_lane: LaneNode) -> list[tuple[str, float]]:
+    def _candidate_lanes(
+        self,
+        graph: RoadGraph,
+        current_lane: LaneNode,
+        *,
+        allow_solid: bool = False,
+    ) -> list[tuple[str, float]]:
         candidates: list[tuple[str, float]] = []
-        if current_lane.left_lane and current_lane.left_same_direction and current_lane.left_allowed:
+        if (
+            current_lane.left_lane
+            and current_lane.left_same_direction
+            and (current_lane.left_allowed or allow_solid)
+        ):
             target = graph.get(current_lane.left_lane)
             if target is not None and target.lane_type == 'Driving':
                 candidates.append((current_lane.left_lane, -self._lane_width_m))
-        if current_lane.right_lane and current_lane.right_same_direction and current_lane.right_allowed:
+        if (
+            current_lane.right_lane
+            and current_lane.right_same_direction
+            and (current_lane.right_allowed or allow_solid)
+        ):
             target = graph.get(current_lane.right_lane)
             if target is not None and target.lane_type == 'Driving':
                 candidates.append((current_lane.right_lane, self._lane_width_m))
@@ -90,16 +109,20 @@ class LaneChangeDecider:
         y: float,
         yaw_deg: float,
         lateral_center_m: float,
+        min_front_gap_m: float | None = None,
+        min_rear_gap_m: float | None = None,
     ) -> bool:
         if scene.actor_ids.size <= 1:
             return True
         local_x, local_y, _, _ = world_to_local_xy(scene.xy, x=x, y=y, yaw_deg=yaw_deg)
+        front = self._min_front_gap_m if min_front_gap_m is None else min_front_gap_m
+        rear = self._min_rear_gap_m if min_rear_gap_m is None else min_rear_gap_m
 
         in_target_lane = (
             (scene.actor_ids != self_actor_id)
             & (np.abs(local_y - lateral_center_m) <= 1.8)
-            & (local_x >= -self._min_rear_gap_m)
-            & (local_x <= self._min_front_gap_m)
+            & (local_x >= -rear)
+            & (local_x <= front)
         )
         return not bool(np.any(in_target_lane))
 
@@ -153,15 +176,16 @@ class MobilLaneChangeDecider(LaneChangeDecider):
         if current_lane is None or current_lane.is_junction:
             return None
 
+        blocked = lead is not None and lead.speed_mps < 0.8 and lead.gap_m < 18.0
         a_ego_old = self._cf.compute_accel(
             speed_mps=speed_mps,
             free_speed_mps=free_speed_mps,
             lead=lead,
         )
         best_lane: str | None = None
-        best_incentive = self._threshold
+        best_incentive = 0.05 if blocked else self._threshold
 
-        for target_key, lateral_offset in self._candidate_lanes(graph, current_lane):
+        for target_key, lateral_offset in self._candidate_lanes(graph, current_lane, allow_solid=blocked):
             new_lead, new_rear = self._neighbors_in_lane(
                 scene,
                 self_actor_id=self_actor_id,
