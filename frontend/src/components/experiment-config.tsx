@@ -124,7 +124,7 @@ export function ExperimentConfig({ preset, state, tab, update, onMapChange, onLo
           <div className="card-head"><h2>主车出生点</h2></div>
           <SpawnPointEditor key={preset.world.map_name}
             preset={preset} catalogMap={state.catalog.map_name} spawnPoints={state.catalog.spawn_points}
-            connected={state.carla_connected} onConfirm={onConfirmSpawn} />
+            connected={state.carla_connected} telemetry={state.telemetry} onConfirm={onConfirmSpawn} />
         </Card>
       </>}
     </section>

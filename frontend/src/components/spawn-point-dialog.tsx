@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { catalogMatchesPreset, mapKey, matchSpawnIndex, spawnBound, spawnLabel } from "../lib/spawn";
-import type { PresetConfig, SpawnPoint } from "../types/api";
+import type { PresetConfig, SpawnPoint, Telemetry } from "../types/api";
+import { ActionTooltip } from "./action-tooltip";
 
 import { SharedSelect } from "./shared-select";
 import { Button } from "./ui/button";
@@ -11,9 +12,9 @@ const fields = [
   ["x", "X · m"],
   ["y", "Y · m"],
   ["z", "Z · m"],
-  ["pitch", "俯仰角 · °"],
-  ["yaw", "偏航角 · °"],
-  ["roll", "翻滚角 · °"],
+  ["pitch", "俯仰 Pitch · °"],
+  ["yaw", "偏航 Yaw · °"],
+  ["roll", "翻滚 Roll · °"],
 ] as const;
 type Field = (typeof fields)[number][0];
 type Drafts = Record<Field, string>;
@@ -38,6 +39,7 @@ type Props = {
   catalogMap: string | null;
   spawnPoints: SpawnPoint[];
   connected: boolean;
+  telemetry: Telemetry | null;
   onConfirm: (point: SpawnPoint) => void;
 
 };
@@ -47,6 +49,7 @@ export function SpawnPointEditor({
   catalogMap,
   spawnPoints,
   connected,
+  telemetry,
   onConfirm,
 }: Props) {
   const labelId = useId();
@@ -132,6 +135,15 @@ export function SpawnPointEditor({
     }
     const [x, y, z, pitch, yaw, roll] = parsed as number[];
     onConfirm({ x, y, z, pitch, yaw, roll });
+  };
+  const pickCurrent = () => {
+    if (!telemetry) return;
+    setSubmitted(false);
+    setMode("custom");
+    setDrafts(toDrafts({
+      x: telemetry.location_x, y: telemetry.location_y, z: telemetry.location_z,
+      pitch: telemetry.rotation_pitch, yaw: telemetry.rotation_yaw, roll: telemetry.rotation_roll,
+    }));
   };
   const field = ([key, label]: (typeof fields)[number]) => {
     const invalid = submitted && parseDraft(drafts[key]) === null;
@@ -229,11 +241,22 @@ export function SpawnPointEditor({
           </TabsContent>
           <TabsContent value="custom" className="spawn-tab-panel">
             <div className="spawn-section">
-              <div className="spawn-section-head">
-                <strong>位置与姿态</strong>
-                <span>地图世界坐标 · m / 角度 · °</span>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <strong className="text-sm">自定义出生点</strong>
+                <ActionTooltip reason={!telemetry ? "暂无主车遥测，开始实验并收到遥测后可拾取当前位置" : "填入当前主车的位置与姿态，确认后保存到预设"}>
+                  <Button size="sm" variant="outline" disabled={!telemetry} onClick={pickCurrent}>拾取当前位置</Button>
+                </ActionTooltip>
               </div>
-              <div className="dialog-parameters">{fields.map(field)}</div>
+              <div className="spawn-coordinate-columns">
+                <section className="grid content-start gap-3 rounded-lg border bg-muted/20 p-4">
+                  <h3 className="text-xs font-semibold text-muted-foreground">位置 · m</h3>
+                  {fields.slice(0, 3).map(field)}
+                </section>
+                <section className="grid content-start gap-3 rounded-lg border bg-muted/20 p-4">
+                  <h3 className="text-xs font-semibold text-muted-foreground">角度 · °</h3>
+                  {fields.slice(3).map(field)}
+                </section>
+              </div>
             </div>
             {submitted && !complete && (
               <p className="text-sm text-destructive" role="alert">

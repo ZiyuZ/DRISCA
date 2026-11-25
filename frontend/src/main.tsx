@@ -25,6 +25,8 @@ import { ExperimentActions } from "./components/experiment-actions";
 import { ExperimentConfig } from "./components/experiment-config";
 import { ExperimentHome } from "./components/experiment-home";
 import { SettingsPage } from "./components/settings-page";
+import { SignalControlCard } from "./components/signal-control-card";
+import { RuntimeFloatingPanel } from "./components/runtime-floating-panel";
 import { Toaster } from "./components/ui/sonner";
 import { TrafficPage } from "./components/traffic-page";
 import { WeatherPage } from "./components/weather-page";
@@ -175,7 +177,7 @@ function App() {
             />}
             </ExperimentActions>
           )}
-          {page === "场景与车辆" && !preset && (
+          {page === "场景" && !preset && (
             <div className="page-scroll">
               <Button
                 onClick={() => {
@@ -186,7 +188,7 @@ function App() {
               </Button>
             </div>
           )}
-          {page === "场景与车辆" && preset && (
+          {page === "场景" && preset && (
             <PageTabs
                 value={configTab}
                 onValueChange={setConfigTab}
@@ -265,6 +267,12 @@ function App() {
             </>
           )}
         </AppShell>
+        <div className="runtime-floating-stack pointer-events-none fixed right-5 bottom-5 z-40 flex max-w-[calc(100dvw-88px)] flex-col items-end gap-3">
+          {state.selected_signal && <SignalControlCard key={state.selected_signal.actor_id}
+            signal={state.selected_signal} disabled={!online || !state.carla_connected || state.world_loading} />}
+          {(state.phase === "running" || state.traffic_preview.running || state.replay.running) &&
+            <RuntimeFloatingPanel state={state} disabled={!online || !state.carla_connected || state.world_loading} />}
+        </div>
         {modal === "unreal" && <UnrealControl
           machine={machine} state={state} online={online} onClose={() => setModal("")}
           onStart={() => call(async () => {

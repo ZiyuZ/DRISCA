@@ -49,6 +49,7 @@ export function DataManager({ state, online }: { state: RuntimeState; online: bo
       duration: 0,
       time_factor: 1,
       follow_actor_id: 0,
+      follow_ego: true,
     });
   useEffect(() => {
     if (!online || dataTab !== "sessions") return;
@@ -132,10 +133,12 @@ export function DataManager({ state, online }: { state: RuntimeState; online: bo
             api("/api/recordings/replay", "POST", {
               name: recording,
               ...replay,
+              follow_actor_id: replay.follow_ego ? 0 : replay.follow_actor_id,
             }),
           "回放已开始",
         )
       }
+      onStopReplay={() => void call(() => api("/api/recordings/stop", "POST"), "回放已停止")}
     />
     <Modal title="删除所选会话" open={modal === "delete"} onClose={() => { if (!deleting) setModal(""); }}
       footer={<>

@@ -5,12 +5,12 @@ import {
   Database,
   Home,
   Link,
+  Map,
   Minus,
   Monitor,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
-  SlidersHorizontal,
   Square,
   X,
 } from "lucide-react";
@@ -72,7 +72,7 @@ export function AppShell({
   const collapsed = phone || collapsedSetting;
   const pages = [
     ["控制台", Home],
-    ["场景与车辆", SlidersHorizontal],
+    ["场景", Map],
     ["天气", CloudSun],
     ["交通流", CarFront],
     ["数据管理", Database],
@@ -85,6 +85,8 @@ export function AppShell({
     disconnected: { label: "模拟器未连接", dot: " idle" },
     connecting: { label: "模拟器连接中", dot: " connecting" },
     connected: { label: "模拟器已连接", dot: "" },
+    previewing: { label: "交通流预览", dot: "" },
+    replaying: { label: "录像回放中", dot: "" },
     running: { label: "实验中", dot: "" },
     error: { label: "运行异常", dot: " error" },
   };

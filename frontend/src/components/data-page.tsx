@@ -1,5 +1,5 @@
 import { NumberInput } from "./number-input";
-import { Download, ListX, Play, Trash2 } from "lucide-react";
+import { Download, ListX, Play, Square, Trash2 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import type { RuntimeState } from "../types/api";
 import { Hint } from "./hint";
@@ -11,6 +11,7 @@ import { Card } from "./ui/card";
 import { Checkbox } from "./ui/checkbox";
 import { Input } from "./ui/input";
 import { Progress } from "./ui/progress";
+import { Switch } from "./ui/switch";
 import {
   Table,
   TableBody,
@@ -40,6 +41,7 @@ type Replay = {
   duration: number;
   time_factor: number;
   follow_actor_id: number;
+  follow_ego: boolean;
 };
 type Props = {
   tab: string;
@@ -74,6 +76,7 @@ type Props = {
   setReplay: (v: Replay) => void;
   onInfo: () => void;
   onReplay: () => void;
+  onStopReplay: () => void;
 };
 const date = (n: number) =>
   new Date(n * 1000).toLocaleString("zh-CN", { hour12: false });
@@ -378,7 +381,16 @@ export function DataPage(p: Props) {
               <h2>回放设置</h2>
               <span className="small mono">{p.recording || "请选择录像"}</span>
             </div>
+            {p.state.replay.running && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3" role="status">
+              <div className="min-w-0"><strong className="text-sm">正在回放</strong><p className="small break-all">{p.state.replay.name}</p></div>
+              <Button variant="destructive" size="sm" onClick={p.onStopReplay}><Square />停止回放</Button>
+            </div>}
+            {p.state.replay.error && <p className="mb-3 text-sm text-destructive" role="alert">{p.state.replay.error}</p>}
             <div className="replay-form">
+              <label className="parameter-wide flex items-start gap-3 rounded-lg border bg-muted/20 p-3">
+                <Switch checked={p.replay.follow_ego} onCheckedChange={value => p.setReplay({ ...p.replay, follow_ego: value })} />
+                <span className="grid gap-1 text-sm">跟随主车<span className="small">自动跟随该会话记录的主车；关闭后可指定车辆 ID。</span></span>
+              </label>
               {(
                 [
                   ["start_time", "起始时间 · 秒"],
@@ -391,6 +403,7 @@ export function DataPage(p: Props) {
                   <span>{label}</span>
                   <NumberInput
                     className="input mono"
+                    disabled={key === "follow_actor_id" && p.replay.follow_ego}
                     
                     value={p.replay[key]}
                     onValueChange={(value) =>
@@ -424,6 +437,7 @@ export function DataPage(p: Props) {
                   <Button
                     disabled={
                       !p.recording ||
+                      p.state.replay.running ||
                       !p.state.carla_connected ||
                       p.state.phase !== "idle"
                     }

@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { api } from "../lib/api";
+
 import type {
   Bootstrap,
   Instruction,
@@ -77,18 +77,6 @@ export function ExperimentHome({
   const t = state.telemetry;
   const entries = logTab === "logs" ? logs : events;
   const spawnReady = !preset || spawnBound(preset);
-  const changeView = async (mode: "cockpit" | "chase") => {
-    if (mode === state.view_mode) return;
-    setViewPending(true);
-    try {
-      await api("/api/view/mode", "POST", { mode });
-      toast.success(`已切换为${mode === "cockpit" ? "车内视角" : "第三人称"}`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    } finally {
-      setViewPending(false);
-    }
-  };
   const startBlocked = !state.carla_connected || !spawnReady;
   return (
     <fieldset className="home-layout settings-fields" disabled={!serviceOnline}>
@@ -171,18 +159,6 @@ export function ExperimentHome({
                 ? `${t.simulator_fps.toFixed(0)} FPS · ${t.frame_no.toLocaleString()} 帧`
                 : null}
             </div>
-            {running && (
-              <div className="flex items-center gap-1.5" role="group" aria-label="运行视角">
-                <Button size="sm" variant={state.view_mode === "cockpit" ? "default" : "outline"}
-                  disabled={viewPending} onClick={() => void changeView("cockpit")}>
-                  车内视角
-                </Button>
-                <Button size="sm" variant={state.view_mode === "chase" ? "default" : "outline"}
-                  disabled={viewPending} onClick={() => void changeView("chase")}>
-                  第三人称
-                </Button>
-              </div>
-            )}
             <Hint
               enabled={!running && startBlocked}
               text={

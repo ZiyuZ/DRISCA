@@ -158,11 +158,12 @@ export type Telemetry = {
   rotation_yaw: number;
   rotation_roll: number;
 };
-export type SystemStatus = "disconnected" | "connecting" | "connected" | "running" | "error";
+export type SystemStatus = "disconnected" | "connecting" | "connected" | "previewing" | "replaying" | "running" | "error";
 export type RuntimeState = {
   system_status: SystemStatus;
   phase: "idle" | "starting" | "running" | "stopping";
   view_mode: ViewMode;
+  replay: { running: boolean; name: string | null; error: string | null; };
   active_preset: PresetConfig | null;
   active_preset_name: string | null;
   active_run: {
@@ -183,6 +184,13 @@ export type RuntimeState = {
   cameras: PresetConfig["cameras"] | null;
   weather: Weather | null;
   fog_regions: RuntimeFogRegion[];
+  selected_signal: {
+    actor_id: number;
+    signal_id: string;
+    state: "red" | "yellow" | "green" | "off" | string;
+    frozen: boolean;
+    group_id: number | null;
+  } | null;
   traffic_preview: {
     running: boolean;
     vehicle_count: number;
