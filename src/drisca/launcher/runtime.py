@@ -86,8 +86,13 @@ class Runtime:
         self.events = self.store.events
         self.state = self.store.state
         self.traffic_preview = TrafficPreviewRunner(
-            on_state=lambda running, count, err: self.update(
-                traffic_preview={'running': running, 'vehicle_count': count, 'error': err}
+            on_state=lambda running, count, err, follow_id: self.update(
+                traffic_preview={
+                    'running': running,
+                    'vehicle_count': count,
+                    'follow_actor_id': follow_id,
+                    'error': err,
+                }
             ),
             on_log=self.log,
         )
@@ -108,26 +113,52 @@ class Runtime:
     def update(self, **changes) -> None:
         self.store.update(**changes)
 
-    def log(self, message: str, level: str = 'INFO', role: str = 'launcher') -> None:
-        self.store.append_log(message, level=level, role=role)
+    def log(
+        self,
+        message: str,
+        level: str = 'INFO',
+        role: str = 'launcher',
+        *,
+        detail: str | None = None,
+    ) -> None:
+        self.store.append_log(message, level=level, role=role, detail=detail)
 
     def start_traffic_preview(self, traffic: TrafficConfig) -> None:
         self._require_api()
+        self.update(view_mode='free')
         self.traffic_preview.start(
             self.machine.driving_view,
             traffic,
             cameras=CameraRigConfig(),
             layout=self.machine.display.layout,
             control=self.control,
+            suppress_screen_messages=not self.machine.service.debug,
         )
 
     def stop_traffic_preview(self) -> None:
+        if self.state['phase'] == 'idle':
+            self.update(view_mode='free')
         self.traffic_preview.stop()
 
-    def background(self, function, *args) -> None:
+    def set_view_mode(self, mode: Literal['free', 'cockpit', 'chase']) -> None:
+        from drisca.core.protocol import SetViewModeCommand
+
+        if self.state['phase'] == 'running':
+            if mode == 'free':
+                raise ValueError('实验运行期间仅支持车内视角或第三人称视角')
+            self.send(SetViewModeCommand(command_id=uuid4().hex, view_mode=mode))
+            self.update(view_mode=mode)
+            return
+        if self.traffic_preview.running:
+            self.traffic_preview.set_view_mode(mode)
+            self.update(view_mode=mode)
+            return
+        raise RuntimeError('当前未处于实验或交通流预览状态，无法切换视角')
+
+    def background(self, function, *args, **kwargs) -> None:
         def run() -> None:
             try:
-                function(*args)
+                function(*args, **kwargs)
             except Exception as exc:
                 self.log(str(exc), 'ERROR')
                 self.update(error=str(exc))
@@ -276,7 +307,7 @@ class Runtime:
         if api is not None:
             api.close()
 
-    def connect(self, *, starting_unreal: bool = False) -> None:
+    def connect(self, *, starting_unreal: bool = False, silent: bool = False) -> None:
         try:
             self.close_api()
             api = NativeApiClient(
@@ -297,6 +328,9 @@ class Runtime:
             )
         except Exception:
             self.close_api()
+            if silent:
+                self.update(carla_connected=False, carla_detail='')
+                return
             if not starting_unreal:
                 self.update(carla_connected=False, carla_detail='连接失败')
             raise
@@ -342,7 +376,7 @@ class Runtime:
         self.stop_traffic_preview()
         api = self._require_api()
         try:
-            result = api.load_map(map_name)
+            result = api.load_map(map_name, suppress_screen_messages=not self.machine.service.debug)
             self.log(f'地图已加载：{result.get("world_id")} {map_name}')
             self.refresh_world()
         except NativeApiError as exc:
@@ -357,7 +391,7 @@ class Runtime:
         api = self._require_api()
         current = str(self.state['catalog']['map_name'] or '')
         if world_cfg.load_map or current.rsplit('/', 1)[-1] != world_cfg.map_name.rsplit('/', 1)[-1]:
-            api.load_map(world_cfg.map_name)
+            api.load_map(world_cfg.map_name, suppress_screen_messages=not self.machine.service.debug)
             self.refresh_world()
         applied = api.environment_apply(to_payload(world_cfg.weather))
         self.update(
@@ -498,6 +532,7 @@ class Runtime:
                     )
             self.update(
                 session_id=cfg.session_id,
+                view_mode='cockpit',
                 active_preset=cfg.preset.model_dump(mode='json'),
                 active_run=cfg.run.model_dump(mode='json'),
                 cameras=cfg.preset.cameras.model_dump(mode='json'),
@@ -557,8 +592,18 @@ class Runtime:
 
     def read_output(self, process: subprocess.Popen) -> None:
         assert process.stdout is not None
-        for line in process.stdout:
-            self.log(line.rstrip())
+        tb_lines: list[str] = []
+        for raw in process.stdout:
+            line = raw.rstrip()
+            if not line:
+                continue
+            if tb_lines or line.startswith('Traceback (most recent call last):'):
+                tb_lines.append(line)
+                continue
+            self.log(line, level='ERROR' if 'Error:' in line else 'INFO', role='simulator')
+        if tb_lines:
+            summary = tb_lines[-1]
+            self.log(f'驾驶端异常：{summary}', level='ERROR', role='simulator', detail='\n'.join(tb_lines))
 
     def finish(self, normal: bool) -> None:
         cfg = self.run_config
@@ -595,6 +640,7 @@ class Runtime:
             self.update(
                 phase='idle',
                 worker_state='stopped' if normal else 'error',
+                view_mode='free',
                 session_id=None,
                 active_preset=None,
                 active_preset_name=None,

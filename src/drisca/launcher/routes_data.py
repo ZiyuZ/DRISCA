@@ -119,6 +119,15 @@ def build_data_router(
         rt.background(work)
         return {'ok': True}
 
+    @router.post('/api/data/open-export-dir')
+    def open_export_dir():
+        import os
+
+        directory = (PROJECT_ROOT / get_runtime().machine.export_dir).resolve()
+        directory.mkdir(parents=True, exist_ok=True)
+        os.startfile(str(directory))
+        return {'ok': True, 'path': str(directory)}
+
     @router.get('/api/recordings')
     def recordings(search: str = '', page: int = 1, page_size: int = 20):
         if page < 1 or page_size < 1:

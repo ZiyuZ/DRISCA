@@ -24,6 +24,16 @@ class CarlaStartRequest(BaseModel):
     kind: Literal['editor', 'packaged'] | None = None
 
 
+class ViewModeRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    mode: Literal['free', 'cockpit', 'chase']
+
+
+class PreviewFollowRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    delta: Literal[-1, 1] = 1
+
+
 class MarkerRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     label: str

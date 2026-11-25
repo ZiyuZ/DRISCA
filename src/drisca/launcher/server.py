@@ -49,7 +49,9 @@ from drisca.launcher.schemas import (
     FogRegionUpdateRequest,
     MapRequest,
     MarkerRequest,
+    PreviewFollowRequest,
     StartRequest,
+    ViewModeRequest,
     WeatherApplyRequest,
 )
 
@@ -59,7 +61,7 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         app.state.runtime = Runtime(asyncio.get_running_loop())
         app.state.runtime.update(carla_connecting=True)
-        app.state.runtime.background(app.state.runtime.connect)
+        app.state.runtime.background(app.state.runtime.connect, silent=True)
         yield
         runtime = app.state.runtime
         await runtime.shutdown()
@@ -428,6 +430,24 @@ def create_app() -> FastAPI:
     def stop_traffic_preview():
         rt().stop_traffic_preview()
         return {'ok': True}
+
+    @app.post('/api/traffic/preview/follow')
+    def cycle_traffic_preview_follow(request: PreviewFollowRequest):
+        try:
+            actor_id = rt().traffic_preview.cycle_follow(request.delta)
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {'ok': True, 'follow_actor_id': actor_id}
+
+    @app.post('/api/view/mode')
+    def set_view_mode(request: ViewModeRequest):
+        try:
+            rt().set_view_mode(request.mode)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {'ok': True, 'view_mode': request.mode}
 
     app.include_router(build_data_router(rt, ensure_idle, safe_name))
 
