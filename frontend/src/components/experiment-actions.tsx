@@ -1,10 +1,10 @@
-import { Pencil, Plus, X } from "lucide-react";
-import { useState } from "react";
+import { X } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import type { CommandDefinition, Instruction } from "../types/api";
 import { Field, Modal } from "./common";
-import { IconAction } from "./icon-action";
+
 import { Button } from "./ui/button";
-import { Card } from "./ui/card";
+
 import { Input } from "./ui/input";
 import { Switch } from "./ui/switch";
 const clone = <T,>(value: T): T => structuredClone(value);
@@ -15,18 +15,21 @@ export function ExperimentActions({
   commands,
   onInstructions,
   onMarkers,
+  children,
 }: {
   instructions: Instruction[];
   markers: string[];
   commands: CommandDefinition[];
   onInstructions: (items: Instruction[]) => void;
   onMarkers: (items: string[]) => void;
+  children: (actions: { editInstruction: (item?: Instruction) => void; editMarkers: () => void }) => ReactNode;
 }) {
   const [modal, setModal] = useState("");
   const [instruction, setInstruction] = useState<Instruction | null>(null);
   const [markerDraft, setMarkerDraft] = useState<string[]>([]);
   const editInstruction = (item?: Instruction) => {
     const def = commands[0];
+    if (!item && !def) return;
     setInstruction(
       item
         ? clone(item)
@@ -48,42 +51,10 @@ export function ExperimentActions({
   const onInstruction = editInstruction;
   const editMarkers = () => { setMarkerDraft([...markers]); setModal("markers"); };
   return (<>
-    <div className="grid2 equal">
-      <Card className="dr-card gap-0">
-        <div className="card-head">
-          <h2>快捷指令</h2>
-          <IconAction label="添加指令" onClick={() => onInstruction()}>
-            <Plus />
-          </IconAction>
-        </div>
-        <div className="stack">
-          {instructions.map((item) => (
-            <Button
-              key={item.id}
-              variant="outline"
-              onClick={() => onInstruction(item)}
-            >
-              {item.name}
-            </Button>
-          ))}
-        </div>
-      </Card>
-      <Card className="dr-card gap-0">
-        <div className="card-head">
-          <h2>事件标记</h2>
-          <IconAction label="编辑打点" onClick={editMarkers}>
-            <Pencil />
-          </IconAction>
-        </div>
-        <div className="stack">
-          {markers.map((label, i) => (
-            <div key={i}>{label}</div>
-          ))}
-        </div>
-      </Card>
-    </div>
+    {children({ editInstruction: onInstruction, editMarkers })}
     <Modal
       title="预设事件标记"
+      className={markerDraft.length >= 4 ? "sm:max-w-2xl" : undefined}
       open={modal === "markers"}
       onClose={() => setModal("")}
       footer={
@@ -105,7 +76,7 @@ export function ExperimentActions({
         </>
       }
     >
-      <div className="marker-editor">
+      <div className={markerDraft.length >= 4 ? "marker-editor dialog-parameters" : "marker-editor"}>
         {markerDraft.map((label, index) => (
           <div className="row" key={index}>
             <Input
@@ -121,7 +92,7 @@ export function ExperimentActions({
               }
             />
             <Button
-              variant="ghost"
+              variant="destructive"
               size="icon"
               aria-label="删除打点"
               onClick={() =>
@@ -136,16 +107,18 @@ export function ExperimentActions({
     </Modal>
     <Modal
       title="快捷指令"
+      className="sm:max-w-2xl"
       open={modal === "instruction"}
       onClose={() => setModal("")}
       footer={
         <>
-          <Button onClick={() => setModal("")}>取消</Button>
+          <Button variant="outline" onClick={() => setModal("")}>取消</Button>
           {instruction &&
             instructions.some(
               (i: Instruction) => i.id === instruction.id,
             ) && (
               <Button
+                variant="destructive"
                 onClick={() => {
                   saveInstructions(
                     instructions.filter(
@@ -177,7 +150,8 @@ export function ExperimentActions({
       }
     >
       {instruction && (
-        <>
+        <div className="dialog-parameters">
+          <div className="parameter-wide">
           <Field
             label="按钮名称"
             value={instruction.name}
@@ -185,6 +159,8 @@ export function ExperimentActions({
               setInstruction({ ...instruction, name: v })
             }
           />
+          </div>
+          <div className="parameter-wide">
           <Field
             label="指令类型"
             value={instruction.command}
@@ -203,11 +179,12 @@ export function ExperimentActions({
               });
             }}
           />
+          </div>
           {commands
             .find((d) => d.id === instruction.command)
             ?.fields.map((f) =>
               f.type === "boolean" ? (
-                <div className="switch-row" key={f.key}>
+                <label className="switch-row parameter-wide" key={f.key}>
                   <Switch
                     checked={instruction.params[f.key] === true}
                     onCheckedChange={(v: boolean) =>
@@ -218,10 +195,10 @@ export function ExperimentActions({
                     }
                   />
                   {f.label}
-                </div>
+                </label>
               ) : (
+                <div className={f.type === "text" ? "parameter-wide" : "min-w-0"} key={f.key}>
                 <Field
-                  key={f.key}
                   label={f.label}
                   type={f.type === "number" ? "number" : "text"}
                   options={f.options}
@@ -233,9 +210,10 @@ export function ExperimentActions({
                     })
                   }
                 />
+                </div>
               ),
             )}
-        </>
+        </div>
       )}
     </Modal>
 

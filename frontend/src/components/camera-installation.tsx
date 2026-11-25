@@ -1,8 +1,7 @@
 import { CircleHelp, RotateCcw } from "lucide-react";
-import { useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent } from "react";
 import type { Camera, PresetConfig } from "../types/api";
 import { Hint } from "./hint";
-import { IconAction } from "./icon-action";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { NumberInput } from "./number-input";
@@ -23,15 +22,39 @@ type Props = {
   onApply: (name: CameraName, value: Camera) => void;
 };
 
+type DragState = {
+  name: CameraName;
+  kind: "position" | "yaw" | "pitch";
+  original: Camera;
+  start: DOMPoint;
+  svg: SVGSVGElement;
+  nodeX: number;
+  nodeY: number;
+};
+
 export function CameraInstallation({ cameras, applied, extent = { x: 2, y: 1, z: 1 }, running, onChange, onApply }: Props) {
   const initial = useRef(structuredClone(cameras));
   const [camera, setCamera] = useState<CameraName>("front");
   const [view, setView] = useState<"top" | "side">("top");
   const current = cameras[camera];
-  const pending = running && JSON.stringify(current) !== JSON.stringify(applied?.[camera]);
   const halfY = 110 * extent.y / extent.x;
   const halfZ = 110 * extent.z / extent.x;
-  const drag = useRef<{ name: CameraName; original: Camera; start: DOMPoint; svg: SVGSVGElement; } | null>(null);
+  const drag = useRef<DragState | null>(null);
+  const applyRef = useRef(onApply);
+  useEffect(() => {
+    applyRef.current = onApply;
+  }, [onApply]);
+  useEffect(() => {
+    if (!running) return;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (const name of cameraNames) {
+      if (JSON.stringify(cameras[name]) === JSON.stringify(applied?.[name])) continue;
+      timers.push(setTimeout(() => applyRef.current(name, cameras[name]), 250));
+    }
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+    };
+  }, [running, cameras, applied]);
   const point = (svg: SVGSVGElement, e: PointerEvent<SVGCircleElement>) => {
     const p = svg.createSVGPoint();
     p.x = e.clientX;
@@ -44,12 +67,53 @@ export function CameraInstallation({ cameras, applied, extent = { x: 2, y: 1, z:
     e.currentTarget.setPointerCapture(e.pointerId);
     setCamera(name);
     const svg = e.currentTarget.ownerSVGElement!;
-    drag.current = { name, original: { ...cameras[name] }, start: point(svg, e), svg };
+    drag.current = {
+      name,
+      kind: "position",
+      original: { ...cameras[name] },
+      start: point(svg, e),
+      svg,
+      nodeX: 0,
+      nodeY: 0,
+    };
+  };
+  const startAngleDrag = (
+    e: PointerEvent<SVGCircleElement>,
+    name: CameraName,
+    kind: "yaw" | "pitch",
+    nodeX: number,
+    nodeY: number,
+  ) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setCamera(name);
+    const svg = e.currentTarget.ownerSVGElement!;
+    drag.current = {
+      name,
+      kind,
+      original: { ...cameras[name] },
+      start: point(svg, e),
+      svg,
+      nodeX,
+      nodeY,
+    };
   };
   const moveDrag = (e: PointerEvent<SVGCircleElement>) => {
     const d = drag.current;
     if (!d) return;
     const p = point(d.svg, e);
+    if (d.kind === "yaw") {
+      const yaw = Math.atan2(p.x - d.nodeX, -(p.y - d.nodeY)) * 180 / Math.PI;
+      onChange(d.name, { ...d.original, yaw: Math.round(yaw * 10) / 10 });
+      return;
+    }
+    if (d.kind === "pitch") {
+      const ratio = Math.max(-1, Math.min(1, -(p.y - d.nodeY) / 55));
+      const pitch = Math.asin(ratio) * 180 / Math.PI;
+      onChange(d.name, { ...d.original, pitch: Math.round(pitch * 10) / 10 });
+      return;
+    }
     const dx = p.x - d.start.x;
     const dy = p.y - d.start.y;
     onChange(d.name, {
@@ -133,12 +197,19 @@ export function CameraInstallation({ cameras, applied, extent = { x: 2, y: 1, z:
                 "var(--chart-4)",
                 "var(--primary)",
               ][i];
-              const point = (angle: number) => ({
-                x: x + Math.sin((angle * Math.PI) / 180) * 130,
-                y: y - Math.cos((angle * Math.PI) / 180) * 130,
+              const at = (angle: number, radius: number) => ({
+                x: x + Math.sin((angle * Math.PI) / 180) * radius,
+                y: y - Math.cos((angle * Math.PI) / 180) * radius,
               });
-              const a = point(c.yaw - c.fov / 2);
-              const b = point(c.yaw + c.fov / 2);
+              const a = at(c.yaw - c.fov / 2, 130);
+              const b = at(c.yaw + c.fov / 2, 130);
+              const pitchRad = (c.pitch * Math.PI) / 180;
+              const facing = Math.cos((c.yaw * Math.PI) / 180) >= 0 ? 1 : -1;
+              const dirX = facing * Math.cos(pitchRad) * 55;
+              const dirY = -Math.sin(pitchRad) * 55;
+              const handle = view === "top"
+                ? { x: at(c.yaw, 55).x, y: at(c.yaw, 55).y, kind: "yaw" as const, value: c.yaw }
+                : { x: x + dirX, y: y + dirY, kind: "pitch" as const, value: c.pitch };
               return (
                 <g key={n}>
                   {view === "top" ? (
@@ -151,7 +222,7 @@ export function CameraInstallation({ cameras, applied, extent = { x: 2, y: 1, z:
                     />
                   ) : (
                     <path
-                      d={`M${x},${y} l${Math.cos((c.pitch * Math.PI) / 180) * Math.cos((c.yaw * Math.PI) / 180) * 55},${-Math.sin((c.pitch * Math.PI) / 180) * 55}`}
+                      d={`M${x},${y} l${dirX},${dirY}`}
                       stroke={color}
                       strokeWidth="2"
                     />
@@ -182,6 +253,46 @@ export function CameraInstallation({ cameras, applied, extent = { x: 2, y: 1, z:
                   >
                     {i + 1}
                   </text>
+                  {camera === n && (
+                    <g>
+                      {view === "top" && (
+                        <line
+                          x1={x}
+                          y1={y}
+                          x2={handle.x}
+                          y2={handle.y}
+                          stroke={color}
+                          strokeWidth="1.5"
+                          strokeDasharray="3 3"
+                          pointerEvents="none"
+                        />
+                      )}
+                      <circle
+                        className="camera-handle"
+                        pointerEvents="all"
+                        cx={handle.x}
+                        cy={handle.y}
+                        r="6"
+                        fill={color}
+                        stroke="var(--card)"
+                        strokeWidth="2"
+                        onPointerDown={(e) => startAngleDrag(e, n, handle.kind, x, y)}
+                        onPointerMove={moveDrag}
+                        onPointerUp={endDrag}
+                        onPointerCancel={endDrag}
+                        onLostPointerCapture={endDrag}
+                      />
+                      <text
+                        className="camera-angle-readout"
+                        x={handle.x + 10}
+                        y={handle.y - 8}
+                        textAnchor="start"
+                        pointerEvents="none"
+                      >
+                        {`${view === "top" ? "偏航" : "俯仰"} ${handle.value.toFixed(1)}°`}
+                      </text>
+                    </g>
+                  )}
                 </g>
               );
             })}
@@ -215,16 +326,26 @@ export function CameraInstallation({ cameras, applied, extent = { x: 2, y: 1, z:
       </Card>
       <Card className="dr-card mount-controls gap-0">
         <div className="card-head">
-          <h2>{names[camera]}</h2>
-          <Hint text="位置以车身包围盒中心为 0%，边界为 ±100%。数字框可输入车身范围外的位置。">
-            <Button
-              variant="ghost"
-              className="app-icon-button"
-              aria-label="相机坐标说明"
-            >
-              <CircleHelp />
-            </Button>
-          </Hint>
+          <div>
+            <h2>{names[camera]}</h2>
+            {running && <p className="small">调整后约 250ms 自动实时生效</p>}
+          </div>
+          <div className="flex items-center gap-1">
+            <Hint text="恢复为进入本页时的相机设置">
+              <Button variant="ghost" size="sm" onClick={() => onChange(camera, structuredClone(initial.current[camera]))}>
+                <RotateCcw />恢复默认
+              </Button>
+            </Hint>
+            <Hint text="位置以车身包围盒中心为 0%，边界为 ±100%。数字框可输入车身范围外的位置。">
+              <Button
+                variant="ghost"
+                className="app-icon-button"
+                aria-label="相机坐标说明"
+              >
+                <CircleHelp />
+              </Button>
+            </Hint>
+          </div>
         </div>
         <div className="mount-fields">
           {fields.map(([key, label, min, max]) => {
@@ -257,19 +378,6 @@ export function CameraInstallation({ cameras, applied, extent = { x: 2, y: 1, z:
               </label>
             );
           })}
-        </div>
-        <div className="row mount-save">
-          <IconAction label="撤销本页相机调整" onClick={() => onChange(camera, structuredClone(initial.current[camera]))}>
-            <RotateCcw />
-          </IconAction>
-          {pending && <span className="small">待应用</span>}
-          <Button
-            variant="outline"
-            disabled={!pending}
-            onClick={() => onApply(camera, current)}
-          >
-            应用到实验
-          </Button>
         </div>
       </Card>
     </div>

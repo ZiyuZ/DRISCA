@@ -1,5 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useRememberedTab } from "../hooks/use-remembered-tab";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { RuntimeState } from "../types/api";
@@ -17,7 +18,7 @@ type SessionDetail = {
 const day = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const date = (n: number) => new Date(n * 1000).toLocaleString("zh-CN", { hour12: false });
 export function DataManager({ state, online }: { state: RuntimeState; online: boolean; }) {
-  const [dataTab, setDataTab] = useState("sessions");
+  const [dataTab, setDataTab] = useRememberedTab("data", "sessions");
   const [modal, setModal] = useState("");
   const [revision, setRevision] = useState(0);
   const [deleting, setDeleting] = useState(false);
@@ -96,6 +97,7 @@ export function DataManager({ state, online }: { state: RuntimeState; online: bo
           api("/api/export", "POST", { session_ids: selected }),
         )
       }
+      onOpenExportDir={() => void call(() => api("/api/data/open-export-dir", "POST"))}
       onDelete={() => setModal("delete")}
       onDetail={(id) =>
         call(async () => {

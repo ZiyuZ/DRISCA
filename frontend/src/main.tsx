@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Field, Modal } from "./components/common";
+import { Modal } from "./components/common";
 import { Hud } from "./components/hud";
 import { PageTabs } from "./components/page-tabs";
 import { PresetManager } from "./components/preset-manager";
@@ -26,14 +26,13 @@ import { ExperimentConfig } from "./components/experiment-config";
 import { ExperimentHome } from "./components/experiment-home";
 import { SettingsPage } from "./components/settings-page";
 import { Toaster } from "./components/ui/sonner";
-import { SpawnPointDialog } from "./components/spawn-point-dialog";
 import { TrafficPage } from "./components/traffic-page";
 import { WeatherPage } from "./components/weather-page";
 import { useConfig } from "./hooks/use-config";
 import { useRuntime } from "./hooks/use-runtime";
+import { useRememberedTab } from "./hooks/use-remembered-tab";
 import { useScrollbars } from "./hooks/use-scrollbars";
 import { api } from "./lib/api";
-import { mapKey } from "./lib/spawn";
 import type { SpawnPoint } from "./types/api";
 import "./style.css";
 
@@ -53,10 +52,10 @@ function App() {
     enable_carla_recorder: false,
   }),
     [stopNote, setStopNote] = useState(""),
-    [noteSession, setNoteSession] = useState<string | null>(null),
-    [configTab, setConfigTab] = useState("scene"),
-    [machineTab, setMachineTab] = useState("connection"),
-    [controlTab, setControlTab] = useState("keyboard");
+    [noteSession, setNoteSession] = useState<string | null>(null);
+  const [configTab, setConfigTab] = useRememberedTab("scene-vehicle", "scene");
+  const [machineTab, setMachineTab] = useRememberedTab("machine", "connection");
+  const [controlTab, setControlTab] = useRememberedTab("control", "keyboard");
   const call = async (fn: () => Promise<unknown>, success?: string) => {
     try {
       await fn();
@@ -79,31 +78,28 @@ function App() {
   const { presetName, preset, machine, setMachine, control, setControl,
     presetSave, machineSave, controlSave, choosePreset, createPreset, deletePreset, update, updateMachine } = useConfig(boot, setBoot, state, online);
   const running = state?.phase === "running",
-    busy = state?.phase === "starting" || state?.phase === "stopping",
-    t = state?.telemetry;
+    busy = state?.phase === "starting" || state?.phase === "stopping";
   const activePreset = state?.active_preset ?? preset;
   const displayedRun = state?.phase === "idle" ? run : (state?.active_run ?? run);
-  const [spawnDialog, setSpawnDialog] = useState(false);
   const changePresetMap = (mapName: string) => {
     update(["world", "map_name"], mapName);
-    if (mapKey(mapName) !== mapKey(preset?.ego.spawn_map ?? "")) setSpawnDialog(true);
   };
   const confirmSpawn = (point: SpawnPoint) => {
     update(["ego", "spawn_point"], point);
     update(["ego", "spawn_map"], preset?.world.map_name ?? "");
-    setSpawnDialog(false);
+    toast.success("出生点已确认");
   };
   if (!boot || !machine || !control || !state)
     return (
       <div className="loading">
         {loadError ? `管理服务初始化失败：${loadError}` : "正在连接管理服务…"}
-        <Toaster richColors />
+        <Toaster position="bottom-center" />
       </div>
     );
   return (
     <TooltipProvider>
       <div className="app">
-        <Toaster richColors position="top-center" />
+        <Toaster position="bottom-center" />
         <AppShell
           page={page}
           setPage={setPage}
@@ -124,7 +120,11 @@ function App() {
           />}
         >
           {page === "控制台" && (
-            <ExperimentHome
+            <ExperimentActions
+              instructions={preset?.instructions ?? []} markers={preset?.markers ?? []} commands={boot.commands}
+              onInstructions={items => update(["instructions"], items)} onMarkers={items => update(["markers"], items)}
+            >
+              {({ editInstruction, editMarkers }) => <ExperimentHome
               state={state}
               running={running}
               busy={busy}
@@ -156,14 +156,8 @@ function App() {
               onMarker={(label) =>
                 call(() => api("/api/markers", "POST", { label }))
               }
-              onEditMarkers={() => {
-                setPage("方案配置");
-                setConfigTab("actions");
-              }}
-              onEditInstruction={() => {
-                setPage("方案配置");
-                setConfigTab("actions");
-              }}
+              onEditMarkers={editMarkers}
+              onEditInstruction={editInstruction}
               onExecute={(item) =>
                 call(() =>
                   api(
@@ -178,9 +172,10 @@ function App() {
                 setLogs([]);
                 setEvents([]);
               }}
-            />
+            />}
+            </ExperimentActions>
           )}
-          {page === "方案配置" && !preset && (
+          {page === "场景与车辆" && !preset && (
             <div className="page-scroll">
               <Button
                 onClick={() => {
@@ -191,44 +186,20 @@ function App() {
               </Button>
             </div>
           )}
-          {page === "方案配置" && preset && (
+          {page === "场景与车辆" && preset && (
             <PageTabs
                 value={configTab}
                 onValueChange={setConfigTab}
-                items={[["scene", "场景与车辆"], ["camera", "相机安装"], ["actions", "指令与标记"]]}
+                items={[["scene", "场景"], ["vehicle", "车辆"]]}
                 actions={<span className="save-status" role="status">{presetSave.status}</span>}
               >
               <div className="tab-scroll">
-                {configTab === "scene" && (
-                  <ExperimentConfig
-                    preset={preset}
-                    state={state}
-                    update={update}
-                    onOpenWeather={() => setPage("天气")}
-                    onMapChange={changePresetMap}
-                    onPickSpawn={() => setSpawnDialog(true)}
-                    onOpenTraffic={() => setPage("交通流")}
-                  />
-                )}
-                {configTab === "camera" && (
-                  <CameraInstallation key={presetName}
-                    cameras={preset.cameras}
-                    applied={state.cameras}
-                    extent={state.vehicle_box?.extent}
-                    running={running && online}
-                    onChange={(name, value) => update(["cameras", name], value)}
-                    onApply={(name, value) => call(() => api("/api/cameras/" + name, "POST", value), "相机调整已提交")}
-                  />
-                )}
-                {configTab === "actions" && (
-                  <ExperimentActions
-                    instructions={preset.instructions}
-                    markers={preset.markers}
-                    commands={boot.commands}
-                    onInstructions={items => update(["instructions"], items)}
-                    onMarkers={items => update(["markers"], items)}
-                  />
-                )}
+                <ExperimentConfig key={presetName}
+                  preset={preset} state={state} tab={configTab} update={update}
+                  onMapChange={changePresetMap}
+                  onLoadMap={() => call(() => api("/api/world/map", "POST", { map_name: preset.world.map_name }))}
+                  onConfirmSpawn={confirmSpawn}
+                />
               </div>
             </PageTabs>
           )}
@@ -262,11 +233,17 @@ function App() {
           {(page === "主机配置" || page === "输入配置") && (
             <>
               <SettingsPage key={page}
-                toolbar={<span className="save-status" role="status">{page === "主机配置" ? machineSave.status : controlSave.status}</span>}
+                toolbar={<span className="save-status" role="status">{page === "主机配置" ? (machineTab === "camera" ? presetSave.status : machineSave.status) : controlSave.status}</span>}
                 disabled={!online || state.phase !== "idle" || state.carla_connecting}
                 page={page === "主机配置" ? "machine" : "control"}
                 tab={page === "主机配置" ? machineTab : controlTab}
                 setTab={page === "主机配置" ? setMachineTab : setControlTab}
+                cameraInstallation={preset ? <CameraInstallation key={presetName}
+                  cameras={preset.cameras} applied={state.cameras} extent={state.vehicle_box?.extent}
+                  running={running && online}
+                  onChange={(name, value) => update(["cameras", name], value)}
+                  onApply={(name, value) => call(() => api("/api/cameras/" + name, "POST", value), "相机调整已提交")}
+                /> : <p className="small">请先选择一个实验预设。</p>}
                 machine={machine}
                 control={control}
                 boot={boot}
@@ -312,7 +289,7 @@ function App() {
           }}
         />}
         <Modal
-          title="本次备注"
+          title="实验结束备注"
           open={modal === "stop"}
           onClose={() => setModal("")}
           footer={
@@ -333,40 +310,36 @@ function App() {
             </>
           }
         >
-          <Field label="本次备注" value={stopNote} onChange={setStopNote} />
+          <p className="text-sm text-muted-foreground">记录本次实验的观察结果或异常情况，备注随会话保存。</p>
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium">本次备注</span>
+            <textarea autoFocus rows={4} value={stopNote} onChange={event => setStopNote(event.target.value)}
+              placeholder="输入实验备注…"
+              className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50" />
+          </label>
         </Modal>
         <Modal
           title="连接地址"
           open={modal === "urls"}
           onClose={() => setModal("")}
         >
-          <p className="client-count">已连接：控制台 {state.clients.console} · HUD {state.clients.hud} · 共 {state.clients.console + state.clients.hud} 个客户端</p>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-4 py-3 text-sm">
+            <strong>已连接 {state.clients.console + state.clients.hud} 个客户端</strong>
+            <span className="text-xs text-muted-foreground">控制台 {state.clients.console} · HUD {state.clients.hud}</span>
+          </div>
           <div className="qr-grid">
             {Object.entries(boot.urls).map(([k, v]) => (
-              <div key={k}>
-                <h3>{k === "console" ? "操作者控制台" : "被试 HUD"}</h3>
+              <div key={k} className="min-w-0 rounded-lg border bg-muted/20 p-4">
+                <h3 className="text-sm font-semibold">{k === "console" ? "操作者控制台" : "被试 HUD"}</h3>
                 <QR url={String(v)} />
-                <p>{String(v)}</p>
+                <p className="break-all font-mono text-xs text-muted-foreground">{String(v)}</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => void navigator.clipboard.writeText(String(v))
+                  .then(() => toast.success("连接地址已复制"))
+                  .catch(error => toast.error(`复制失败：${String(error)}`))}>复制地址</Button>
               </div>
             ))}
           </div>
         </Modal>
-
-        {spawnDialog && preset && (
-          <SpawnPointDialog
-            preset={preset}
-            catalogMap={state.catalog.map_name}
-            spawnPoints={state.catalog.spawn_points}
-            connected={online && state.carla_connected}
-            worldLoading={state.world_loading}
-            phaseIdle={state.phase === "idle"}
-            onLoadMap={() =>
-              call(() => api("/api/world/map", "POST", { map_name: preset.world.map_name }))
-            }
-            onConfirm={confirmSpawn}
-            onClose={() => setSpawnDialog(false)}
-          />
-        )}
 
         <Dialog open={state.world_loading}>
           <DialogContent showCloseButton={false} overlayClassName="world-loading-overlay"

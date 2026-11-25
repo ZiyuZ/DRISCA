@@ -1,121 +1,53 @@
 import { NumberInput } from "./number-input";
-import { IconAction } from "./icon-action";
-import { FilePlus2, Trash2, CopyPlus, LocateFixed } from "lucide-react";
 import { Card } from "./ui/card";
-import { SharedSelect } from "./shared-select";
 import { Input } from "./ui/input";
-import { FileText } from "lucide-react";
-import type { PresetConfig, RuntimeState } from "../types/api";
+import type { PresetConfig, RuntimeState, SpawnPoint } from "../types/api";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Slider } from "./ui/slider";
 import { SearchSelect } from "./common";
-import { weatherDescription } from "./weather-editor";
-import { catalogMatchesPreset, matchSpawnIndex, spawnBound } from "../lib/spawn";
-import { carFollowingModels, laneChangeModels, totalTrafficVehicles, trafficStyles } from "../lib/traffic";
+import { SpawnPointEditor } from "./spawn-point-dialog";
 
 type Props = {
   preset: PresetConfig;
   state: RuntimeState;
+  tab: string;
   update: (path: string[], value: unknown) => void;
-  onOpenWeather: () => void;
   onMapChange: (mapName: string) => void;
-  onPickSpawn: () => void;
-  onOpenTraffic: () => void;
+  onLoadMap: () => Promise<void>;
+  onConfirmSpawn: (point: SpawnPoint) => void;
 };
 
-export function ExperimentConfig({ preset, state, update, onOpenWeather, onMapChange, onPickSpawn, onOpenTraffic }: Props) {
-  const telemetry = state.telemetry;
-  const bound = spawnBound(preset);
-  const mapLoaded = catalogMatchesPreset(preset, state.catalog.map_name);
-  const points = mapLoaded ? state.catalog.spawn_points : [];
-  const spawnIndex = bound && mapLoaded ? matchSpawnIndex(points, preset.ego.spawn_point) : null;
-  const traffic = preset.traffic;
-  const totalVehicles = totalTrafficVehicles(traffic.style_counts);
-  const styleParts = trafficStyles
-    .filter(item => traffic.style_counts[item.value] > 0)
-    .map(item => `${item.label} ${traffic.style_counts[item.value]}`);
-  const styleText = styleParts.length > 0 ? `（${styleParts.join(" / ")}）` : "";
-  const followingModel = carFollowingModels.find(item => item.value === traffic.car_following_model)?.short
-    ?? traffic.car_following_model;
-  const laneChangeModel = traffic.enable_lane_change
-    ? laneChangeModels.find(item => item.value === traffic.lane_change_model)?.short ?? traffic.lane_change_model
-    : "关闭";
-  const trafficSummary = `${traffic.enabled ? "已启用" : "未启用"} · ${totalVehicles} 辆${styleText} · `
-    + `跟驰 ${followingModel} · 换道 ${laneChangeModel}`;
-  const missingText =
-    mapLoaded && points.length === 0
-      ? "该地图没有预设出生点，请手动填写完整坐标。"
-      : "尚未选择该地图的出生点。";
-  const spawnLabels = {
-    x: "X · m",
-    y: "Y · m",
-    z: "Z · m",
-    pitch: "俯仰角 · °",
-    yaw: "偏航角 · °",
-    roll: "翻滚角 · °",
-  } as const;
+export function ExperimentConfig({ preset, state, tab, update, onMapChange, onLoadMap, onConfirmSpawn }: Props) {
   return (
     <section className="stack config-page">
-      <div className="grid2 equal">
+      {state.phase !== "idle" && <p className="small">当前修改保存到预设，对下一次实验生效。</p>}
+      {tab === "scene" ? <>
         <Card className="dr-card gap-0">
-          <div className="card-head">
-            <h2>世界与环境</h2>
-          </div>
-          <div className="form">
-            <label className="dr-field">
-              <span>地图</span>
-              <SearchSelect
-                label="地图"
-                value={preset.world.map_name}
-                options={state.catalog.maps}
-                onChange={onMapChange}
-              />
-            </label>
-            <div className="spawn-missing">
-              <span>
-                {weatherDescription(preset.world.weather, state.catalog.weather_presets)}
-                {` · ${preset.world.fog_regions.length} 处团雾`}
-              </span>
-              <Button variant="outline" onClick={onOpenWeather}>前往天气页配置</Button>
+          <div className="card-head"><h2>场景地图</h2></div>
+          <div className="grid gap-4">
+            <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <label className="dr-field"><span>预设地图</span>
+                <SearchSelect label="地图" value={preset.world.map_name} options={state.catalog.maps} onChange={onMapChange} />
+              </label>
+              <Button disabled={!state.carla_connected || state.carla_connecting || state.world_loading || state.phase !== "idle"} onClick={() => void onLoadMap()}>
+                {state.world_loading ? "正在加载…" : "立即加载地图"}
+              </Button>
             </div>
-            <label className="dr-field">
-              <span>同步推进频率 · Hz</span>
-              <NumberInput
-                className="input"
-                
-                min="1"
-                value={preset.world.simulation_fps}
-                onValueChange={(value) =>
-                  update(["world", "simulation_fps"], value)
-                }
-              />
-            </label>
-            <label className="check">
-              <Checkbox
-                checked={preset.world.sync_mode}
-                onCheckedChange={(v) =>
-                  update(["world", "sync_mode"], v === true)
-                }
-              />
-              使用同步模式
-            </label>
-            <label className="check">
-              <Checkbox
-                checked={preset.world.load_map}
-                onCheckedChange={(v) =>
-                  update(["world", "load_map"], v === true)
-                }
-              />
-              启动时重新加载地图
-            </label>
+            <p className="small">当前场景：{state.catalog.map_name ?? "尚未连接模拟器"}</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="dr-field"><span>同步推进频率 · Hz</span><NumberInput min={1} value={preset.world.simulation_fps} onValueChange={value => update(["world", "simulation_fps"], value)} /></label>
+              <div className="grid content-center gap-3">
+                <label className="check"><Checkbox checked={preset.world.sync_mode} onCheckedChange={value => update(["world", "sync_mode"], value === true)} />使用同步模式</label>
+                <label className="check"><Checkbox checked={preset.world.load_map} onCheckedChange={value => update(["world", "load_map"], value === true)} />启动时重新加载地图</label>
+              </div>
+            </div>
           </div>
         </Card>
-        <Card className="dr-card gap-0">
-          <div className="card-head">
-            <h2>主车与道路限速</h2>
-          </div>
-          <div className="form">
+
+      </> : <><Card className="dr-card gap-0">
+        <div className="card-head"><h2>主车与道路限速</h2></div>
+        <div className="form">
             <label className="dr-field">
               <span>车辆蓝图</span>
               <SearchSelect
@@ -185,86 +117,16 @@ export function ExperimentConfig({ preset, state, update, onOpenWeather, onMapCh
               />
               启动后开启自动驾驶
             </label>
-          </div>
+
+        </div>
+      </Card>
+        <Card className="dr-card gap-0">
+          <div className="card-head"><h2>主车出生点</h2></div>
+          <SpawnPointEditor key={preset.world.map_name}
+            preset={preset} catalogMap={state.catalog.map_name} spawnPoints={state.catalog.spawn_points}
+            connected={state.carla_connected} onConfirm={onConfirmSpawn} />
         </Card>
-      </div>
-      <Card className="dr-card gap-0">
-        <div className="card-head">
-          <h2>背景交通流</h2>
-        </div>
-        <div className="spawn-missing">
-          <span>{trafficSummary}</span>
-          <Button variant="outline" onClick={onOpenTraffic}>前往交通流页配置</Button>
-        </div>
-      </Card>
-      <Card className="dr-card gap-0">
-        <div className="card-head spawn-header">
-          <div>
-            <h2>主车出生点</h2>
-          </div>
-          <div className="spawn-actions">
-            {bound && (
-              <SharedSelect
-                className="select spawn-select"
-                value={spawnIndex !== null ? `point:${spawnIndex}` : "custom"}
-                disabled={!mapLoaded}
-                options={[
-                  ...points.map((point, index) => [`point:${index}`, `出生点 ${index + 1}`] as const),
-                  ["custom", "自定义坐标"] as const,
-                ]}
-                onValueChange={(value) => {
-                  if (value === "custom") return;
-                  const point = points[Number(value.slice("point:".length))];
-                  if (point) update(["ego", "spawn_point"], point);
-                }}
-              />
-            )}
-            <IconAction
-              label="拾取当前车辆位置"
-              disabled={!telemetry || !bound}
-              onClick={() =>
-                telemetry &&
-                update(["ego", "spawn_point"], {
-                  x: telemetry.location_x,
-                  y: telemetry.location_y,
-                  z: telemetry.location_z,
-                  pitch: telemetry.rotation_pitch,
-                  yaw: telemetry.rotation_yaw,
-                  roll: telemetry.rotation_roll,
-                })
-              }
-            >
-              <LocateFixed />
-            </IconAction>
-          </div>
-        </div>
-        {bound ? (
-          <div className="three spawn-fields">
-            {(Object.keys(spawnLabels) as (keyof typeof spawnLabels)[]).map(
-              (key) => (
-                <label className="dr-field" key={key}>
-                  <span>{spawnLabels[key]}</span>
-                  <NumberInput
-                    className="input mono"
-                    step="0.1"
-                    value={preset.ego.spawn_point[key]}
-                    onValueChange={(value) =>
-                      update(["ego", "spawn_point", key], value)
-                    }
-                  />
-                </label>
-              ),
-            )}
-          </div>
-        ) : (
-          <div className="spawn-missing" role="status">
-            <span>{missingText}</span>
-            <Button variant="outline" onClick={onPickSpawn}>
-              选择出生点
-            </Button>
-          </div>
-        )}
-      </Card>
+      </>}
     </section>
   );
 }

@@ -180,63 +180,77 @@ export function FogRegionsEditor({ regions, onChange }: { regions: FogRegion[]; 
   };
   return (
     <section className="fog-regions">
-      <div className="fog-regions-head">
+      <div className="fog-section-head">
         <div>
-          <h3>初始团雾列表</h3>
-          <p>固定世界坐标的团雾区域，实验启动前自动创建，实验结束随会话清理。</p>
+          <strong>已添加的团雾</strong>
+          <span>{regions.length} 个区域</span>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => onChange([...regions, { center_m: [0, 0, 0], radius_m: 50, density: 0.5, transition_seconds: 0 }])}
-        >
-          添加团雾
-        </Button>
       </div>
-      {regions.length === 0 && <p className="weather-note">未配置初始团雾。</p>}
-      {regions.map((region, index) => (
-        <div className="fog-region" key={index}>
-          <div className="fog-region-head">
-            <span>区域 {index + 1}</span>
-            <Button variant="ghost" aria-label={`移除区域 ${index + 1}`} onClick={() => onChange(regions.filter((_, current) => current !== index))}>
-              移除
-            </Button>
-          </div>
-          <div className="fog-region-grid">
-            {(["X", "Y", "Z"] as const).map((axis, position) => (
-              <label className="dr-field" key={axis}>
-                <span>中心 {axis} · m</span>
-                <NumberInput
-                  className="input mono"
-                  step="0.1"
-                  value={region.center_m[position]}
-                  onValueChange={value => center(index, position, value)}
-                />
-              </label>
+      {regions.length === 0
+        ? <p className="weather-note fog-empty">尚未添加团雾。可在下方新增，实验启动前会自动创建。</p>
+        : (
+          <div className="fog-region-list">
+            {regions.map((region, index) => (
+              <div className="fog-region" key={index}>
+                <div className="fog-region-head">
+                  <strong>团雾 {index + 1}</strong>
+                  <Button variant="destructive" size="sm" aria-label={`移除区域 ${index + 1}`}
+                    onClick={() => onChange(regions.filter((_, current) => current !== index))}>
+                    移除
+                  </Button>
+                </div>
+                <div className="fog-region-grid">
+                  {(["X", "Y", "Z"] as const).map((axis, position) => (
+                    <label className="field-row" key={axis}>
+                      <span>中心 {axis} · m</span>
+                      <NumberInput
+                        className="input mono"
+                        step="0.1"
+                        value={Number(region.center_m[position].toFixed(2))}
+                        onValueChange={value => center(index, position, value)}
+                      />
+                    </label>
+                  ))}
+                  <label className="field-row">
+                    <span>半径 · m</span>
+                    <NumberInput
+                      className="input mono"
+                      min="0.1"
+                      step="any"
+                      value={region.radius_m}
+                      onValueChange={value => update(index, { radius_m: value })}
+                    />
+                  </label>
+                  <label className="field-row">
+                    <span>雾强度 · %</span>
+                    <NumberInput
+                      className="input mono"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={region.density * 100}
+                      onValueChange={value => update(index, { density: value / 100 })}
+                    />
+                  </label>
+                </div>
+              </div>
             ))}
-            <label className="dr-field">
-              <span>半径 · m</span>
-              <NumberInput
-                className="input mono"
-                min="0.1"
-                step="any"
-                value={region.radius_m}
-                onValueChange={value => update(index, { radius_m: value })}
-              />
-            </label>
-            <label className="dr-field">
-              <span>雾强度 · %</span>
-              <NumberInput
-                className="input mono"
-                min="0"
-                max="100"
-                step="1"
-                value={region.density * 100}
-                onValueChange={value => update(index, { density: value / 100 })}
-              />
-            </label>
           </div>
+        )}
+      <div className="fog-regions-divider" />
+      <div className="fog-section-head"><div><strong>新增团雾</strong><span>保存到预设</span></div></div>
+      <div className="fog-add">
+        <div className="fog-region-head">
+          <span>添加初始区域</span>
+          <Button
+            variant="outline"
+            onClick={() => onChange([...regions, { center_m: [0, 0, 0], radius_m: 50, density: 0.5, transition_seconds: 0 }])}
+          >
+            添加团雾
+          </Button>
         </div>
-      ))}
+        <p className="weather-note">添加后在上方编辑中心、半径与强度；实验启动前由驾驶端创建。</p>
+      </div>
     </section>
   );
 }

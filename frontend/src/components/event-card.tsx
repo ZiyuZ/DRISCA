@@ -55,7 +55,7 @@ export function EventCard({ command, values, disabled, disabledReason, busy, hea
             );
           }
           return (
-            <label className="dr-field" key={field.key}>
+            <label className={`field-row${field.type === "text" ? " wide" : ""}`} key={field.key}>
               <span>{label}</span>
               {field.type === "number" ? (
                 <NumberInput

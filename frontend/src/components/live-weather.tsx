@@ -104,23 +104,35 @@ function FogRegionEditor({ regions, telemetry, running, busy, onCreate, onUpdate
   };
   return (
     <section className="fog-regions">
+      <div className="fog-section-head">
+        <div>
+          <strong>已添加的团雾</strong>
+          <span>{regions.length} 个区域</span>
+        </div>
+      </div>
       {regions.length === 0
-        ? <p className="weather-note">当前没有已创建的团雾。</p>
-        : regions.map(region => (
-          <FogRegionRow key={region.region_id} region={region} busy={busy}
-            onUpdate={body => onUpdate(region.region_id, body)}
-            onDelete={seconds => onDelete(region.region_id, seconds)} />
-        ))}
-      <div className="fog-region">
+        ? <p className="weather-note fog-empty">当前没有已创建的团雾。可在下方新建立即生效。</p>
+        : (
+          <div className="fog-region-list">
+            {regions.map(region => (
+              <FogRegionRow key={region.region_id} region={region} busy={busy}
+                onUpdate={body => onUpdate(region.region_id, body)}
+                onDelete={seconds => onDelete(region.region_id, seconds)} />
+            ))}
+          </div>
+        )}
+      <div className="fog-regions-divider" />
+      <div className="fog-section-head"><div><strong>新增团雾</strong><span>立即应用到场景</span></div></div>
+      <div className="fog-add">
         <div className="fog-region-head">
-          <span>快速新增团雾</span>
+          <strong>设置新区域</strong>
           {running && telemetry
             ? <Button variant="ghost" disabled={busy} onClick={fillFront}>主车前方 25m</Button>
             : <span className="weather-note">运行中且有遥测时可填入主车前方</span>}
         </div>
         <div className="fog-region-grid">
           {(["X", "Y", "Z"] as const).map((axis, index) => (
-            <label className="dr-field" key={axis}>
+            <label className="field-row" key={axis}>
               <span>中心 {axis} · m</span>
               <NumberInput className="input mono" step="0.1" value={center[index]}
                 onValueChange={value => setCenter(old => {
@@ -130,24 +142,26 @@ function FogRegionEditor({ regions, telemetry, running, busy, onCreate, onUpdate
                 })} />
             </label>
           ))}
-          <label className="dr-field">
+          <label className="field-row">
             <span>半径 · m</span>
             <NumberInput className="input mono" min="0.1" step="any" value={radius} onValueChange={setRadius} />
           </label>
-          <label className="dr-field">
+          <label className="field-row">
             <span>雾强度 · %</span>
             <NumberInput className="input mono" min="0" max="100" step="1" value={density} onValueChange={setDensity} />
           </label>
-          <label className="dr-field">
+          <label className="field-row">
             <span>渐变 · s</span>
             <NumberInput className="input mono" min="0" step="0.5" value={transition} onValueChange={setTransition} />
           </label>
         </div>
-        <Button className="justify-self-start" disabled={busy}
-          onClick={() => onCreate({ center_m: center, radius_m: radius, density: density / 100, transition_seconds: transition })}>
-          创建并应用
-        </Button>
-        <p className="small">创建后立即生效，无需再点“应用更新”。</p>
+        <div className="fog-region-actions">
+          <Button disabled={busy}
+            onClick={() => onCreate({ center_m: center, radius_m: radius, density: density / 100, transition_seconds: transition })}>
+            创建并应用
+          </Button>
+          <span className="small">创建后立即生效，无需再点“应用更新”。</span>
+        </div>
       </div>
     </section>
   );
@@ -171,26 +185,25 @@ function FogRegionRow({ region, busy, onUpdate, onDelete }: {
   return (
     <div className="fog-region">
       <div className="fog-region-head">
-        <span>区域 {region.region_id}</span>
-        <span className="text-sm text-muted-foreground">
-          {region.deleting ? "渐隐中" : `中心 (${region.center_m.map(value => value.toFixed(1)).join(", ")})`}
-        </span>
+        <strong>团雾 #{region.region_id}</strong>
+        <span className="rounded-full border bg-background px-2 py-1 text-xs font-normal text-muted-foreground">{region.deleting ? "渐隐中" : "已创建"}</span>
       </div>
+      <p className="px-4 pt-3 text-xs text-muted-foreground">中心坐标 · m <span className="ml-2 font-mono">{region.center_m.map(value => value.toFixed(2)).join(" / ")}</span></p>
       <div className="fog-region-grid">
-        <label className="dr-field">
+        <label className="field-row">
           <span>半径 · m</span>
           <NumberInput className="input mono" disabled={disabled} min="0.1" step="any" value={radius} onValueChange={setRadius} />
         </label>
-        <label className="dr-field">
+        <label className="field-row">
           <span>雾强度 · %</span>
           <NumberInput className="input mono" disabled={disabled} min="0" max="100" step="1" value={density} onValueChange={setDensity} />
         </label>
-        <label className="dr-field">
+        <label className="field-row">
           <span>渐变 · s</span>
           <NumberInput className="input mono" disabled={disabled} min="0" step="0.5" value={transition} onValueChange={setTransition} />
         </label>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="fog-region-actions">
         <Button disabled={disabled || !dirty}
           onClick={() => onUpdate({ radius_m: radius, density: density / 100, transition_seconds: transition })}>
           应用更新
@@ -198,7 +211,7 @@ function FogRegionRow({ region, busy, onUpdate, onDelete }: {
         <span className="small" role="status">
           {region.deleting ? "渐隐中" : dirty ? "参数已修改，待应用" : "未修改"}
         </span>
-        <Button variant="outline" disabled={disabled} aria-label={`删除区域 ${region.region_id}`}
+        <Button variant="destructive" className="ml-auto" disabled={disabled} aria-label={`删除区域 ${region.region_id}`}
           onClick={() => onDelete(transition)}>
           渐隐删除
         </Button>

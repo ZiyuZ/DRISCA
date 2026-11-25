@@ -14,6 +14,7 @@ import { Switch } from "./ui/switch";
 type Props = {
   page: "machine" | "control";
   children?: React.ReactNode;
+  cameraInstallation?: React.ReactNode;
   toolbar?: React.ReactNode;
   disabled: boolean;
   tab: string;
@@ -29,6 +30,7 @@ type Props = {
 export function SettingsPage({
   page,
   children,
+  cameraInstallation,
   toolbar,
   disabled,
   tab,
@@ -74,11 +76,12 @@ export function SettingsPage({
   return (
     <PageTabs value={tab} onValueChange={setTab} actions={toolbar}
       items={page === "machine"
-        ? [["connection", "连接与服务"], ["display", "驾驶显示"], ["storage", "数据存储"]]
+        ? [["connection", "连接与服务"], ["display", "驾驶显示"], ["camera", "相机安装"], ["storage", "数据存储"]]
         : [["keyboard", "键盘"], ["wheel", "方向盘"]]}>
       <div className="tab-scroll">
         {page === "machine" ? (
           <div className="stack">
+            {tab === "camera" && cameraInstallation}
             {tab === "connection" && (
               <fieldset disabled={disabled} className="settings-fields grid2 equal">
                 <Card className="dr-card gap-0">

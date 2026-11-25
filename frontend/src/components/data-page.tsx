@@ -59,6 +59,7 @@ type Props = {
   setTo: (v: string) => void;
   onRecent: () => void;
   onExport: () => void;
+  onOpenExportDir: () => void;
   onDelete: () => void;
   onDetail: (id: string) => void;
   recordings: Recording[];
@@ -138,7 +139,7 @@ export function DataPage(p: Props) {
                 <Download />
                 导出所选{p.selected.length ? ` · ${p.selected.length}` : ""}
               </Button>
-              <Button variant="outline" disabled={!p.selected.length || p.state.export.running}
+              <Button variant="destructive" disabled={!p.selected.length || p.state.export.running}
                 onClick={p.onDelete}>
                 <Trash2 />删除所选
               </Button>
@@ -284,7 +285,12 @@ export function DataPage(p: Props) {
                   max={100}
                   value={p.state.export.progress}
                 />
-                <span className="small mono">{p.state.export.path}</span>
+                {p.state.export.path && (
+                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                    <span className="small mono min-w-0 break-all">{p.state.export.path}</span>
+                    <Button size="sm" variant="outline" onClick={p.onOpenExportDir}>打开导出文件夹</Button>
+                  </div>
+                )}
               </div>
             )}
         </div>
@@ -396,6 +402,7 @@ export function DataPage(p: Props) {
                   />
                 </label>
               ))}
+              <div className="parameter-wide flex flex-wrap justify-end gap-2 border-t pt-3">
               <Button
                 variant="outline"
                 disabled={!p.recording || !p.state.carla_connected || p.state.phase !== "idle"}
@@ -427,6 +434,7 @@ export function DataPage(p: Props) {
                   </Button>
                 </span>
               </Hint>
+              </div>
             </div>
           </Card>
         </div>

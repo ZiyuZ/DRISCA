@@ -20,6 +20,7 @@ export type TrafficConfig = {
   speed_factor: number;
   diversity: number;
   enable_lane_change: boolean;
+  auto_respawn: boolean;
   car_following_model: "idm" | "gipps" | "krauss";
   lane_change_model: "gap" | "mobil";
 };
@@ -137,6 +138,7 @@ export type PresetConfig = {
   instructions: Instruction[];
   markers: string[];
 };
+export type ViewMode = "free" | "cockpit" | "chase";
 export type Telemetry = {
   frame_no: number;
   server_fps: number;
@@ -156,8 +158,11 @@ export type Telemetry = {
   rotation_yaw: number;
   rotation_roll: number;
 };
+export type SystemStatus = "disconnected" | "connecting" | "connected" | "running" | "error";
 export type RuntimeState = {
+  system_status: SystemStatus;
   phase: "idle" | "starting" | "running" | "stopping";
+  view_mode: ViewMode;
   active_preset: PresetConfig | null;
   active_preset_name: string | null;
   active_run: {
@@ -181,6 +186,7 @@ export type RuntimeState = {
   traffic_preview: {
     running: boolean;
     vehicle_count: number;
+    follow_actor_id?: number | null;
     error: string | null;
   };
   display_layout: DisplayLayout | null;

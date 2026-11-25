@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { catalogMatchesPreset, mapKey, matchSpawnIndex, spawnBound, spawnLabel } from "../lib/spawn";
 import type { PresetConfig, SpawnPoint } from "../types/api";
-import { Modal } from "./common";
+
 import { SharedSelect } from "./shared-select";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -20,12 +20,12 @@ type Drafts = Record<Field, string>;
 
 const emptyDrafts = (): Drafts => ({ x: "", y: "", z: "", pitch: "", yaw: "", roll: "" });
 const toDrafts = (point: SpawnPoint): Drafts => ({
-  x: String(point.x),
-  y: String(point.y),
-  z: String(point.z),
-  pitch: String(point.pitch),
-  yaw: String(point.yaw),
-  roll: String(point.roll),
+  x: point.x.toFixed(2),
+  y: point.y.toFixed(2),
+  z: point.z.toFixed(2),
+  pitch: point.pitch.toFixed(2),
+  yaw: point.yaw.toFixed(2),
+  roll: point.roll.toFixed(2),
 });
 const parseDraft = (text: string) => {
   if (!text.trim()) return null;
@@ -38,24 +38,18 @@ type Props = {
   catalogMap: string | null;
   spawnPoints: SpawnPoint[];
   connected: boolean;
-  worldLoading: boolean;
-  phaseIdle: boolean;
-  onLoadMap: () => Promise<void>;
   onConfirm: (point: SpawnPoint) => void;
-  onClose: () => void;
+
 };
 
-export function SpawnPointDialog({
+export function SpawnPointEditor({
   preset,
   catalogMap,
   spawnPoints,
   connected,
-  worldLoading,
-  phaseIdle,
-  onLoadMap,
   onConfirm,
-  onClose,
 }: Props) {
+  const labelId = useId();
   const mapLoaded = catalogMatchesPreset(preset, catalogMap);
   const points = mapLoaded ? spawnPoints : [];
   const hasPoints = points.length > 0;
@@ -82,7 +76,7 @@ export function SpawnPointDialog({
     yaw: null,
     roll: null,
   });
-  // 目标地图在对话框打开后才加载完成时，只在首次出现目录时初始化一次预选。
+  // 目标地图加载完成后，只在首次出现目录时初始化一次预选。
   useEffect(() => {
     if (picked.current || points.length === 0) return;
     picked.current = true;
@@ -124,12 +118,6 @@ export function SpawnPointDialog({
         : mapLoaded
           ? "请填写完整坐标后确认。"
           : `目标地图 ${mapKey(preset.world.map_name)} 尚未加载；加载后可选择预设出生点，也可以直接填写坐标。`;
-  const loadDisabled = !connected || !phaseIdle || worldLoading;
-  const loadHint = !connected
-    ? "连接模拟器后可加载目标地图。"
-    : !phaseIdle
-      ? "实验进行中不能切换地图。"
-      : `加载 ${mapKey(preset.world.map_name)} 后会随机预选一个预设出生点。`;
   const confirm = () => {
     if (mode === "point") {
       if (chosen) onConfirm(chosen);
@@ -148,7 +136,7 @@ export function SpawnPointDialog({
   const field = ([key, label]: (typeof fields)[number]) => {
     const invalid = submitted && parseDraft(drafts[key]) === null;
     return (
-      <label className="dr-field" key={key}>
+      <label className="field-row" key={key}>
         <span>{label}</span>
         <Input
           ref={(element) => {
@@ -170,37 +158,11 @@ export function SpawnPointDialog({
     );
   };
   return (
-    <Modal
-      title="选择出生点"
-      open
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose}>
-            取消
-          </Button>
-          <Button onClick={confirm} disabled={mode === "point" && !chosen}>
-            使用该出生点
-          </Button>
-        </>
-      }
-    >
-      <div className="spawn-dialog">
+      <div className="spawn-dialog spawn-editor">
         <div className="spawn-status" role="status">
           <strong>{statusTitle}</strong>
           <span>{statusText}</span>
         </div>
-        {!mapLoaded && (
-          <div className="spawn-load-card">
-            <div className="spawn-load-copy">
-              <strong>目标地图：{mapKey(preset.world.map_name)}</strong>
-              <span>{loadHint}</span>
-            </div>
-            <Button disabled={loadDisabled} onClick={() => void onLoadMap()}>
-              {worldLoading ? "正在加载…" : "加载目标地图"}
-            </Button>
-          </div>
-        )}
         <Tabs
           value={mode}
           onValueChange={(value) => {
@@ -209,16 +171,19 @@ export function SpawnPointDialog({
           }}
           className="spawn-mode"
         >
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="spawn-mode-list w-full">
             <TabsTrigger value="point" disabled={!hasPoints}>预设出生点</TabsTrigger>
             <TabsTrigger value="custom">自定义坐标</TabsTrigger>
           </TabsList>
           <TabsContent value="point" className="spawn-tab-panel">
             {hasPoints ? (
               <>
-                <label className="dr-field">
-                  <span>{mapKey(preset.world.map_name)} 的地图出生点</span>
+                <div className="dr-field">
+                  <span id={labelId}>{mapKey(preset.world.map_name)} 的地图出生点</span>
                   <SharedSelect
+                    aria-labelledby={labelId}
+                    disabled={!hasPoints}
+                    placeholder="选择地图出生点"
                     value={pointIndex !== null ? `point:${pointIndex}` : ""}
                     options={points.map((point, index) => [
                       `point:${index}`,
@@ -226,10 +191,16 @@ export function SpawnPointDialog({
                     ] as const)}
                     onValueChange={(value) => {
                       setSubmitted(false);
-                      setPointIndex(Number(value.slice("point:".length)));
+                      const index = Number(value.slice("point:".length));
+                      setPointIndex(index);
+                      const point = points[index];
+                      if (point) {
+                        setDrafts(toDrafts(point));
+                        onConfirm(point);
+                      }
                     }}
                   />
-                </label>
+                </div>
                 {chosen && (
                   <div className="spawn-point-card">
                     <div className="spawn-point-row">
@@ -250,7 +221,7 @@ export function SpawnPointDialog({
                     出生点列表已更新，请重新选择出生点。
                   </p>
                 )}
-                <p className="spawn-hint">已随机预选一个点，可直接确认，也可以从列表改选。</p>
+                <p className="spawn-hint">{boundHere ? "当前预设的出生点已保留，可从列表改选后确认。" : "已随机预选一个点，可直接确认，也可以从列表改选。"}</p>
               </>
             ) : (
               <p className="spawn-hint">该地图没有预设出生点，请使用自定义坐标。</p>
@@ -259,17 +230,10 @@ export function SpawnPointDialog({
           <TabsContent value="custom" className="spawn-tab-panel">
             <div className="spawn-section">
               <div className="spawn-section-head">
-                <strong>位置</strong>
-                <span>地图世界坐标 · m</span>
+                <strong>位置与姿态</strong>
+                <span>地图世界坐标 · m / 角度 · °</span>
               </div>
-              <div className="three">{fields.slice(0, 3).map(field)}</div>
-            </div>
-            <div className="spawn-section">
-              <div className="spawn-section-head">
-                <strong>姿态</strong>
-                <span>角度 · °</span>
-              </div>
-              <div className="three">{fields.slice(3).map(field)}</div>
+              <div className="dialog-parameters">{fields.map(field)}</div>
             </div>
             {submitted && !complete && (
               <p className="text-sm text-destructive" role="alert">
@@ -281,7 +245,9 @@ export function SpawnPointDialog({
             </p>
           </TabsContent>
         </Tabs>
+        <div className="flex justify-end border-t pt-4">
+          <Button onClick={confirm} disabled={mode === "point" && !chosen}>确认出生点</Button>
+        </div>
       </div>
-    </Modal>
   );
 }

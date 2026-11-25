@@ -6,6 +6,8 @@ import {
   Square
 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
+import { api } from "../lib/api";
 import type {
   Bootstrap,
   Instruction,
@@ -13,6 +15,7 @@ import type {
   RuntimeState,
 } from "../types/api";
 import { Hint } from "./hint";
+import { Modal } from "./common";
 import { IconAction } from "./icon-action";
 import { spawnBound } from "../lib/spawn";
 import { Button } from "./ui/button";
@@ -60,9 +63,32 @@ export function ExperimentHome({
   onClear,
 }: Props) {
   const [logTab, setLogTab] = useState<"logs" | "events">("logs");
+  const [viewPending, setViewPending] = useState(false);
+  const [logDetail, setLogDetail] = useState<string | null>(null);
+  const copyDetail = async () => {
+    if (logDetail === null) return;
+    try {
+      await navigator.clipboard.writeText(logDetail);
+      toast.success("日志详情已复制");
+    } catch (error) {
+      toast.error(`复制失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
   const t = state.telemetry;
   const entries = logTab === "logs" ? logs : events;
   const spawnReady = !preset || spawnBound(preset);
+  const changeView = async (mode: "cockpit" | "chase") => {
+    if (mode === state.view_mode) return;
+    setViewPending(true);
+    try {
+      await api("/api/view/mode", "POST", { mode });
+      toast.success(`已切换为${mode === "cockpit" ? "车内视角" : "第三人称"}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setViewPending(false);
+    }
+  };
   const startBlocked = !state.carla_connected || !spawnReady;
   return (
     <fieldset className="home-layout settings-fields" disabled={!serviceOnline}>
@@ -145,6 +171,18 @@ export function ExperimentHome({
                 ? `${t.simulator_fps.toFixed(0)} FPS · ${t.frame_no.toLocaleString()} 帧`
                 : null}
             </div>
+            {running && (
+              <div className="flex items-center gap-1.5" role="group" aria-label="运行视角">
+                <Button size="sm" variant={state.view_mode === "cockpit" ? "default" : "outline"}
+                  disabled={viewPending} onClick={() => void changeView("cockpit")}>
+                  车内视角
+                </Button>
+                <Button size="sm" variant={state.view_mode === "chase" ? "default" : "outline"}
+                  disabled={viewPending} onClick={() => void changeView("chase")}>
+                  第三人称
+                </Button>
+              </div>
+            )}
             <Hint
               enabled={!running && startBlocked}
               text={
@@ -182,9 +220,9 @@ export function ExperimentHome({
         <Card className="dr-card markers-card gap-0">
           <div className="card-head">
             <h2>事件标记</h2>
-            <IconAction label="编辑打点" onClick={onEditMarkers}>
-              <Pencil />
-            </IconAction>
+            <Button variant="ghost" size="sm" disabled={!preset} onClick={onEditMarkers}>
+              <Pencil />管理标记
+            </Button>
           </div>
           <div className={`gated-area${running ? "" : " is-unavailable"}`}>
             <div className="marker-buttons">
@@ -213,17 +251,15 @@ export function ExperimentHome({
         <div className="card-head">
           <h2>快捷指令</h2>
           {!running && (
-            <Hint text="添加指令">
               <Button
                 variant="ghost"
-                size="icon-sm"
-                className="app-icon-button"
+                size="sm"
+                disabled={!preset || !commands.length}
                 onClick={() => onEditInstruction()}
                 aria-label="添加指令"
               >
-                <Plus />
+                <Plus />添加指令
               </Button>
-            </Hint>
           )}
         </div>
         <div className="action-buttons">
@@ -246,6 +282,7 @@ export function ExperimentHome({
             <Button
               variant="ghost"
               className="empty-command"
+              disabled={!preset || !commands.length}
               onClick={() => onEditInstruction()}
             >
               添加快捷指令
@@ -270,6 +307,7 @@ export function ExperimentHome({
         </div>
         <div className="log-list mono">
           {[...entries].reverse().map((entry, index) => {
+            const detail = logTab === "logs" && typeof entry.detail === "string" && entry.detail.trim() ? entry.detail : null;
             const level = logTab === "logs" ? String(entry.level ?? "").toUpperCase() : "EVENT";
             const levelClass = level === "ERROR" || level === "CRITICAL"
               ? "error"
@@ -291,10 +329,13 @@ export function ExperimentHome({
                     : "—"}
                 </span>
                 <span className={`log-level ${levelClass}`}>{level}</span>
-                <span>
+                <span className={detail ? "log-message-with-detail" : undefined}>
+                  <span className={detail ? "min-w-0 truncate" : undefined}>
                   {logTab === "logs"
-                    ? String(entry.message ?? "")
+                    ? (detail ? String(entry.message ?? "").split(/\r?\n/, 1)[0] : String(entry.message ?? ""))
                     : `${entry.name ?? ""} ${entry.source ?? ""} ${JSON.stringify(entry.payload ?? "")}`}
+                  </span>
+                  {detail && <Button variant="ghost" size="sm" className="h-6 shrink-0 px-2 text-xs" onClick={() => setLogDetail(detail)}>详情</Button>}
                 </span>
               </div>
             );
@@ -302,6 +343,16 @@ export function ExperimentHome({
           {!entries.length && <div className="empty">等待运行记录</div>}
         </div>
       </Card>
+      {logDetail !== null && (
+        <Modal title="日志详情" open onClose={() => setLogDetail(null)} footer={
+          <>
+            <Button variant="outline" onClick={() => setLogDetail(null)}>关闭</Button>
+            <Button onClick={() => void copyDetail()}>复制详情</Button>
+          </>
+        }>
+          <pre tabIndex={0} aria-label="完整日志堆栈" className="log-detail"><code>{logDetail}</code></pre>
+        </Modal>
+      )}
     </fieldset>
   );
 }

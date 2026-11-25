@@ -1,8 +1,9 @@
 import { useState } from "react";
+import { useRememberedTab } from "../hooks/use-remembered-tab";
 import { Shuffle, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import type { CommandDefinition, PresetConfig, RuntimeState, TrafficStyleCounts } from "../types/api";
+import type { CommandDefinition, PresetConfig, RuntimeState, TrafficStyleCounts, ViewMode } from "../types/api";
 import { carFollowingModels, laneChangeModels, totalTrafficVehicles, trafficStyles } from "../lib/traffic";
 import { ActionTooltip } from "./action-tooltip";
 import { EventActionPanel } from "./event-action-panel";
@@ -14,6 +15,7 @@ import { Card } from "./ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Slider } from "./ui/slider";
 import { Switch } from "./ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 
 type Props = {
   preset: PresetConfig | null;
@@ -29,6 +31,11 @@ const TRAFFIC_TABS = [
   ["config", "交通流配置"],
   ["events", "交通事件"],
 ] as const;
+const VIEW_LABELS: Record<ViewMode, string> = {
+  free: "自由视角",
+  cockpit: "车内视角",
+  chase: "第三人称",
+};
 
 export function TrafficPage({
   preset,
@@ -39,8 +46,10 @@ export function TrafficPage({
   online,
   onOpenPresets,
 }: Props) {
-  const [tab, setTab] = useState("config");
+  const [tab, setTab] = useRememberedTab("traffic", "config");
   const [diversityOpen, setDiversityOpen] = useState(false);
+  const [viewPending, setViewPending] = useState(false);
+  const [followPending, setFollowPending] = useState(false);
   const traffic = preset?.traffic;
   const counts = traffic?.style_counts;
   const totalVehicles = totalTrafficVehicles(counts);
@@ -85,6 +94,28 @@ export function TrafficPage({
       toast.success("车流预览已停止");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const changeView = async (mode: ViewMode) => {
+    if (mode === state.view_mode) return;
+    setViewPending(true);
+    try {
+      await api("/api/view/mode", "POST", { mode });
+      toast.success(`已切换为${VIEW_LABELS[mode]}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setViewPending(false);
+    }
+  };
+  const changeFollow = async (delta: -1 | 1) => {
+    setFollowPending(true);
+    try {
+      await api("/api/traffic/preview/follow", "POST", { delta });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFollowPending(false);
     }
   };
   const updateStyleCount = (key: keyof TrafficStyleCounts, raw: number) => {
@@ -156,6 +187,11 @@ export function TrafficPage({
                           onCheckedChange={value => update(["traffic", "enabled"], value)} />
                         {traffic.enabled ? "已启用" : "未启用"}
                       </label>
+                      <label className="check" title="开启后，在非封闭地图上车辆离开边界或侧翻销毁时会自动在空闲出生点补充同风格车辆">
+                        <Switch aria-label="越界自动补充" checked={traffic.auto_respawn} disabled={!enabled}
+                          onCheckedChange={value => update(["traffic", "auto_respawn"], value)} />
+                        越界自动补充
+                      </label>
                       <span className={`dr-badge${preview.running ? " live" : ""}`}>
                         {preview.running ? `预览中 · ${preview.vehicle_count} 辆车` : "未开启预览"}
                       </span>
@@ -178,6 +214,27 @@ export function TrafficPage({
                     </ActionTooltip>
                   </div>
                 </div>
+                {preview.running && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+                    <span className="small">预览视角</span>
+                    <Tabs value={state.view_mode} onValueChange={value => void changeView(value as ViewMode)}>
+                      <TabsList>
+                        {(Object.keys(VIEW_LABELS) as ViewMode[]).map(mode => (
+                          <TabsTrigger key={mode} value={mode} disabled={viewPending}>
+                            {VIEW_LABELS[mode]}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                    </Tabs>
+                    {state.view_mode !== "free" && (
+                      <div className="flex items-center gap-1 rounded-md border p-0.5" role="group" aria-label="切换观察车辆">
+                        <Button size="sm" variant="ghost" disabled={!online || followPending || viewPending} onClick={() => void changeFollow(-1)}>上一辆</Button>
+                        <span className="min-w-20 px-2 text-center font-mono text-xs" role="status">车辆 {preview.follow_actor_id == null ? "—" : `#${preview.follow_actor_id}`}</span>
+                        <Button size="sm" variant="ghost" disabled={!online || followPending || viewPending} onClick={() => void changeFollow(1)}>下一辆</Button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </Card>
               <Card className="dr-card gap-0">
                 <div className="card-head">

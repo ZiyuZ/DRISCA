@@ -6,12 +6,13 @@ import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } f
 import { DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, Dialog as DialogRoot, DialogTitle } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { NumberInput } from "./number-input";
-export function Modal({ title, open, onClose, children, footer }: {
-  title: string; open: boolean; onClose: () => void; children: ReactNode; footer?: ReactNode;
+import { cn } from "../lib/utils";
+export function Modal({ title, open, onClose, children, footer, className }: {
+  title: string; open: boolean; onClose: () => void; children: ReactNode; footer?: ReactNode; className?: string;
 }) {
   return (
     <DialogRoot open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="app-dialog flex flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent className={cn("app-dialog flex flex-col gap-0 overflow-hidden p-0 sm:max-w-xl", className)}>
         <DialogHeader className="shrink-0 border-b px-6 py-5 text-left">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription className="sr-only">{title}</DialogDescription>

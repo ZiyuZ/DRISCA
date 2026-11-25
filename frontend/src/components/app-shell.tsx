@@ -1,6 +1,7 @@
 import {
   CarFront,
   CloudSun,
+  Copy,
   Database,
   Home,
   Link,
@@ -18,6 +19,17 @@ import { toast } from "sonner";
 import type { RuntimeState } from "../types/api";
 import { Hint } from "./hint";
 import { Button } from "./ui/button";
+
+const resizeEdges = [
+  ["top", "inset-x-[10px] top-0 h-[5px] cursor-ns-resize"],
+  ["bottom", "inset-x-[10px] bottom-0 h-[5px] cursor-ns-resize"],
+  ["left", "inset-y-[10px] left-0 w-[5px] cursor-ew-resize"],
+  ["right", "inset-y-[10px] right-0 w-[5px] cursor-ew-resize"],
+  ["top-left", "top-0 left-0 size-[10px] cursor-nwse-resize"],
+  ["top-right", "top-0 right-0 size-[10px] cursor-nesw-resize"],
+  ["bottom-left", "bottom-0 left-0 size-[10px] cursor-nesw-resize"],
+  ["bottom-right", "bottom-0 right-0 size-[10px] cursor-nwse-resize"],
+] as const;
 
 type Props = {
   page: string;
@@ -49,6 +61,7 @@ export function AppShell({
   children,
 }: Props) {
   const [phone, setPhone] = React.useState(false);
+  const [maximized, setMaximized] = React.useState(false);
   React.useEffect(() => {
     const media = window.matchMedia("(max-width: 640px)");
     const update = () => setPhone(media.matches);
@@ -59,7 +72,7 @@ export function AppShell({
   const collapsed = phone || collapsedSetting;
   const pages = [
     ["控制台", Home],
-    ["方案配置", SlidersHorizontal],
+    ["场景与车辆", SlidersHorizontal],
     ["天气", CloudSun],
     ["交通流", CarFront],
     ["数据管理", Database],
@@ -68,39 +81,44 @@ export function AppShell({
     ["主机配置", Monitor],
     ["输入配置", Settings],
   ] as const;
-  const phase = state.unreal.phase;
-  const simulatorState = state.carla_connected
-    ? "已连接"
-    : state.carla_connecting
-      ? "连接中"
-      : phase === "starting"
-        ? "正在启动"
-        : phase === "stopping"
-          ? "正在关闭"
-          : phase === "error"
-            ? "运行异常"
-            : phase === "running"
-              ? "运行中未连接"
-              : "未启动";
-  const simulatorDot = state.carla_connected
-    ? ""
-    : state.carla_connecting || phase === "starting" || phase === "stopping"
-      ? " connecting"
-      : " idle";
-  const collecting = state.worker_state === "running";
+  const statusMeta: Record<RuntimeState["system_status"], { label: string; dot: string }> = {
+    disconnected: { label: "模拟器未连接", dot: " idle" },
+    connecting: { label: "模拟器连接中", dot: " connecting" },
+    connected: { label: "模拟器已连接", dot: "" },
+    running: { label: "实验中", dot: "" },
+    error: { label: "运行异常", dot: " error" },
+  };
+  const currentStatus = statusMeta[state.system_status] ?? statusMeta.disconnected;
   const windowAction = async (action: string) => {
     const webview = (
-      window as Window & { pywebview?: { api: Record<string, () => void>; }; }
+      window as Window & { pywebview?: { api: Record<string, () => Promise<void>>; }; }
     ).pywebview;
     try {
       if (action === "close_window") await onBeforeClose();
-      webview?.api[action]();
+      if (!webview) return;
+      await webview.api[action]();
+      if (action === "toggle_maximize") setMaximized(value => !value);
     } catch (error) {
       toast.error(String(error));
     }
   };
   return (
     <div className={`prototype-shell shell${desktop ? " desktop" : ""}`}>
+      {desktop && resizeEdges.map(([edge, position]) => (
+        <div
+          key={edge}
+          aria-hidden="true"
+          className={`fixed z-[60] select-none ${position}`}
+          onMouseDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            const webview = (window as Window & {
+              pywebview?: { api: { start_resize?: (edge: typeof resizeEdges[number][0]) => void; }; };
+            }).pywebview;
+            webview?.api.start_resize?.(edge);
+          }}
+        />
+      ))}
       <header className="app-titlebar">
         {!phone && (
           <Button
@@ -135,7 +153,7 @@ export function AppShell({
           </Hint>
         </div>
         {desktop && (
-          <div className="window-buttons">
+          <div className="window-buttons relative z-[61]">
             <Hint text="最小化">
               <Button
                 variant="ghost"
@@ -145,13 +163,13 @@ export function AppShell({
                 <Minus />
               </Button>
             </Hint>
-            <Hint text="最大化 / 还原">
+            <Hint text={maximized ? "还原" : "最大化"}>
               <Button
                 variant="ghost"
-                aria-label="最大化 / 还原"
+                aria-label={maximized ? "还原" : "最大化"}
                 onClick={() => windowAction("toggle_maximize")}
               >
-                <Square />
+                {maximized ? <Copy /> : <Square />}
               </Button>
             </Hint>
             <Hint text="关闭">
@@ -201,25 +219,11 @@ export function AppShell({
               ))}
             </nav>
             <div className="host-status">
-              <Hint text={`模拟器 · ${simulatorState}，点击启动、关闭或连接`} enabled={collapsed} side="right">
+              <Hint text={`${currentStatus.label}，点击管理模拟器连接`} enabled={collapsed} side="right">
                 <Button variant="ghost" className="host-label host-status-button" onClick={onUnreal}>
-                  <span className={`dot${simulatorDot}`} />
-                  {!collapsed && <span className="connection-label">模拟器{simulatorState}</span>}
+                  <span className={`dot${currentStatus.dot}`} />
+                  {!collapsed && <span className="connection-label">{currentStatus.label}</span>}
                 </Button>
-              </Hint>
-              <Hint
-                enabled={collapsed}
-                side="right"
-                text={collecting ? "实验采集 · 运行中" : "实验采集 · 未启动"}
-              >
-                <div className="host-label host-status-line" role="status" aria-live="polite">
-                  <span className={`dot${collecting ? "" : " idle"}`} />
-                  {!collapsed && (
-                    <span className="connection-label">
-                      实验采集{collecting ? "运行中" : "未启动"}
-                    </span>
-                  )}
-                </div>
               </Hint>
             </div>
           </div>
