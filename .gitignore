@@ -5,7 +5,6 @@
 .idea/
 .vscode/
 AGENTS.md
-/cache/
 /data/
 /configs/machine.toml
 /configs/control.toml

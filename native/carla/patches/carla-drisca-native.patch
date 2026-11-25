@@ -1,0 +1,741 @@
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Carla.Build.cs b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Carla.Build.cs
+index 5307f18..bf96d90 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Carla.Build.cs
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Carla.Build.cs
+@@ -35,6 +35,8 @@ public class Carla :
+     PrivatePCHHeaderFile = "Carla.h";
+     bEnableExceptions = true;
+     bUseRTTI = true;
++    // Boost 头文件里有 #if BOOST_XXX 形式；UE 默认把未定义宏的 #if 当错误。
++    CppCompileWarningSettings.UndefinedIdentifierWarningLevel = WarningLevel.Warning;
+     // UE 5.8 escalates -Wshadow to an error by default; keep it as a warning
+     // until the existing field-shadowing in V2X/PathLossModel et al. is cleaned up.
+     ShadowVariableWarningLevel = WarningLevel.Warning;
+@@ -126,6 +128,7 @@ public class Carla :
+       "Slate",
+       "SlateCore",
+       "InputCore",
++      "Sockets",
+       "PhysicsCore",
+       "MeshConversion",
+       "Chaos",
+@@ -169,6 +172,18 @@ public class Carla :
+     }
+       
+     PublicIncludePaths.Add(ModuleDirectory);
++    PublicIncludePaths.Add(Path.Combine(ModuleDirectory, "DrivingView"));
++    PublicIncludePaths.Add(Path.Combine(ModuleDirectory, "DrivingView", "DriscaApi"));
++
++    // Boost.Beast only ships its own headers; Asio and the rest of the
++    // dependency set already come from Includes.def. The repository root is
++    // four levels above the plugin directory.
++    string RepoRoot = Path.GetFullPath(Path.Combine(PluginDirectory, "..", "..", "..", ".."));
++    foreach (var BoostLibrary in new[] { "beast", "logic", "static_string" })
++    {
++      PublicIncludePaths.Add(Path.Combine(
++          RepoRoot, "Build", "_deps", "boost-src", "libs", BoostLibrary, "include"));
++    }
+ 
+     // OSM2ODR needs no extra library: the converter is compiled into
+     // libcarla-server, which this module already links.
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaGameModeBase.cpp b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaGameModeBase.cpp
+index 9ac098f..ca70e7f 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaGameModeBase.cpp
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaGameModeBase.cpp
+@@ -5,6 +5,7 @@
+ // For a copy, see <https://opensource.org/licenses/MIT>.
+ 
+ #include "Carla/Game/CarlaGameModeBase.h"
++#include "Carla/DrivingView/DriscaApi/DriscaApiSubsystem.h"
+ #include "Carla.h"
+ #include "Carla/Game/Tagger.h"
+ #include "Carla/Game/CarlaHUD.h"
+@@ -175,51 +176,24 @@ void ACarlaGameModeBase::InitGame(
+     // needed.
+   }
+ 
+-  AActor* WeatherActor =
+-      UGameplayStatics::GetActorOfClass(GetWorld(), AWeather::StaticClass());
+-  if (WeatherActor != nullptr) {
+-    UE_LOG(LogCarla, Log, TEXT("Existing weather actor. Doing nothing then!"));
+-    Episode->Weather = static_cast<AWeather*>(WeatherActor);
+-  }
+-  else {
+-    // Fall back to BP_CarlaWeather if WeatherClass is unset on the BP
+-    // game mode. Without this, set_weather() RPCs silently no-op because
+-    // Episode->Weather stays null and CarlaServer::get_weather_parameters
+-    // returns the default-constructed FWeatherParameters{}. Resolved at
+-    // runtime (rather than via ConstructorHelpers) so the package cook is
+-    // not forced to re-validate the BP asset registry every C++ rebuild.
+-    if (WeatherClass == nullptr) {
+-      WeatherClass = LoadClass<AWeather>(
+-          nullptr,
+-          TEXT("/Game/Carla/Blueprints/Weather/BP_CarlaWeather.BP_CarlaWeather_C"));
+-    }
+-    if (WeatherClass != nullptr) {
+-      Episode->Weather = World->SpawnActor<AWeather>(WeatherClass);
+-    } else {
+-      UE_LOG(LogCarla, Error, TEXT("Missing weather class!"));
+-    }
+-  }
++  // 只保留一个原生渲染执行器；地图中保存的旧天气蓝图不再执行初始化逻辑。
++  TArray<AActor *> OldWeatherActors;
++  UGameplayStatics::GetAllActorsOfClass(World, AWeather::StaticClass(), OldWeatherActors);
++  for (AActor *OldWeather : OldWeatherActors)
++      OldWeather->Destroy();
++  Episode->Weather = World->SpawnActor<ADriscaEnvironmentRenderer>();
++  if (Episode->Weather == nullptr)
++      UE_LOG(LogCarla, Error, TEXT("无法创建 DRISCA 环境渲染执行器"));
+ 
++  // 环境执行器的替换不改变 CARLA 的服务、工厂与录像初始化顺序。
+   GameInstance->NotifyInitGame();
+-
+-  // Known before any actor of this map begins play: actors that behave
+-  // differently on a Multi-GPU secondary check it in BeginPlay, while
+-  // NotifyBeginEpisode only sets it once they all have.
+   if (FCarlaEngine *CarlaEngine = GameInstance->GetCarlaEngine())
+-  {
+-    Episode->bIsPrimaryServer = CarlaEngine->IsPrimaryServer();
+-  }
+-
++      Episode->bIsPrimaryServer = CarlaEngine->IsPrimaryServer();
+   OnEpisodeSettingsChangeHandle = FCarlaStaticDelegates::OnEpisodeSettingsChange.AddUObject(
+-        this,
+-        &ACarlaGameModeBase::OnEpisodeSettingsChanged);
+-
++      this, &ACarlaGameModeBase::OnEpisodeSettingsChanged);
+   SpawnActorFactories();
+-
+-  // make connection between Episode and Recorder
+   Recorder->SetEpisode(Episode);
+   Episode->SetRecorder(Recorder);
+-
+   LoadGeoReference();
+ }
+ 
+@@ -243,45 +217,6 @@ void ACarlaGameModeBase::RestartPlayer(AController *NewPlayer)
+   Super::RestartPlayer(NewPlayer);
+ }
+ 
+-// Whether BP_CarlaWeather's per-town "DefaultWeathers" table (a blueprint
+-// TMap<FString, FWeatherParameters> variable) has an entry for MapName. Looked
+-// up by authored name through reflection, like the other blueprint variables
+-// the C++ side reads (see AWeather::ApplyWeatherToSkyActor).
+-static bool IsMapInBlueprintWeatherTable(const AWeather* Weather, const FString& MapName)
+-{
+-  if (Weather == nullptr)
+-  {
+-    return false;
+-  }
+-  for (TFieldIterator<FProperty> It(Weather->GetClass()); It; ++It)
+-  {
+-    if ((*It)->GetAuthoredName() != TEXT("DefaultWeathers") && (*It)->GetName() != TEXT("DefaultWeathers"))
+-    {
+-      continue;
+-    }
+-    const FMapProperty* MapProp = CastField<FMapProperty>(*It);
+-    if (MapProp == nullptr)
+-    {
+-      return false;
+-    }
+-    const FStrProperty* KeyProp = CastField<FStrProperty>(MapProp->KeyProp);
+-    if (KeyProp == nullptr)
+-    {
+-      return false;
+-    }
+-    FScriptMapHelper Helper(MapProp, MapProp->ContainerPtrToValuePtr<void>(Weather));
+-    for (FScriptMapHelper::FIterator MapIt(Helper); MapIt; ++MapIt)
+-    {
+-      if (KeyProp->GetPropertyValue(Helper.GetKeyPtr(MapIt.GetInternalIndex())) == MapName)
+-      {
+-        return true;
+-      }
+-    }
+-    return false;
+-  }
+-  return false;
+-}
+-
+ void ACarlaGameModeBase::BeginPlay()
+ {
+   Super::BeginPlay();
+@@ -324,48 +259,14 @@ void ACarlaGameModeBase::BeginPlay()
+ 
+   if (Episode->Weather != nullptr)
+   {
+-    // Per-map defaults now come from MapDefaults.json (either a named
+-    // {time, condition} preset pair via ASkyBase::SetAsMapDefault, or a full
+-    // inline snapshot via ASkyBase::SaveCurrentWeatherAsMapDefault --
+-    // GetMapDefaultWeather resolves whichever shape the entry is), not the
+-    // flat carla::rpc::WeatherParameters::Default sentinel (which forces e.g.
+-    // SunAltitudeAngle to -1 regardless of what the map's sky rig was
+-    // authored with). Fall back to the old sentinel only for maps with no
+-    // MapDefaults.json entry yet.
+     FString MapName = World->GetMapName();
+     MapName.RemoveFromStart(World->StreamingLevelsPrefix);
+-    FWeatherParameters DefaultWeather;
+-    if (UWeatherJsonUtils::GetMapDefaultWeather(MapName, Episode->Weather->GetCurrentWeather(), DefaultWeather))
+-    {
+-      Episode->Weather->ApplyWeather(DefaultWeather);
+-      // The weather actor was spawned during this BeginPlay, so its own
+-      // BeginPlay (BP_CarlaWeather: per-town "DefaultWeathers" table, or a
+-      // hard-coded fallback + "<map> default weather not found") is deferred
+-      // until the world has begun play -- i.e. it runs AFTER the ApplyWeather
+-      // above and silently replaces the MapDefaults.json entry (observed on
+-      // every baked twin: sun 45/220 + fog 2.0 instead of the authored
+-      // defaults). For maps the blueprint table does not know, re-apply the
+-      // JSON entry on the next tick so the file wins over the fallback. Maps
+-      // in the table (the stock towns) are left to the table on purpose: it
+-      // is what they have always rendered with, and several JSON entries
+-      // (e.g. Town10HD_Opt) disagree with it.
+-      // A Multi-GPU secondary gets the primary's weather instead.
+-      if (Episode->bIsPrimaryServer && !IsMapInBlueprintWeatherTable(Episode->Weather, MapName))
+-      {
+-        TWeakObjectPtr<AWeather> WeakWeather = Episode->Weather;
+-        World->GetTimerManager().SetTimerForNextTick([WeakWeather, DefaultWeather]()
+-        {
+-          if (WeakWeather.IsValid())
+-          {
+-            WeakWeather->ApplyWeather(DefaultWeather);
+-          }
+-        });
+-      }
+-    }
+-    else
+-    {
+-      Episode->Weather->ApplyWeather(carla::rpc::WeatherParameters::Default);
+-    }
++    FWeatherParameters Defaults;
++    FWeatherParameters MapDefaults;
++    if (UWeatherJsonUtils::GetMapDefaultWeather(MapName, Defaults, MapDefaults))
++        Defaults = MapDefaults;
++    if (UDriscaApiSubsystem *Environment = GameInstance->GetSubsystem<UDriscaApiSubsystem>())
++        Environment->InitializeEnvironment(World, Defaults);
+   }
+ 
+   /// @todo Recorder should not tick here, FCarlaEngine should do it.
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaHUD.cpp b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaHUD.cpp
+index 25ce203..cfb09f0 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaHUD.cpp
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaHUD.cpp
+@@ -6,6 +6,8 @@
+ 
+ #include "CarlaHUD.h"
+ 
++#include "DrivingView/DrivingViewHUD.h"
++
+ #include <util/ue-header-guard-begin.h>
+ #include "Engine/Engine.h"
+ #include "Engine/Canvas.h"
+@@ -25,6 +27,8 @@ void ACarlaHUD::DrawHUD()
+     return;
+   }
+ 
++  DrivingViewHUD::DrawMirrors(*this, *Canvas);
++
+   if(DebugVehicle) {
+     float YL = 1600.0f;
+     float Y0 = 0.0f;
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Recorder/CarlaReplayer.h b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Recorder/CarlaReplayer.h
+index eaee3bf..3baea1a 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Recorder/CarlaReplayer.h
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Recorder/CarlaReplayer.h
+@@ -83,6 +83,20 @@ public:
+     return Enabled;
+   }
+ 
++  /// 录像编号优先映射；没有映射时允许调用方传入当前世界编号。
++  uint32_t ResolveActorId(uint32_t Id, bool bAllowCurrentId = true) const
++  {
++    const auto Found = MappedId.find(Id);
++    return Found != MappedId.end() ? Found->second : (bAllowCurrentId ? Id : 0);
++  }
++
++  /// DRISCA 接管视角后，原生回放只推进场景，不再移动 spectator。
++  void ClearFollowCamera()
++  {
++    FollowId = 0;
++    Autoplay.FollowId = 0;
++  }
++
+   // set episode
+   void SetEpisode(UCarlaEpisode *ThisEpisode)
+   {
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/GnssSensor.cpp b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/GnssSensor.cpp
+index 874a3a0..332ba17 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/GnssSensor.cpp
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/GnssSensor.cpp
+@@ -8,6 +8,7 @@
+ #include "Carla.h"
+ #include "Carla/Actor/ActorBlueprintFunctionLibrary.h"
+ #include "Carla/Game/CarlaEpisode.h"
++#include "Carla/Game/CarlaEngine.h"
+ #include "Carla/Game/CarlaStatics.h"
+ 
+ #include <util/disable-ue4-macros.h>
+@@ -75,6 +76,9 @@ void AGnssSensor::PostPhysTick(UWorld *World, ELevelTick TickType, float DeltaSe
+     TRACE_CPUPROFILER_EVENT_SCOPE_STR("AGnssSensor Stream Send");
+     DataStream.SerializeAndSend(*this, carla::geom::GeoLocation{LatitudeValue, LongitudeValue, AltitudeValue});
+   }
++
++  SampleFrameNo = static_cast<uint64>(FCarlaEngine::GetFrameCounter());
++  SampleSimulationTimeSeconds = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0;
+ }
+ 
+ void AGnssSensor::SetLatitudeDeviation(float Value)
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/GnssSensor.h b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/GnssSensor.h
+index a90edba..ccd653e 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/GnssSensor.h
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/GnssSensor.h
+@@ -59,6 +59,17 @@ public:
+   double GetLongitudeValue() const;
+   double GetAltitudeValue() const;
+ 
++  /// 最近一次实际计算该组值的世界帧与仿真时间。
++  uint64 GetSampleFrameNo() const
++  {
++    return SampleFrameNo;
++  }
++
++  double GetSampleSimulationTimeSeconds() const
++  {
++    return SampleSimulationTimeSeconds;
++  }
++
+ protected:
+ 
+   virtual void BeginPlay() override;
+@@ -78,4 +89,7 @@ private:
+   double LatitudeValue;
+   double LongitudeValue;
+   double AltitudeValue;
++
++  uint64 SampleFrameNo = 0;
++  double SampleSimulationTimeSeconds = 0.0;
+ };
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/InertialMeasurementUnit.cpp b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/InertialMeasurementUnit.cpp
+index 11447cb..181c542 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/InertialMeasurementUnit.cpp
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/InertialMeasurementUnit.cpp
+@@ -8,6 +8,7 @@
+ #include "Carla.h"
+ #include "Carla/Actor/ActorBlueprintFunctionLibrary.h"
+ #include "Carla/Actor/CarlaActor.h"
++#include "Carla/Game/CarlaEngine.h"
+ #include "Carla/Game/CarlaStatics.h"
+ #include "Carla/Sensor/WorldObserver.h"
+ #include "Carla/Vehicle/CarlaWheeledVehicle.h"
+@@ -232,6 +233,9 @@ void AInertialMeasurementUnit::PostPhysTick(UWorld *World, ELevelTick TickType,
+     TRACE_CPUPROFILER_EVENT_SCOPE(AInertialMeasurementUnit::SerializeAndSend);
+     DataStream.SerializeAndSend(*this, AccelerometerValue, GyroscopeValue, CompassValue);
+   }
++
++  SampleFrameNo = static_cast<uint64>(FCarlaEngine::GetFrameCounter());
++  SampleSimulationTimeSeconds = World != nullptr ? World->GetTimeSeconds() : 0.0;
+ }
+ 
+ void AInertialMeasurementUnit::SetAccelerationStandardDeviation(const FVector &Vec)
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/InertialMeasurementUnit.h b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/InertialMeasurementUnit.h
+index 2e2b92a..a440383 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/InertialMeasurementUnit.h
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/InertialMeasurementUnit.h
+@@ -73,6 +73,17 @@ public:
+ 
+   float GetCompassValue() const;
+ 
++  /// 最近一次实际计算该组值的世界帧与仿真时间。
++  uint64 GetSampleFrameNo() const
++  {
++    return SampleFrameNo;
++  }
++
++  double GetSampleSimulationTimeSeconds() const
++  {
++    return SampleSimulationTimeSeconds;
++  }
++
+   /// Based on OpenDRIVE's lon and lat, North is in (0.0f, -1.0f, 0.0f)
+   static const FVector CarlaNorthVector;
+ 
+@@ -106,5 +117,7 @@ private:
+ 
+   /// Magnetometer value calculated after each PostPhysTick
+   float CompassValue;
+-	
++
++  uint64 SampleFrameNo = 0;
++  double SampleSimulationTimeSeconds = 0.0;
+ };
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Server/CarlaServer.cpp b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Server/CarlaServer.cpp
+index 7931245..5c57a00 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Server/CarlaServer.cpp
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Server/CarlaServer.cpp
+@@ -1064,8 +1064,7 @@ void FCarlaServer::FPimpl::BindActions()
+     {
+       RESPOND_ERROR("set_weather_parameters internal error: unable to find weather:: weather is disabled");
+     }
+-    Weather->ApplyWeather(weather);
+-    return R<void>::Success();
++    RESPOND_ERROR("天气由 DRISCA 环境控制器管理，请使用 environment 接口");
+   };
+ 
+   // Environment map for the sky light: an equirectangular linear RGB(A) float
+@@ -3656,6 +3655,10 @@ BIND_SYNC(is_sensor_enabled_for_ros) << [this](carla::streaming::detail::stream_
+       const cr::Transform& offset,
+       std::string map_override) -> R<std::string>
+   {
++    if (replay_weather)
++    {
++      RESPOND_ERROR("DRISCA 环境不能由 CARLA 录像天气覆盖，请关闭 replay_weather");
++    }
+     REQUIRE_CARLA_EPISODE();
+     REQUIRE_PRIMARY_SERVER();
+     return R<std::string>(Episode->GetRecorder()->ReplayFile(
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.cpp b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.cpp
+index b31f75d..69e6ea1 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.cpp
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.cpp
+@@ -28,6 +28,7 @@ void UTrafficLightComponent::InitializeSign(const carla::road::Map &Map)
+   const double epsilon = 0.00001;
+ 
+   auto References = GetAllReferencesToThisSignal(Map);
++  TriggerZones.Reset();
+ 
+   for (auto& Reference : References)
+   {
+@@ -81,6 +82,15 @@ void UTrafficLightComponent::InitializeSign(const carla::road::Map &Map)
+               LaneDistance + epsilon, LaneDistance + LaneLength - epsilon);
+         }
+         FTransform BoxTransform = Map.ComputeTransform(signal_waypoint);
++        FTrafficLightTriggerZone Zone;
++        Zone.RoadId = static_cast<int32>(RoadId);
++        Zone.SectionId = static_cast<int32>(signal_waypoint.section_id);
++        Zone.LaneId = static_cast<int32>(lane);
++        Zone.S = signal_waypoint.s;
++        Zone.Transform = BoxTransform;
++        Zone.Extent = FVector(100*BoxLength, 100*BoxWidth, 100*BoxHeight);
++        TriggerZones.Add(Zone);
++
+         GenerateTrafficLightBox(BoxTransform, FVector(100*BoxLength, 100*BoxWidth, 100*BoxHeight));
+       }
+     }
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.h b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.h
+index 01dba56..cf109a7 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.h
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.h
+@@ -19,6 +19,32 @@ class UTrafficLightController;
+ // Delegate to define dispatcher
+ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLightChangeDispatcher);
+ 
++class UTrafficLightComponent;
++
++USTRUCT(BlueprintType)
++struct FTrafficLightTriggerZone
++{
++  GENERATED_BODY()
++
++  UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
++  int32 RoadId = 0;
++
++  UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
++  int32 SectionId = 0;
++
++  UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
++  int32 LaneId = 0;
++
++  UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
++  double S = 0.0;
++
++  UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
++  FTransform Transform = FTransform::Identity;
++
++  UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
++  FVector Extent = FVector::ZeroVector;
++};
++
+ /// Class representing an OpenDRIVE Traffic Signal
+ UCLASS(Blueprintable, ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
+ class CARLA_API UTrafficLightComponent : public USignComponent
+@@ -52,6 +78,12 @@ public:
+ 
+   virtual void InitializeSign(const carla::road::Map &Map) override;
+ 
++  /// 原生生成的停止触发盒来源，按生成顺序记录。
++  const TArray<FTrafficLightTriggerZone>& GetTriggerZones() const
++  {
++    return TriggerZones;
++  }
++
+   /// Deregister from the controller so streamed-out lights (World Partition)
+   /// never leave dangling entries behind.
+   virtual void OnComponentDestroyed(bool bDestroyingHierarchy) override;
+@@ -97,6 +129,9 @@ private:
+   UPROPERTY(Category = "Traffic Light", VisibleAnywhere)
+   UTrafficLightController *TrafficLightController = nullptr;
+ 
++  UPROPERTY(VisibleAnywhere)
++  TArray<FTrafficLightTriggerZone> TriggerZones;
++
+   // Vehicles that have entered the trigger box of the traffic light
+   UPROPERTY()
+   TArray<AWheeledVehicleAIController*> Vehicles;
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightController.h b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightController.h
+index 58e0fd6..a22782c 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightController.h
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightController.h
+@@ -89,6 +89,18 @@ public:
+   UFUNCTION(Category = "Traffic Controller", BlueprintCallable)
+   int GetSequence() const;
+ 
++  UFUNCTION(Category = "Traffic Controller", BlueprintPure)
++  int32 GetCurrentStateIndex() const
++  {
++    return CurrentState;
++  }
++
++  UFUNCTION(Category = "Traffic Controller", BlueprintPure)
++  int32 GetStateCount() const
++  {
++    return LightStates.Num();
++  }
++
+   UFUNCTION(Category = "Traffic Controller", BlueprintCallable)
+   void SetSequence(int InSequence);
+ 
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightGroup.h b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightGroup.h
+index 9b574b2..338117a 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightGroup.h
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightGroup.h
+@@ -39,6 +39,18 @@ public:
+   UFUNCTION(Category = "Traffic Group", BlueprintPure)
+   int GetJunctionId() const;
+ 
++  UFUNCTION(Category = "Traffic Group", BlueprintPure)
++  int32 GetCurrentControllerIndex() const
++  {
++    return CurrentController;
++  }
++
++  UFUNCTION(Category = "Traffic Group", BlueprintPure)
++  int32 GetControllerCount() const
++  {
++    return Controllers.Num();
++  }
++
+   UFUNCTION(Category = "Traffic Group", BlueprintCallable)
+   void ResetGroup();
+ 
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Weather/Sky.cpp b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Weather/Sky.cpp
+index db1002b..3fc939d 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Weather/Sky.cpp
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Weather/Sky.cpp
+@@ -431,8 +431,6 @@ void ASkyBase::BeginPlay()
+ 
+   TArray<AActor*> Fallbacks;
+   UGameplayStatics::GetAllActorsWithTag(World, FallbackSkyTag, Fallbacks);
+-  if (Fallbacks.IsEmpty())
+-    return;
+   for (AActor* Fallback : Fallbacks)
+   {
+     // SetSunActorReference attaches a DirectionalLight actor to the rig,
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Weather/Weather.cpp b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Weather/Weather.cpp
+index 4438463..6beb49e 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Weather/Weather.cpp
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Weather/Weather.cpp
+@@ -1301,6 +1301,8 @@ void AWeather::UpdateRain()
+ 
+ void AWeather::Tick(float DeltaSeconds)
+ {
++    if (bEnvironmentRenderer)
++        return;
+     Super::Tick(DeltaSeconds);
+     UpdateRain();
+     ReleaseDirectionalVSMInvalidateIfSunStill(GetWorld());
+@@ -1312,7 +1314,7 @@ void AWeather::BeginPlay()
+     Super::BeginPlay();
+     // BP_CarlaWeather is saved with "Start with Tick Enabled" off, which left
+     // UpdateRain dead: no rain volume followed the spectator or the sensors.
+-    SetActorTickEnabled(true);
++    SetActorTickEnabled(!bEnvironmentRenderer);
+ }
+ 
+ void AWeather::EndPlay(const EEndPlayReason::Type EndPlayReason)
+@@ -1537,10 +1539,30 @@ void AWeather::PushWeatherToSky()
+     TArray<AActor*> SkyActors;
+     UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkyBase::StaticClass(), SkyActors);
+     for (AActor* SkyActor : SkyActors)
+-        ApplyWeatherToSkyActor(SkyActor, Weather);
++        RenderSky(SkyActor, Weather, bEnvironmentRenderer
++            ? TOptional<float>(EnvironmentFogDensity) : TOptional<float>());
+ }
+ 
+-void AWeather::ApplyWeatherToSkyActor(AActor* SkyActor, const FWeatherParameters& Weather)
++void AWeather::ApplyWeatherToSkyActor(AActor* SkyActor, const FWeatherParameters& Parameters)
++{
++    if (SkyActor != nullptr && SkyActor->GetWorld()->IsGameWorld())
++    {
++        if (AWeather *Renderer = Cast<AWeather>(UGameplayStatics::GetActorOfClass(
++                SkyActor->GetWorld(), AWeather::StaticClass())))
++            Renderer->RenderCurrentSky(SkyActor);
++        return;
++    }
++    RenderSky(SkyActor, Parameters);
++}
++
++void AWeather::RenderCurrentSky(AActor *SkyActor) const
++{
++    if (bEnvironmentRenderer)
++        RenderSky(SkyActor, Weather, EnvironmentFogDensity);
++}
++
++void AWeather::RenderSky(AActor* SkyActor, const FWeatherParameters& Weather,
++    TOptional<float> NativeFogDensity)
+ {
+     if (SkyActor == nullptr)
+         return;
+@@ -1605,6 +1627,14 @@ void AWeather::ApplyWeatherToSkyActor(AActor* SkyActor, const FWeatherParameters
+             TEXT("UpdateSkySphereColor")};
+         for (const TCHAR* FunctionName : UpdateFunctionNames)
+         {
++            // 渐变每帧刷新参数，但已有天空球无需每帧销毁重建。
++            if (NativeFogDensity.IsSet() && FCString::Strcmp(FunctionName, TEXT("SetSkySphere")) == 0)
++            {
++                FObjectProperty *Property = CastField<FObjectProperty>(
++                    FindPropertyByAuthoredName(SkyActor->GetClass(), TEXT("SkySphere")));
++                if (Property && IsValid(Property->GetObjectPropertyValue_InContainer(SkyActor)))
++                    continue;
++            }
+             UFunction* Function = SkyActor->FindFunction(FunctionName);
+             if (Function != nullptr && Function->ParmsSize == 0)
+                 SkyActor->ProcessEvent(Function, nullptr);
+@@ -1824,8 +1854,10 @@ void AWeather::ApplyWeatherToSkyActor(AActor* SkyActor, const FWeatherParameters
+             : nullptr;
+         if (FogComponent != nullptr)
+         {
+-            FogComponent->SetFogDensity(
+-                Weather.FogDensity * CVarCarlaWeatherFogDensityScale.GetValueOnGameThread());
++            FogComponent->SetFogDensity(NativeFogDensity.IsSet()
++                ? NativeFogDensity.GetValue()
++                : Weather.FogDensity * CVarCarlaWeatherFogDensityScale.GetValueOnGameThread());
++            FogComponent->SetFogHeightFalloff(Weather.FogFalloff);
+             FogComponent->SetStartDistance(Weather.FogDistance * 100.0f);
+             FogComponent->SetFogCutoffDistance(0.0f);
+         }
+@@ -2506,6 +2538,16 @@ void AWeather::ApplyWeatherToSkyActor(AActor* SkyActor, const FWeatherParameters
+             FillSkyPostProcessFallback(PostProcessComponent);
+         }
+     }
++    // 流式新天空和普通刷新都经过同一出口，月晕处理不能覆盖指定散射参数。
++    if (NativeFogDensity.IsSet())
++    {
++        if (USkyAtmosphereComponent *Atmosphere = SkyActor->FindComponentByClass<USkyAtmosphereComponent>())
++        {
++            Atmosphere->SetMieScatteringScale(Weather.MieScatteringScale);
++            Atmosphere->SetRayleighScatteringScale(Weather.RayleighScatteringScale);
++        }
++    }
++
+ }
+ 
+ void AWeather::FillSkyPostProcessFallback(UPostProcessComponent* PostProcessComponent)
+@@ -2594,8 +2636,52 @@ void AWeather::UpdateStreetLightsForDayNight()
+     CarlaLightSubsystem->NotifyDayTimeChange(bIsDay);
+ }
+ 
++bool AWeather::RenderEnvironment(const FWeatherParameters &Projection,
++    float NativeFogDensity, FString &Error)
++{
++    TArray<AActor *> Skies;
++    UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkyBase::StaticClass(), Skies);
++    if (Skies.IsEmpty())
++    {
++        Error = TEXT("当前地图缺少天空组件，无法应用环境");
++        return false;
++    }
++    for (AActor *Sky : Skies)
++    {
++        if (Sky->FindComponentByClass<UExponentialHeightFogComponent>() == nullptr ||
++            Sky->FindComponentByClass<USkyAtmosphereComponent>() == nullptr)
++        {
++            Error = TEXT("天空缺少高度雾或大气组件，无法应用环境");
++            return false;
++        }
++    }
++    bEnvironmentRenderer = true;
++    SetActorTickEnabled(false);
++    Weather = Projection;
++    EnvironmentFogDensity = NativeFogDensity;
++    ++ApplySerial;
++    CheckWeatherPostProcessEffects();
++    PushWeatherToSky();
++    UpdateStreetLightsForDayNight();
++    UpdateRain();
++    return true;
++}
++
++void AWeather::MaintainEnvironment()
++{
++    if (!bEnvironmentRenderer) return;
++    UpdateRain();
++    ReleaseDirectionalVSMInvalidateIfSunStill(GetWorld());
++    ReleaseLightingUpdateIfSettled(GetWorld());
++}
++
+ void AWeather::ApplyWeather(const FWeatherParameters& InWeather)
+ {
++    if (GetWorld() != nullptr && GetWorld()->IsGameWorld())
++    {
++        UE_LOG(LogCarla, Error, TEXT("运行期天气由 DRISCA 环境控制器管理，请使用 environment 接口"));
++        return;
++    }
+     ++ApplySerial;
+     SetWeather(InWeather);
+     CheckWeatherPostProcessEffects();
+@@ -2660,6 +2746,11 @@ void AWeather::NotifyWeather(ASensor* Sensor)
+ 
+ void AWeather::SetWeather(const FWeatherParameters& InWeather)
+ {
++    if (GetWorld() != nullptr && GetWorld()->IsGameWorld())
++    {
++        UE_LOG(LogCarla, Error, TEXT("运行期禁止直接修改天气投影，请使用 environment 接口"));
++        return;
++    }
+     Weather = InWeather;
+ }
+ 
+diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Weather/Weather.h b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Weather/Weather.h
+index 58283a5..7ccb944 100644
+--- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Weather/Weather.h
++++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Weather/Weather.h
+@@ -43,6 +43,14 @@ public:
+ 
+   AWeather(const FObjectInitializer& ObjectInitializer);
+ 
++  /// 控制器提供一次只读渲染投影；Actor 不持有环境目标或渐变。
++  bool RenderEnvironment(const FWeatherParameters &Projection, float NativeFogDensity, FString &Error);
++  void MaintainEnvironment();
++  void RenderCurrentSky(AActor *SkyActor) const;
++  static void RenderSky(AActor *SkyActor, const FWeatherParameters &Projection,
++      TOptional<float> NativeFogDensity = TOptional<float>());
++
++
+   /// Update the weather parameters and notifies it to the blueprint's event
+   UFUNCTION(BlueprintCallable)
+   void ApplyWeather(const FWeatherParameters &WeatherParameters);
+@@ -170,5 +178,16 @@ private:
+   UPROPERTY(EditAnywhere, Category = "Weather")
+   bool DayNightCycle = true;
+ 
++  bool bEnvironmentRenderer = false;
++  float EnvironmentFogDensity = 0.0f;
+   uint64 ApplySerial = 0u;
+ };
++
++/// 运行期仅使用原生执行器，避免旧天气蓝图的 BeginPlay 再次修改材质与雨粒子。
++UCLASS()
++class CARLA_API ADriscaEnvironmentRenderer : public AWeather
++{
++  GENERATED_BODY()
++public:
++  ADriscaEnvironmentRenderer(const FObjectInitializer &Initializer) : AWeather(Initializer) {}
++};
