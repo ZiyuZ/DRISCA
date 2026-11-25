@@ -34,6 +34,7 @@ from drisca.core.weather import to_payload
 from drisca.simulator.events import map_event
 from drisca.simulator.state import DrivingState, project_snapshot, research_ready
 from drisca.simulator.ws_client import WorkerWSClient
+from drisca.storage.models import TrafficRow
 from drisca.storage.writer import BatchDataWriter
 from drisca.traffic import AutopilotController, RoadGraph, SignalTracker, TrafficManager, TrafficScene
 
@@ -342,6 +343,31 @@ class SimulatorApp:
                     )
                 if writer is not None:
                     writer.enqueue(driving.to_frame_row(cfg.session_id))
+                    if snapshot.vehicles.size > 1:
+                        ts = snapshot.wall_time_us / 1e6
+                        traffic_rows: list[TrafficRow] = []
+                        for rec in snapshot.vehicles:
+                            aid = int(rec['actor_id'])
+                            if aid == self.ego_actor_id:
+                                continue
+                            vel = rec['velocity']
+                            spd = float((vel[0] ** 2 + vel[1] ** 2 + vel[2] ** 2) ** 0.5)
+                            traffic_rows.append(
+                                TrafficRow(
+                                    session_id=cfg.session_id,
+                                    frame_no=snapshot.frame_no,
+                                    timestamp=ts,
+                                    actor_id=aid,
+                                    location_x=float(rec['location'][0]),
+                                    location_y=float(rec['location'][1]),
+                                    location_z=float(rec['location'][2]),
+                                    rotation_yaw=float(rec['rotation'][1]),
+                                    speed=spd,
+                                    road_id=int(rec['road_id']),
+                                    lane_id=int(rec['lane_id']),
+                                )
+                            )
+                        writer.enqueue_traffic(traffic_rows)
                 if time.monotonic() - last_telemetry >= TELEMETRY_INTERVAL:
                     channel.publish_telemetry(driving.to_telemetry_snapshot(sequence))
                     sequence += 1

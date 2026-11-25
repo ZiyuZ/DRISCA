@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class SessionStatus(StrEnum):
@@ -86,6 +86,23 @@ class FrameRow:
 
 
 @dataclass(slots=True, frozen=True)
+class TrafficRow:
+    """背景交通流逐帧轨迹记录（仅保存非主车，单位 m、deg、m/s）。"""
+
+    session_id: str
+    frame_no: int
+    timestamp: float
+    actor_id: int
+    location_x: float
+    location_y: float
+    location_z: float
+    rotation_yaw: float
+    speed: float
+    road_id: int
+    lane_id: int
+
+
+@dataclass(slots=True, frozen=True)
 class EventRow:
     session_id: str
     command_id: str | None  # 远程操作关联的命令编号
@@ -165,6 +182,21 @@ CREATE TABLE data (
     PRIMARY KEY (session_id, frame_no)
 );
 
+CREATE TABLE traffic (
+    session_id TEXT NOT NULL,
+    frame_no INTEGER NOT NULL,
+    timestamp REAL NOT NULL,
+    actor_id INTEGER NOT NULL,
+    location_x REAL NOT NULL,
+    location_y REAL NOT NULL,
+    location_z REAL NOT NULL,
+    rotation_yaw REAL NOT NULL,
+    speed REAL NOT NULL,
+    road_id INTEGER NOT NULL,
+    lane_id INTEGER NOT NULL,
+    PRIMARY KEY (session_id, frame_no, actor_id)
+);
+
 CREATE TABLE event (
     session_id TEXT NOT NULL,
     command_id TEXT,
@@ -177,6 +209,8 @@ CREATE TABLE event (
 );
 
 CREATE INDEX idx_data_session_frame ON data (session_id, frame_no);
+
+CREATE INDEX idx_traffic_session_frame ON traffic (session_id, frame_no);
 
 CREATE INDEX idx_event_session_frame ON event (session_id, frame_no);
 

@@ -1,4 +1,4 @@
-"""逐帧数据的后台批量写入。"""
+"""逐帧主车与背景交通流数据的后台批量写入。"""
 
 import queue
 import sqlite3
@@ -8,7 +8,7 @@ from contextlib import closing
 from dataclasses import astuple, fields
 from pathlib import Path
 
-from .models import SCHEMA_VERSION, FrameRow
+from .models import SCHEMA_VERSION, FrameRow, TrafficRow
 
 
 class BatchDataWriter:
@@ -16,7 +16,7 @@ class BatchDataWriter:
         self.db_path = db_path
         self.batch_size = batch_size
         self.flush_interval = flush_interval
-        self.queue: queue.Queue[FrameRow | None] = queue.Queue(maxsize=10000)
+        self.queue: queue.Queue[FrameRow | TrafficRow | None] = queue.Queue(maxsize=50000)
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.error: BaseException | None = None
 
@@ -27,6 +27,14 @@ class BatchDataWriter:
         if self.error is not None:
             raise RuntimeError('数据写入线程失败') from self.error
         self.queue.put_nowait(row)
+
+    def enqueue_traffic(self, rows: list[TrafficRow]) -> None:
+        if not rows:
+            return
+        if self.error is not None:
+            raise RuntimeError('数据写入线程失败') from self.error
+        for row in rows:
+            self.queue.put_nowait(row)
 
     def close(self) -> None:
         if self.thread.is_alive():
@@ -48,8 +56,10 @@ class BatchDataWriter:
             if version != SCHEMA_VERSION:
                 raise RuntimeError('数据库结构版本不匹配；请删除测试库或运行一次性迁移脚本。')
             connection.execute('PRAGMA synchronous=NORMAL')
-            sql = f'INSERT INTO data VALUES ({", ".join("?" for _ in fields(FrameRow))})'
-            rows: list[FrameRow] = []
+            data_sql = f'INSERT INTO data VALUES ({", ".join("?" for _ in fields(FrameRow))})'
+            traffic_sql = f'INSERT INTO traffic VALUES ({", ".join("?" for _ in fields(TrafficRow))})'
+            data_rows: list[FrameRow] = []
+            traffic_rows: list[TrafficRow] = []
             deadline = time.monotonic() + self.flush_interval
             done = False
             while not done:
@@ -57,15 +67,22 @@ class BatchDataWriter:
                     item = self.queue.get(timeout=max(0, deadline - time.monotonic()))
                     if item is None:
                         done = True
+                    elif isinstance(item, FrameRow):
+                        data_rows.append(item)
                     else:
-                        rows.append(item)
+                        traffic_rows.append(item)
                 except queue.Empty:
                     pass
-                if rows and (done or len(rows) >= self.batch_size or time.monotonic() >= deadline):
+                pending = len(data_rows) + len(traffic_rows)
+                if pending and (done or pending >= self.batch_size or time.monotonic() >= deadline):
                     connection.execute('BEGIN IMMEDIATE')
-                    connection.executemany(sql, (astuple(row) for row in rows))
+                    if data_rows:
+                        connection.executemany(data_sql, (astuple(row) for row in data_rows))
+                        data_rows.clear()
+                    if traffic_rows:
+                        connection.executemany(traffic_sql, (astuple(row) for row in traffic_rows))
+                        traffic_rows.clear()
                     connection.commit()
-                    rows.clear()
                     deadline = time.monotonic() + self.flush_interval
-                elif not rows and time.monotonic() >= deadline:
+                elif not pending and time.monotonic() >= deadline:
                     deadline = time.monotonic() + self.flush_interval

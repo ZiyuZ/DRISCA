@@ -74,7 +74,7 @@ class StorageDB:
             return
         placeholders = ','.join('?' for _ in session_ids)
         with self.connection:
-            for table in ('data', 'event', 'session'):
+            for table in ('data', 'traffic', 'event', 'session'):
                 self.connection.execute(
                     f'DELETE FROM {table} WHERE session_id IN ({placeholders})', session_ids
                 )
@@ -130,9 +130,13 @@ class StorageDB:
             raise ValueError('导出会话列表不能为空')
         output_dir.mkdir(parents=True, exist_ok=True)
         placeholders = ','.join('?' for _ in session_ids)
-        for index, (table, filename) in enumerate(
-            (('session', 'sessions.csv'), ('data', 'data.csv'), ('event', 'events.csv')), start=1
-        ):
+        tables = (
+            ('session', 'sessions.csv'),
+            ('data', 'data.csv'),
+            ('traffic', 'traffic.csv'),
+            ('event', 'events.csv'),
+        )
+        for index, (table, filename) in enumerate(tables, start=1):
             cursor = self.connection.execute(
                 f'SELECT * FROM {table} WHERE session_id IN ({placeholders})', session_ids
             )
@@ -143,4 +147,4 @@ class StorageDB:
                 writer.writerow(columns)
                 writer.writerows(_format_csv_row(row, exact_indices) for row in cursor)
             if progress is not None:
-                progress(index / 3 * 100)
+                progress(index / len(tables) * 100)
