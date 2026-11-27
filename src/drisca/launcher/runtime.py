@@ -265,7 +265,11 @@ class Runtime:
             code = process.wait()
             expected_stop = expected_stop or self.state['unreal']['phase'] == 'stopping'
             if not expected_stop:
-                raise RuntimeError(f'CARLA Unreal 已退出：{code}')
+                if code == 0:
+                    self.log('CARLA Unreal 已关闭（退出码：0）', 'WARNING')
+                    expected_stop = True
+                else:
+                    raise RuntimeError(f'CARLA Unreal 异常退出：{code}')
         except Exception:
             if process is not None and process.poll() is None:
                 self._terminate_carla(process)

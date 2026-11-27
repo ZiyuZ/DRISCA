@@ -15,10 +15,10 @@ toggle_light_high_beam = "l"
 toggle_light_left_blinker = "z"
 toggle_light_right_blinker = "x"
 toggle_light_interior = "i"
-drive_forward = "up"
-drive_backward = "down"
-drive_left = "left"
-drive_right = "right"
+drive_forward = "w"
+drive_backward = "s"
+drive_left = "a"
+drive_right = "d"
 
 [wheel]
 enable_wheel = false

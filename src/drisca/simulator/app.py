@@ -457,6 +457,7 @@ class SimulatorApp:
                 ego_x=self.last_driving.location[0],
                 ego_y=self.last_driving.location[1],
                 ego_yaw_deg=self.last_driving.rotation[1],
+                ego_speed_mps=self.last_driving.speed,
                 ego_road_id=self.last_driving.road_id,
                 ego_lane_id=self.last_driving.lane_id,
                 scene=self.last_scene,
@@ -660,7 +661,14 @@ class SimulatorApp:
         if event.name == 'driver_request':
             self._pending_mode_toggle = True
             logger.info('收到驾驶人自动驾驶切换请求，下一交换帧执行模式切换')
+        if event.name == 'collision':
+            payload = raw.get('payload') or {}
+            intensity = float(payload.get('intensity', 0.0))
+            other = str(payload.get('other_actor_type') or payload.get('other_actor_id') or '障碍物')
+            logger.warning(f'检测到主车碰撞：对象={other}，碰撞强度={intensity:.1f}')
         if event.name == 'lane_invasion':
             markings = (raw.get('payload') or {}).get('markings') or ()
             self.invaded_lane_marking = ', '.join(str(item) for item in markings)
+            if self.invaded_lane_marking:
+                logger.info(f'检测到主车压线/越线：{self.invaded_lane_marking}')
         channel.send_event(event)

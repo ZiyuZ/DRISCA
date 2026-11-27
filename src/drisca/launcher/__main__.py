@@ -217,8 +217,8 @@ def main() -> None:
             js_api=bridge,
             frameless=True,
             easy_drag=False,
-            width=1200,
-            height=780,
+            width=1024,
+            height=768,
             min_size=(840, 560),
         )
         assert bridge._window is not None
