@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "docs:build": "bun prepare.mjs && vitepress build"
+    "docs:dev": "vitepress dev",
+    "docs:build": "vitepress build",
+    "docs:preview": "vitepress preview"
   },
   "devDependencies": {
     "mermaid": "^12.3.0",

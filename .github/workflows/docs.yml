@@ -14,10 +14,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      DRISCA_REPOSITORY: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.4"

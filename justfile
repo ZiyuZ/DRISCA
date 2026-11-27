@@ -27,6 +27,15 @@ frontend-build:
 launcher *args:
     uv run -m drisca.launcher {{ args }}
 
+maps *args:
+    uv run -m drisca.maps {{ args }}
+
+docs-dev:
+    bun run --cwd .github/docs-site docs:dev
+
+docs-build:
+    bun run --cwd .github/docs-site docs:build
+
 # =====================
 #        发布
 # =====================

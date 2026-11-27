@@ -3,37 +3,35 @@ layout: home
 hero:
   name: DRISCA
   text: 驾驶行为研究实验平台
-  tagline: 基于 CARLA，连接实验配置、模拟驾驶与数据记录
+  tagline: 基于 CARLA UE5，连接实验编排、模拟驾驶、交通流控制与数据记录
   image:
-    src: /assets/icon.png
+    src: /icon.png
     alt: DRISCA 标志
   actions:
     - theme: brand
-      text: 探索系统设计
-      link: /design/01-Architecture
+      text: 快速开始
+      link: /guide/01-QuickStart
     - theme: alt
-      text: 查看开发路线图
-      link: /design/06-Roadmap
+      text: 构建与部署
+      link: /deploy/01-CarlaSourceAndPatch
+    - theme: alt
+      text: 系统设计
+      link: /design/01-Architecture
 features:
-  - title: 准备与控制实验
-    details: 在桌面端管理实验预设、调整场景并观察运行状态。
-    link: /design/04-LauncherDesign
-    linkText: 桌面管理端设计
-  - title: 模拟驾驶体验
-    details: 结合 CARLA 场景、车载画面和驾驶外设，开展驾驶行为实验。
-    link: /design/01-Architecture
-    linkText: 系统架构
-  - title: 记录与分析
-    details: 保存实验会话、车辆状态与事件，为后续分析提供数据。
-    link: /design/02-DataStructures
-    linkText: 数据结构与协议
+  - title: 桌面实验管理
+    details: 在桌面管理端准备实验预设、调整天气与交通流、下发语音指令并记录实验标记。
+    link: /guide/02-ExperimentWorkflow
+    linkText: 查看实验流程
+  - title: 原生驾驶与交通流
+    details: CARLA 原生渲染主视图与三路后视镜，支持多视角切换、背景交通流与交互场景触发。
+    link: /guide/03-SceneAndTraffic
+    linkText: 场景与交通流
+  - title: 记录、回放与导出
+    details: 自动落盘主车数据、背景车轨迹与实验事件，支持一键导出 CSV 和多视角录像回放。
+    link: /guide/04-DataAndReplay
+    linkText: 数据与回放
+  - title: 从零构建与地图扩展
+    details: 提供完整的 CARLA 补丁接入、Shipping 打包流程以及独立地图包的制作与安装说明。
+    link: /deploy/01-CarlaSourceAndPatch
+    linkText: 构建与部署指南
 ---
-
-## 从这里开始
-
-DRISCA 当前处于实现与实验环境验证阶段。基础契约层、驾驶模拟端和管理端已有实现；管理端采用 React 与 shadcn/ui，桌面壳采用 pywebview 无边框窗口，交互原型保存在 `prototypes/launcher/`。[快速开始](./guide/01-QuickStart.md)提供环境准备与启动步骤；[系统架构](./design/01-Architecture.md)介绍平台的组成与实验流程；[开发路线图](./design/06-Roadmap.md)记录阶段目标。
-
-配置文件位置与填写示例见[配置管理](./guide/05-Configuration.md)。开发者可分别查阅[配置模型](./design/08-ConfigurationModels.md)、[进程通信](./design/07-Protocol.md)和[运行状态与实验数据](./design/02-DataStructures.md)。
-可从[快速开始](./guide/01-QuickStart.md)或 [CARLA 服务端](./guide/02-CarlaServer.md)进入。
-
-渲染链路与已有测量收录在[参考资料](./reference/RenderingPipeline.md)。

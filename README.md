@@ -8,37 +8,31 @@
   <p>
     <img src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square" alt="平台：Windows">
     <img src="https://img.shields.io/badge/Python-3.14-3776AB?style=flat-square" alt="Python 3.14">
+    <img src="https://img.shields.io/badge/CARLA-UE5-2E7D32?style=flat-square" alt="CARLA UE5">
   </p>
   <p>
     <a href="docs/index.md">文档首页</a> ·
-    <a href="docs/design/01-Architecture.md">系统架构</a> ·
-    <a href="docs/design/04-LauncherDesign.md">桌面管理端设计</a> ·
-    <a href="docs/design/06-Roadmap.md">开发路线图</a>
+    <a href="docs/guide/01-QuickStart.md">使用指南</a> ·
+    <a href="docs/deploy/01-CarlaSourceAndPatch.md">构建与部署</a> ·
+    <a href="docs/design/01-Architecture.md">系统设计</a>
   </p>
 </div>
 
 ---
 
-DRISCA 当前处于实现阶段。环境准备与启动操作见[快速开始](docs/guide/01-QuickStart.md)，功能与接口见项目设计文档。
+DRISCA 是面向 Windows 平台的驾驶行为研究实验平台，基于 CARLA UE5 构建。操作者通过桌面管理端完成实验准备、实时控制、场景与交通流编排、录像回放与数据导出；被试在 CARLA 原生驾驶窗口中参与实验。
 
-## 项目目标
+## 核心能力
 
-DRISCA 基于 CARLA，为驾驶行为研究提供实验环境。平台支持实验配置、模拟驾驶、运行状态监测和实验数据记录，供研究人员组织和开展驾驶实验。
+- **实验编排与控制**：通过预设管理地图、车辆、天气、交通流、语音指令和实验打点；支持运行期实时干预和一键停止。
+- **原生驾驶与多视角**：主视图与三路后视镜在 CARLA Unreal 内直接渲染，支持车内视角、第三人称追尾视角和自由视角平滑切换。
+- **环境与交通流**：独立组合日照与天气、添加局部球雾区域；内置自研背景交通流与六类常见交互场景事件。
+- **数据记录与回放**：自动记录主车状态、背景车辆状态与实验事件到 SQLite 并支持导出 CSV；支持录像回放、环境状态同步和多视角切车观察。
 
-平台由桌面管理端和驾驶模拟端组成。操作者通过桌面端准备和控制实验、查看遥测数据并导出记录；被试通过驾驶画面、方向盘和踏板参与实验。
+## 文档导航
 
-## 项目文档
-
-| 文档 | 内容 |
-| --- | --- |
-| [快速开始](docs/guide/01-QuickStart.md) | 环境准备与启动流程 |
-| [常见问题](docs/guide/04-FAQ.md) | 常见问题与处理方法 |
-| [CARLA 服务端](docs/guide/02-CarlaServer.md) | 服务端启动与配置 |
-| [自定义地图](docs/guide/03-CarlaUE.md) | Unreal 编辑器与地图导入 |
-| [系统架构](docs/design/01-Architecture.md) | 进程、模块、实验流程与存储设计 |
-| [核心数据结构与协议契约](docs/design/02-DataStructures.md) | 配置、通信协议与数据模型 |
-| [模块职责与 API 规范](docs/design/03-ModuleAPI.md) | 模块职责与接口设计 |
-| [原生 WebSocket 接口](docs/design/11-NativeAPI.md) | 命令批次、快照布局、道路信号与控制归属 |
-| [桌面管理端设计](docs/design/04-LauncherDesign.md) | 页面布局与操作流程 |
-| [渲染与画面传输链路](docs/reference/RenderingPipeline.md) | 相机画面处理与渲染 |
-| [开发路线图](docs/design/06-Roadmap.md) | 阶段目标与规划 |
+| 板块 | 内容 | 入口 |
+| --- | --- | --- |
+| **使用指南** | 面向实验操作人员，涵盖环境准备、实验流程、场景与交通流操作、数据导出与回放 | [快速开始](docs/guide/01-QuickStart.md) |
+| **构建与部署** | 面向环境部署与二次开发者，涵盖 CARLA 补丁与自研源码接入、打包与自定义地图包 | [CARLA 源码与补丁接入](docs/deploy/01-CarlaSourceAndPatch.md) |
+| **系统设计** | 面向开发者，涵盖系统架构、原生 WebSocket 协议、交通流、数据契约与路线图 | [系统架构](docs/design/01-Architecture.md) |
