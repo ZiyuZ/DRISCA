@@ -150,12 +150,12 @@ def doctor(env: MapEnvironment) -> list[CheckItem]:
             )
         )
 
-    pack_script = env.carla_pack_script
+    runuat = env.engine_root / 'Engine' / 'Build' / 'BatchFiles' / 'RunUAT.bat' if env.engine_root else None
     items.append(
         CheckItem(
-            name='carla_pack.py',
-            ok=pack_script is not None and pack_script.is_file(),
-            detail=str(pack_script or '未找到'),
+            name='RunUAT.bat',
+            ok=runuat is not None and runuat.is_file(),
+            detail=str(runuat or '未找到'),
         )
     )
     items.append(

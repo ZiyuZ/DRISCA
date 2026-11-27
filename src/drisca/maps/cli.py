@@ -160,7 +160,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.command == 'install':
             server = _require_server(args)
-            info = install_pack(args.pack, server, force=args.force, carla_root=args.carla_root)
+            info = install_pack(args.pack, server, force=args.force)
             maps_text = ', '.join(info.maps) if info.maps else '无'
             print(f'已安装地图包：{info.name}（版本 {info.version or "-"}，地图：{maps_text}）')
             return 0
