@@ -1,3 +1,4 @@
+import { zhCN, format } from "../i18n";
 import { NumberInput } from "./number-input";
 import { ChevronDown } from "lucide-react";
 import type { FogRegion, Weather } from "../types/api";
@@ -17,33 +18,38 @@ type Props = {
   onChange: (weather: Weather) => void;
 };
 const presets = [
-  ["Default", "默认"],
-  ["ClearNoon", "晴朗正午"],
-  ["CloudyNoon", "阴天正午"],
-  ["WetNoon", "湿润正午"],
-  ["WetCloudyNoon", "湿润阴天"],
-  ["MidRainyNoon", "中雨正午"],
-  ["HardRainNoon", "大雨正午"],
-  ["SoftRainNoon", "小雨正午"],
-  ["ClearSunset", "晴朗傍晚"],
-  ["CloudySunset", "阴天傍晚"],
-  ["WetSunset", "湿润傍晚"],
-  ["WetCloudySunset", "湿润阴天傍晚"],
-  ["MidRainSunset", "中雨傍晚"],
-  ["HardRainSunset", "大雨傍晚"],
-  ["SoftRainSunset", "小雨傍晚"],
-  ["ClearNight", "晴朗夜间"],
-  ["CloudyNight", "阴天夜间"],
-  ["WetNight", "湿润夜间"],
-  ["WetCloudyNight", "湿润阴天夜间"],
-  ["MidRainyNight", "中雨夜间"],
-  ["HardRainNight", "大雨夜间"],
-  ["SoftRainNight", "小雨夜间"],
-  ["DustStorm", "沙尘暴"],
-  ["Custom", "自定义"],
+  ["Default", zhCN.weather.presetDefault],
+  ["ClearNoon", zhCN.weather.presetClearNoon],
+  ["CloudyNoon", zhCN.weather.presetCloudyNoon],
+  ["WetNoon", zhCN.weather.presetWetNoon],
+  ["WetCloudyNoon", zhCN.weather.presetWetCloudyNoon],
+  ["MidRainyNoon", zhCN.weather.presetMidRainyNoon],
+  ["HardRainNoon", zhCN.weather.presetHardRainNoon],
+  ["SoftRainNoon", zhCN.weather.presetSoftRainNoon],
+  ["ClearSunset", zhCN.weather.presetClearSunset],
+  ["CloudySunset", zhCN.weather.presetCloudySunset],
+  ["WetSunset", zhCN.weather.presetWetSunset],
+  ["WetCloudySunset", zhCN.weather.presetWetCloudySunset],
+  ["MidRainSunset", zhCN.weather.presetMidRainSunset],
+  ["HardRainSunset", zhCN.weather.presetHardRainSunset],
+  ["SoftRainSunset", zhCN.weather.presetSoftRainSunset],
+  ["ClearNight", zhCN.weather.presetClearNight],
+  ["CloudyNight", zhCN.weather.presetCloudyNight],
+  ["WetNight", zhCN.weather.presetWetNight],
+  ["WetCloudyNight", zhCN.weather.presetWetCloudyNight],
+  ["MidRainyNight", zhCN.weather.presetMidRainyNight],
+  ["HardRainNight", zhCN.weather.presetHardRainNight],
+  ["SoftRainNight", zhCN.weather.presetSoftRainNight],
+  ["DustStorm", zhCN.weather.presetDustStorm],
+  ["Custom", zhCN.weather.presetCustom],
 ] as const;
 export const weatherName = (value: string) =>
   presets.find(([key]) => key === value)?.[1] ?? value;
+
+const weatherTypeName = (value: string) => {
+  const type = value.replace(/(?:Noon|Sunset|Night)$/, "");
+  return zhCN.weather.typeNames[type as keyof typeof zhCN.weather.typeNames] ?? weatherName(value);
+};
 
 type Row = {
   path: string[];
@@ -54,22 +60,22 @@ type Row = {
   percent?: boolean;
 };
 const primary: Row[] = [
-  { path: ["cloudiness"], label: "云量 · %", min: 0, max: 100, step: 1, percent: true },
-  { path: ["precipitation", "rain"], label: "降雨 · %", min: 0, max: 100, step: 1, percent: true },
-  { path: ["surface", "wetness"], label: "路面湿润 · %", min: 0, max: 100, step: 1, percent: true },
-  { path: ["sun", "elevation_deg"], label: "太阳高度 · °", min: -90, max: 90, step: 1 },
-  { path: ["fog", "density"], label: "雾密度参数", min: 0, max: 10, step: 0.001 },
-  { path: ["wind"], label: "风 · %", min: 0, max: 100, step: 1, percent: true },
+  { path: ["cloudiness"], label: zhCN.weather.cloudiness, min: 0, max: 100, step: 1, percent: true },
+  { path: ["precipitation", "rain"], label: zhCN.weather.rain, min: 0, max: 100, step: 1, percent: true },
+  { path: ["surface", "wetness"], label: zhCN.weather.wetness, min: 0, max: 100, step: 1, percent: true },
+  { path: ["sun", "elevation_deg"], label: zhCN.weather.sunElevation, min: -90, max: 90, step: 1 },
+  { path: ["fog", "density"], label: zhCN.weather.fogDensity, min: 0, max: 10, step: 0.001 },
+  { path: ["wind"], label: zhCN.weather.wind, min: 0, max: 100, step: 1, percent: true },
 ];
 const extra: Row[] = [
-  { path: ["surface", "puddles"], label: "路面积水 · %", min: 0, max: 100, step: 1, percent: true },
-  { path: ["dust"], label: "沙尘 · %", min: 0, max: 100, step: 1, percent: true },
-  { path: ["sun", "azimuth_deg"], label: "太阳方位角 · °", min: 0, max: 359, step: 1 },
-  { path: ["fog", "distance_m"], label: "雾起始距离 · m", min: 0, max: 1000000, step: 100 },
-  { path: ["fog", "height_falloff"], label: "雾高度衰减参数", min: 0, max: 10000, step: 0.1 },
-  { path: ["scattering", "light"], label: "光散射参数", min: 0, max: 1000, step: 0.1 },
-  { path: ["scattering", "mie"], label: "米氏散射参数", min: 0, max: 1000, step: 0.001 },
-  { path: ["scattering", "rayleigh"], label: "瑞利散射参数", min: 0, max: 1000, step: 0.001 },
+  { path: ["surface", "puddles"], label: zhCN.weather.puddles, min: 0, max: 100, step: 1, percent: true },
+  { path: ["dust"], label: zhCN.weather.dust, min: 0, max: 100, step: 1, percent: true },
+  { path: ["sun", "azimuth_deg"], label: zhCN.weather.sunAzimuth, min: 0, max: 359, step: 1 },
+  { path: ["fog", "distance_m"], label: zhCN.weather.fogDistance, min: 0, max: 1000000, step: 100 },
+  { path: ["fog", "height_falloff"], label: zhCN.weather.fogFalloff, min: 0, max: 10000, step: 0.1 },
+  { path: ["scattering", "light"], label: zhCN.weather.scatteringLight, min: 0, max: 1000, step: 0.1 },
+  { path: ["scattering", "mie"], label: zhCN.weather.scatteringMie, min: 0, max: 1000, step: 0.001 },
+  { path: ["scattering", "rayleigh"], label: zhCN.weather.scatteringRayleigh, min: 0, max: 1000, step: 0.001 },
 ];
 const numberAt = (source: Weather, path: string[]): number => {
   let target: unknown = source;
@@ -83,11 +89,11 @@ const withNumber = (source: Weather, path: string[], value: number): Weather => 
   target[path[path.length - 1]] = value;
   return result;
 };
-const daylight = [["day", "白天", 75], ["dusk", "黄昏", 0], ["night", "夜晚", -30]] as const;
+const daylight = [["day", zhCN.weather.day, 75], ["dusk", zhCN.weather.dusk, 0], ["night", zhCN.weather.night, -30]] as const;
 const daylightValue = (weather: Weather) => weather.sun.elevation_deg > 6 ? "day" : weather.sun.elevation_deg < -6 ? "night" : "dusk";
 const weatherOptions = (presets: Record<string, Weather>) => Object.keys(presets)
   .filter(name => name.endsWith("Noon") || name === "DustStorm")
-  .map(name => [name, weatherName(name).replace(/正午$/, "")] as const);
+  .map(name => [name, weatherTypeName(name)] as const);
 const matchingWeather = (weather: Weather, presets: Record<string, Weather>) => weatherOptions(presets)
   .find(([name]) => [...primary, ...extra].filter(({ path }) => path[0] !== "sun").every(({ path }) =>
     numberAt(weather, path) === numberAt(presets[name], path)
@@ -96,7 +102,7 @@ const matchingWeather = (weather: Weather, presets: Record<string, Weather>) => 
 export function weatherDescription(weather: Weather, presets: Record<string, Weather>) {
   const light = daylight.find(([value]) => value === daylightValue(weather))![1];
   const name = matchingWeather(weather, presets) ?? weather.preset_name;
-  return `${light} · ${weatherName(name).replace(/正午|傍晚|夜间/g, "")}`;
+  return format(zhCN.weather.summary, { daylight: light, weather: weatherTypeName(name) });
 }
 
 export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
@@ -128,7 +134,7 @@ export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
   return (
     <div className="weather-editor">
       <div className="weather-field">
-        <span id={`${id}-daylight`}>日照</span>
+        <span id={`${id}-daylight`}>{zhCN.weather.daylight}</span>
         <SharedSelect
           aria-labelledby={`${id}-daylight`}
           value={daylightValue(weather)}
@@ -140,11 +146,11 @@ export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
         />
       </div>
       <div className="weather-field">
-        <span id={`${id}-weather`}>天气类型</span>
+        <span id={`${id}-weather`}>{zhCN.weather.type}</span>
         <SharedSelect
           aria-labelledby={`${id}-weather`}
           value={weatherValue}
-          options={[...weatherOptions(weatherPresets), ...(weatherValue === "Custom" ? [["Custom", "自定义"] as const] : [])]}
+          options={[...weatherOptions(weatherPresets), ...(weatherValue === "Custom" ? [["Custom", zhCN.weather.presetCustom] as const] : [])]}
           onValueChange={value => {
             if (value !== "Custom") onChange({ ...weatherPresets[value], sun: weather.sun, preset_name: "Custom" });
           }}
@@ -154,17 +160,13 @@ export function WeatherEditor({ weather, weatherPresets, onChange }: Props) {
       <Collapsible>
         <CollapsibleTrigger asChild>
           <Button variant="ghost" className="px-0">
-            更多天气参数
-            <ChevronDown className="size-4" />
+            {zhCN.weather.more}<ChevronDown className="size-4" />
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent className="weather-extra">
           {extra.map(row)}
         </CollapsibleContent>
       </Collapsible>
-      <p className="weather-note">
-        日照与天气独立组合；太阳高度可继续微调。雾密度范围 0–100，直接控制高度雾；起始距离与密度均未标定为能见距离。雪效待实现。
-      </p>
     </div>
   );
 }
@@ -182,27 +184,26 @@ export function FogRegionsEditor({ regions, onChange }: { regions: FogRegion[]; 
     <section className="fog-regions">
       <div className="fog-section-head">
         <div>
-          <strong>已添加的团雾</strong>
-          <span>{regions.length} 个区域</span>
+          <strong>{zhCN.weather.regions}</strong>
+          <span>{format(zhCN.weather.regionCount, { count: regions.length })}</span>
         </div>
       </div>
       {regions.length === 0
-        ? <p className="weather-note fog-empty">尚未添加团雾。可在下方新增，实验启动前会自动创建。</p>
+        ? <p className="weather-note fog-empty">{zhCN.weather.noPresetRegions}</p>
         : (
           <div className="fog-region-list">
             {regions.map((region, index) => (
               <div className="fog-region" key={index}>
                 <div className="fog-region-head">
-                  <strong>团雾 {index + 1}</strong>
-                  <Button variant="destructive" size="sm" aria-label={`移除区域 ${index + 1}`}
+                  <strong>{format(zhCN.weather.regionLabel, { index: index + 1 })}</strong>
+                  <Button variant="destructive" size="sm" aria-label={format(zhCN.weather.removeRegion, { index: index + 1 })}
                     onClick={() => onChange(regions.filter((_, current) => current !== index))}>
-                    移除
-                  </Button>
+                    {zhCN.weather.remove}</Button>
                 </div>
                 <div className="fog-region-grid">
                   {(["X", "Y", "Z"] as const).map((axis, position) => (
                     <label className="field-row" key={axis}>
-                      <span>中心 {axis} · m</span>
+                      <span>{format(zhCN.weather.center, { axis })}</span>
                       <NumberInput
                         className="input mono"
                         step="0.1"
@@ -212,7 +213,7 @@ export function FogRegionsEditor({ regions, onChange }: { regions: FogRegion[]; 
                     </label>
                   ))}
                   <label className="field-row">
-                    <span>半径 · m</span>
+                    <span>{zhCN.weather.radius}</span>
                     <NumberInput
                       className="input mono"
                       min="0.1"
@@ -222,7 +223,7 @@ export function FogRegionsEditor({ regions, onChange }: { regions: FogRegion[]; 
                     />
                   </label>
                   <label className="field-row">
-                    <span>雾强度 · %</span>
+                    <span>{zhCN.weather.density}</span>
                     <NumberInput
                       className="input mono"
                       min="0"
@@ -238,18 +239,17 @@ export function FogRegionsEditor({ regions, onChange }: { regions: FogRegion[]; 
           </div>
         )}
       <div className="fog-regions-divider" />
-      <div className="fog-section-head"><div><strong>新增团雾</strong><span>保存到预设</span></div></div>
+      <div className="fog-section-head"><div><strong>{zhCN.weather.newRegion}</strong><span>{zhCN.weather.saveToPreset}</span></div></div>
       <div className="fog-add">
         <div className="fog-region-head">
-          <span>添加初始区域</span>
+          <span>{zhCN.weather.initialRegion}</span>
           <Button
             variant="outline"
             onClick={() => onChange([...regions, { center_m: [0, 0, 0], radius_m: 50, density: 0.5, transition_seconds: 0 }])}
           >
-            添加团雾
-          </Button>
+            {zhCN.weather.addRegion}</Button>
         </div>
-        <p className="weather-note">添加后在上方编辑中心、半径与强度；实验启动前由驾驶端创建。</p>
+        <p className="weather-note">{zhCN.weather.initialRegionsHint}</p>
       </div>
     </section>
   );

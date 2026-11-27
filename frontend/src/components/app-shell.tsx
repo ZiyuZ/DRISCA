@@ -1,3 +1,4 @@
+import { zhCN, format } from "../i18n";
 import {
   CarFront,
   CloudSun,
@@ -71,24 +72,24 @@ export function AppShell({
   }, []);
   const collapsed = phone || collapsedSetting;
   const pages = [
-    ["控制台", Home],
-    ["场景", Map],
-    ["天气", CloudSun],
-    ["交通流", CarFront],
-    ["数据管理", Database],
+    [zhCN.nav.console, Home],
+    [zhCN.nav.scene, Map],
+    [zhCN.nav.weather, CloudSun],
+    [zhCN.nav.traffic, CarFront],
+    [zhCN.nav.data, Database],
   ] as const;
   const configPages = [
-    ["主机配置", Monitor],
-    ["输入配置", Settings],
+    [zhCN.nav.settings, Monitor],
+    [zhCN.nav.input, Settings],
   ] as const;
   const statusMeta: Record<RuntimeState["system_status"], { label: string; dot: string }> = {
-    disconnected: { label: "模拟器未连接", dot: " idle" },
-    connecting: { label: "模拟器连接中", dot: " connecting" },
-    connected: { label: "模拟器已连接", dot: "" },
-    previewing: { label: "交通流预览", dot: "" },
-    replaying: { label: "录像回放中", dot: "" },
-    running: { label: "实验中", dot: "" },
-    error: { label: "运行异常", dot: " error" },
+    disconnected: { label: zhCN.status.carlaDisconnected, dot: " idle" },
+    connecting: { label: zhCN.status.carlaConnecting, dot: " connecting" },
+    connected: { label: zhCN.status.carlaConnected, dot: "" },
+    previewing: { label: zhCN.nav.previewing, dot: "" },
+    replaying: { label: zhCN.nav.replaying, dot: "" },
+    running: { label: zhCN.status.running, dot: "" },
+    error: { label: zhCN.nav.error, dot: " error" },
   };
   const currentStatus = statusMeta[state.system_status] ?? statusMeta.disconnected;
   const windowAction = async (action: string) => {
@@ -126,7 +127,7 @@ export function AppShell({
           <Button
             variant="ghost"
             className="collapse-button title-collapse"
-            aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
+            aria-label={collapsed ? zhCN.nav.expandSidebar : zhCN.nav.collapseSidebar}
             aria-expanded={!collapsed}
             onClick={() => setCollapsed(!collapsed)}
           >
@@ -139,16 +140,28 @@ export function AppShell({
           <span className="page-title">{page}</span>
         </div>
         {!serviceOnline && (
-          <span className="title-offline" role="status">管理端连接已断开</span>
+          <span className="title-offline" role="status">{zhCN.status.serviceDisconnected}</span>
         )}
         <div className="title-actions">
           {presetAction}
-          <Hint text="连接地址与二维码">
+          <Hint text={zhCN.nav.manageCarla}>
+            <Button
+              variant="ghost"
+              className="simulator-status-tag"
+              data-status={state.system_status}
+              aria-label={format(zhCN.nav.manageCarlaStatus, { label: currentStatus.label })}
+              onClick={onUnreal}
+            >
+              <span className={`dot${currentStatus.dot}`} />
+              <span>{currentStatus.label}</span>
+            </Button>
+          </Hint>
+          <Hint text={zhCN.nav.share}>
             <Button
               variant="ghost"
               className="app-icon-button"
               onClick={onShare}
-              aria-label="连接地址与二维码"
+              aria-label={zhCN.nav.share}
             >
               <Link />
             </Button>
@@ -156,29 +169,29 @@ export function AppShell({
         </div>
         {desktop && (
           <div className="window-buttons relative z-[61]">
-            <Hint text="最小化">
+            <Hint text={zhCN.nav.minimize}>
               <Button
                 variant="ghost"
-                aria-label="最小化"
+                aria-label={zhCN.nav.minimize}
                 onClick={() => windowAction("minimize_window")}
               >
                 <Minus />
               </Button>
             </Hint>
-            <Hint text={maximized ? "还原" : "最大化"}>
+            <Hint text={maximized ? zhCN.nav.restore : zhCN.nav.maximize}>
               <Button
                 variant="ghost"
-                aria-label={maximized ? "还原" : "最大化"}
+                aria-label={maximized ? zhCN.nav.restore : zhCN.nav.maximize}
                 onClick={() => windowAction("toggle_maximize")}
               >
                 {maximized ? <Copy /> : <Square />}
               </Button>
             </Hint>
-            <Hint text="关闭">
+            <Hint text={zhCN.common.close}>
               <Button
                 variant="ghost"
                 className="close"
-                aria-label="关闭"
+                aria-label={zhCN.common.close}
                 onClick={() => windowAction("close_window")}
               >
                 <X viewBox="4 4 16 16" />
@@ -189,7 +202,7 @@ export function AppShell({
       </header>
       <div className={`layout${collapsed ? " collapsed" : ""}${serviceOnline ? "" : " service-offline"}`}>
         <aside className="dr-sidebar">
-          <nav className="dr-nav" aria-label="主导航">
+          <nav className="dr-nav" aria-label={zhCN.nav.mainNavigation}>
             {pages.map(([name, Icon]) => (
               <Hint key={name} text={name} enabled={collapsed} side="right">
                 <Button
@@ -204,8 +217,7 @@ export function AppShell({
               </Hint>
             ))}
           </nav>
-          <div className="sidebar-bottom">
-            <nav className="dr-nav" aria-label="配置导航">
+            <nav className="dr-nav config-nav" aria-label={zhCN.nav.settingsNavigation}>
               {configPages.map(([name, Icon]) => (
                 <Hint key={name} text={name} enabled={collapsed} side="right">
                   <Button
@@ -220,20 +232,11 @@ export function AppShell({
                 </Hint>
               ))}
             </nav>
-            <div className="host-status">
-              <Hint text={`${currentStatus.label}，点击管理模拟器连接`} enabled={collapsed} side="right">
-                <Button variant="ghost" className="host-label host-status-button" onClick={onUnreal}>
-                  <span className={`dot${currentStatus.dot}`} />
-                  {!collapsed && <span className="connection-label">{currentStatus.label}</span>}
-                </Button>
-              </Hint>
-            </div>
-          </div>
         </aside>
         <main className="dr-main">
           <div
             key={page}
-            className={`content${page === "控制台" ? " home-content" : " fixed-content"}`}
+            className={`content${page === zhCN.nav.console ? " home-content" : " fixed-content"}`}
           >
             <fieldset disabled={!serviceOnline} className="contents">{children}</fieldset>
           </div>

@@ -1,3 +1,4 @@
+import { zhCN } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -8,7 +9,7 @@ export function useAutosave<T>(key: string, value: T | null, enabled: boolean,
   const baseline = useRef<{ key: string; json: string; } | null>(null);
   const pending = useRef<Promise<void> | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const [status, setStatus] = useState("已保存");
+  const [status, setStatus] = useState<string>(zhCN.status.saved);
 
   const flush = useCallback(async (override?: T) => {
     clearTimeout(timer.current);
@@ -20,18 +21,18 @@ export function useAutosave<T>(key: string, value: T | null, enabled: boolean,
         const value = snapshot.value as T;
         const json = JSON.stringify(value);
         if (baseline.current?.key === snapshot.key && baseline.current.json === json) break;
-        setStatus("正在保存…");
+        setStatus(zhCN.status.saving);
         const result = await snapshot.write(value);
         if (current.current.key !== snapshot.key) return;
         baseline.current = { key: snapshot.key, json };
         snapshot.onSaved(result);
       }
-      setStatus("已保存");
+      setStatus(zhCN.status.saved);
     };
     const task = work();
     pending.current = task;
     try { await task; }
-    catch (error) { setStatus("保存失败"); throw error; }
+    catch (error) { setStatus(zhCN.status.saveFailed); throw error; }
     finally { if (pending.current === task) pending.current = null; }
   }, []);
 
@@ -40,11 +41,11 @@ export function useAutosave<T>(key: string, value: T | null, enabled: boolean,
     const json = JSON.stringify(value);
     if (!baseline.current || baseline.current.key !== key) {
       baseline.current = { key, json };
-      setStatus("已保存");
+      setStatus(zhCN.status.saved);
       return;
     }
     if (baseline.current.json === json) return;
-    setStatus("待保存");
+    setStatus(zhCN.status.unsaved);
     if (!enabled) return;
     timer.current = setTimeout(() => { void flush().catch(error => toast.error(String(error))); }, 600);
     return () => clearTimeout(timer.current);

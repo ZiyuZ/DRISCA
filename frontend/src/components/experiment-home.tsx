@@ -1,3 +1,4 @@
+import { zhCN, format } from "../i18n";
 import {
   Eraser, Gauge,
   Lock, Pencil, Play,
@@ -69,9 +70,9 @@ export function ExperimentHome({
     if (logDetail === null) return;
     try {
       await navigator.clipboard.writeText(logDetail);
-      toast.success("日志详情已复制");
+      toast.success(zhCN.console.detailCopied);
     } catch (error) {
-      toast.error(`复制失败：${error instanceof Error ? error.message : String(error)}`);
+      toast.error(format(zhCN.console.copyFailed, { error: error instanceof Error ? error.message : String(error) }));
     }
   };
   const t = state.telemetry;
@@ -83,28 +84,28 @@ export function ExperimentHome({
       <div className="control-top-row">
         <Card className="dr-card driving-card gap-0">
           <header className="driving-card-heading">
-            <h2>驾驶状态</h2>
+            <h2>{zhCN.console.drivingStatus}</h2>
             <div className="row">
               <span className="dr-badge">
                 {t
                   ? t.takeover_requested
-                    ? "接管请求中"
+                    ? zhCN.console.takeoverRequested
                     : t.control_mode === "autopilot"
-                      ? "自动驾驶"
-                      : "人工驾驶"
+                      ? zhCN.console.autopilot
+                      : zhCN.console.manual
                   : state.phase === "starting"
-                    ? "正在启动"
+                    ? zhCN.status.starting
                     : state.phase === "stopping"
-                      ? "正在结束"
-                      : "待启动"}
+                      ? zhCN.status.stopping
+                      : zhCN.console.idle}
               </span>
             </div>
           </header>
           <label className="dr-field driving-subject">
-            <span>被试编号</span>
+            <span>{zhCN.console.subjectId}</span>
             <Input
               className="input"
-              placeholder="被试编号"
+              placeholder={zhCN.console.subjectId}
               value={
                 state.phase === "idle"
                   ? run.subject_id
@@ -122,7 +123,7 @@ export function ExperimentHome({
               <span className="unit">km/h</span>
               <span className="gear mono">{t?.gear ?? "—"}</span>
               <span className="small">
-                限速{" "}
+                {zhCN.console.speedLimit}{" "}
                 <span className="mono">
                   {t ? (t.speed_limit_mps * 3.6).toFixed(0) : "—"}
                 </span>{" "}
@@ -132,9 +133,9 @@ export function ExperimentHome({
             <div className="three live-meters">
               {(
                 [
-                  ["throttle", "油门", ""],
-                  ["brake", "刹车", "brake"],
-                  ["steer", "转向", "steer"],
+                  ["throttle", zhCN.console.throttle, ""],
+                  ["brake", zhCN.console.brake, "brake"],
+                  ["steer", zhCN.console.steer, "steer"],
                 ] as const
               ).map(([key, label, kind]) => (
                 <div key={key}>
@@ -156,19 +157,19 @@ export function ExperimentHome({
           <footer className="driving-card-footer">
             <div className="small mono">
               {t
-                ? `${t.simulator_fps.toFixed(0)} FPS · ${t.frame_no.toLocaleString()} 帧`
+                ? format(zhCN.console.frameStats, { simulatorFps: t.simulator_fps.toFixed(0), frameNo: t.frame_no.toLocaleString() })
                 : null}
             </div>
             <Hint
               enabled={!running && startBlocked}
               text={
                 !state.carla_connected
-                  ? "请先连接 CARLA"
+                  ? zhCN.carla.connectFirst
                   : !spawnReady
-                    ? "请先选择该地图的出生点"
+                    ? zhCN.console.chooseSpawn
                     : running
-                      ? "结束实验"
-                      : "开始实验"
+                      ? zhCN.console.stopExperiment
+                      : zhCN.console.startExperiment
               }
             >
               <span className="start-button-wrap">
@@ -183,11 +184,11 @@ export function ExperimentHome({
                   {running ? <Square /> : <Play />}
                   {busy
                     ? state.phase === "starting"
-                      ? "正在启动…"
-                      : "正在结束…"
+                      ? zhCN.console.startingProgress
+                      : zhCN.console.stoppingProgress
                     : running
-                      ? "结束实验"
-                      : "开始实验"}
+                      ? zhCN.console.stopExperiment
+                      : zhCN.console.startExperiment}
                 </Button>
               </span>
             </Hint>
@@ -195,10 +196,9 @@ export function ExperimentHome({
         </Card>
         <Card className="dr-card markers-card gap-0">
           <div className="card-head">
-            <h2>事件标记</h2>
+            <h2>{zhCN.console.markers}</h2>
             <Button variant="ghost" size="sm" disabled={!preset} onClick={onEditMarkers}>
-              <Pencil />管理标记
-            </Button>
+              <Pencil />{zhCN.console.manageMarkers}</Button>
           </div>
           <div className={`gated-area${running ? "" : " is-unavailable"}`}>
             <div className="marker-buttons">
@@ -217,7 +217,7 @@ export function ExperimentHome({
             {!running && (
               <div className="unavailable-overlay">
                 <Lock />
-                <span>开始实验后可用</span>
+                <span>{zhCN.console.availableWhenRunning}</span>
               </div>
             )}
           </div>
@@ -225,17 +225,16 @@ export function ExperimentHome({
       </div>
       <Card className="dr-card runtime-card command-card gap-0">
         <div className="card-head">
-          <h2>快捷指令</h2>
+          <h2>{zhCN.console.instructionDialog}</h2>
           {!running && (
               <Button
                 variant="ghost"
                 size="sm"
                 disabled={!preset || !commands.length}
                 onClick={() => onEditInstruction()}
-                aria-label="添加指令"
+                aria-label={zhCN.console.addInstruction}
               >
-                <Plus />添加指令
-              </Button>
+                <Plus />{zhCN.console.addInstruction}</Button>
           )}
         </div>
         <div className="action-buttons">
@@ -261,8 +260,7 @@ export function ExperimentHome({
               disabled={!preset || !commands.length}
               onClick={() => onEditInstruction()}
             >
-              添加快捷指令
-            </Button>
+              {zhCN.console.addShortcut}</Button>
           )}
         </div>
       </Card>
@@ -273,11 +271,11 @@ export function ExperimentHome({
             onValueChange={(value) => setLogTab(value as "logs" | "events")}
           >
             <TabsList className="segmented">
-              <TabsTrigger value="logs">运行日志</TabsTrigger>
-              <TabsTrigger value="events">事件日志</TabsTrigger>
+              <TabsTrigger value="logs">{zhCN.console.logs}</TabsTrigger>
+              <TabsTrigger value="events">{zhCN.console.events}</TabsTrigger>
             </TabsList>
           </Tabs>
-          <IconAction label="清空日志显示" onClick={onClear}>
+          <IconAction label={zhCN.console.clearLogs} onClick={onClear}>
             <Eraser />
           </IconAction>
         </div>
@@ -311,22 +309,22 @@ export function ExperimentHome({
                     ? (detail ? String(entry.message ?? "").split(/\r?\n/, 1)[0] : String(entry.message ?? ""))
                     : `${entry.name ?? ""} ${entry.source ?? ""} ${JSON.stringify(entry.payload ?? "")}`}
                   </span>
-                  {detail && <Button variant="ghost" size="sm" className="h-6 shrink-0 px-2 text-xs" onClick={() => setLogDetail(detail)}>详情</Button>}
+                  {detail && <Button variant="ghost" size="sm" className="h-6 shrink-0 px-2 text-xs" onClick={() => setLogDetail(detail)}>{zhCN.common.details}</Button>}
                 </span>
               </div>
             );
           })}
-          {!entries.length && <div className="empty">等待运行记录</div>}
+          {!entries.length && <div className="empty">{zhCN.console.noLogs}</div>}
         </div>
       </Card>
       {logDetail !== null && (
-        <Modal title="日志详情" open onClose={() => setLogDetail(null)} footer={
+        <Modal title={zhCN.console.logDetails} open onClose={() => setLogDetail(null)} footer={
           <>
-            <Button variant="outline" onClick={() => setLogDetail(null)}>关闭</Button>
-            <Button onClick={() => void copyDetail()}>复制详情</Button>
+            <Button variant="outline" onClick={() => setLogDetail(null)}>{zhCN.common.close}</Button>
+            <Button onClick={() => void copyDetail()}>{zhCN.console.copyDetails}</Button>
           </>
         }>
-          <pre tabIndex={0} aria-label="完整日志堆栈" className="log-detail"><code>{logDetail}</code></pre>
+          <pre tabIndex={0} aria-label={zhCN.console.fullTraceback} className="log-detail"><code>{logDetail}</code></pre>
         </Modal>
       )}
     </fieldset>

@@ -1,3 +1,4 @@
+import { zhCN } from "../../i18n";
 import {
   CircleCheckIcon,
   InfoIcon,
@@ -15,6 +16,13 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      closeButton
+      containerAriaLabel={zhCN.common.notifications}
+      toastOptions={{
+        closeButtonAriaLabel: zhCN.common.dismissNotification,
+        style: { padding: "10px 30px 10px 14px", gap: "8px", borderRadius: "10px", fontSize: "12px" },
+        classNames: { closeButton: "toast-dismiss", content: "min-w-0 break-words" },
+      }}
       icons={{
         success: <CircleCheckIcon className="size-4" />,
         info: <InfoIcon className="size-4" />,
@@ -28,6 +36,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "var(--border)",
           "--border-radius": "var(--radius)",
+          "--width": "min(320px, calc(100dvw - 32px))",
         } as React.CSSProperties
       }
       {...props}

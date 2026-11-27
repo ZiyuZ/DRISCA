@@ -1,25 +1,26 @@
+import { zhCN } from "../i18n";
 import type { TrafficStyleCounts } from "../types/api";
 
 export const trafficStyles = [
   {
     value: "balanced",
-    label: "均衡",
-    description: "兼顾通行效率与安全，使用默认车头时距与加速度。",
+    label: zhCN.traffic.balanced,
+    description: zhCN.traffic.balancedHint,
   },
   {
     value: "aggressive",
-    label: "激进",
-    description: "更小的车头时距和更强的加速倾向，跟车更紧。",
+    label: zhCN.traffic.aggressive,
+    description: zhCN.traffic.aggressiveHint,
   },
   {
     value: "conservative",
-    label: "保守",
-    description: "更大的安全距离，速度调整更平缓。",
+    label: zhCN.traffic.conservative,
+    description: zhCN.traffic.conservativeHint,
   },
   {
     value: "sluggish",
-    label: "反应迟钝",
-    description: "含约 0.6 秒感知延迟，反应与起步更慢。",
+    label: zhCN.traffic.sluggish,
+    description: zhCN.traffic.sluggishHint,
   },
 ] as const;
 
@@ -29,35 +30,35 @@ export const totalTrafficVehicles = (counts: TrafficStyleCounts | undefined): nu
 export const carFollowingModels = [
   {
     value: "idm",
-    label: "IDM 智能驾驶员模型",
+    label: zhCN.traffic.idm,
     short: "IDM",
-    description: "根据期望速度与车头时距计算连续加速度，跟车平顺。",
+    description: zhCN.traffic.idmHint,
   },
   {
     value: "gipps",
-    label: "Gipps 安全距离模型",
+    label: zhCN.traffic.gipps,
     short: "Gipps",
-    description: "以安全制动距离约束目标速度，强调不追尾。",
+    description: zhCN.traffic.gippsHint,
   },
   {
     value: "krauss",
-    label: "Krauss 随机安全速度模型",
+    label: zhCN.traffic.krauss,
     short: "Krauss",
-    description: "在安全速度范围内随机化，车流离散度更明显。",
+    description: zhCN.traffic.kraussHint,
   },
 ] as const;
 
 export const laneChangeModels = [
   {
     value: "gap",
-    label: "安全间隙规则",
-    short: "安全间隙",
-    description: "目标车道前后间隙满足安全要求时才换道。",
+    label: zhCN.traffic.gap,
+    short: zhCN.traffic.gapShort,
+    description: zhCN.traffic.gapHint,
   },
   {
     value: "mobil",
-    label: "MOBIL 激励换道模型",
+    label: zhCN.traffic.mobil,
     short: "MOBIL",
-    description: "综合自身与后车的收益判断是否换道，更倾向主动寻优。",
+    description: zhCN.traffic.mobilHint,
   },
 ] as const;

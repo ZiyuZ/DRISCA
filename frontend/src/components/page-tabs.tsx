@@ -1,3 +1,4 @@
+import { zhCN } from "../i18n";
 import type { ReactNode } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
@@ -17,7 +18,7 @@ export function PageTabs({
   return (
     <Tabs value={value} onValueChange={onValueChange} className="tabbed-page tabs">
       <div className="page-tabs-row">
-        <TabsList className="dr-tabs" aria-label="页面选项">
+        <TabsList className="dr-tabs" aria-label={zhCN.common.pageTabs}>
           {items.map(([value, label]) => <TabsTrigger key={value} value={value}>{label}</TabsTrigger>)}
         </TabsList>
         {actions}

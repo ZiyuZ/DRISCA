@@ -1,3 +1,4 @@
+import { zhCN, format } from "../i18n";
 import { ChevronDown } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { SharedSelect } from "./shared-select";
@@ -23,7 +24,7 @@ export function Modal({ title, open, onClose, children, footer, className }: {
         <DialogFooter className="shrink-0 border-t px-6 py-4">
           {footer === undefined ? (
             <DialogClose asChild>
-              <Button variant="outline">关闭</Button>
+              <Button variant="outline">{zhCN.common.close}</Button>
             </DialogClose>
           ) : footer}
         </DialogFooter>
@@ -48,18 +49,18 @@ export function SearchSelect({ value, options, onChange, label, disabled }: {
         {options.filter((o): o is { value: string; label: string; } => typeof o !== "string").find((o) => o.value === value)
           ?.label ||
           value ||
-          "请选择"}{" "}
+          zhCN.common.choose}{" "}
         <ChevronDown className="size-4 shrink-0 opacity-50" />
       </Button>
       <CommandDialog
         open={open}
         onOpenChange={setOpen}
         title={label}
-        description={"搜索" + label}
+        description={format(zhCN.common.searchLabel, { label })}
       >
-        <CommandInput placeholder={"搜索" + label} />
+        <CommandInput placeholder={format(zhCN.common.searchLabel, { label })} />
         <CommandList>
-          <CommandEmpty>没有匹配结果</CommandEmpty>
+          <CommandEmpty>{zhCN.common.noResults}</CommandEmpty>
           {options.map((o) => {
             const v = typeof o === "string" ? o : o.value;
             const l = typeof o === "string" ? o : o.label;

@@ -650,27 +650,12 @@
     height: 18px;
     width: 3px;
   }
-  .sidebar-bottom {
-    margin-top: auto;
-    display: grid;
-    gap: 14px;
-  }
-  .host-status {
-    border-top: 1px solid var(--border);
-    padding: 14px 5px 0;
-    display: grid;
-  }
   .collapsed .dr-nav button {
     padding: 10px;
     justify-content: center;
   }
   .collapsed .dr-nav button.selected::after {
     display: none;
-  }
-  .collapsed .host-status {
-    padding-left: 0;
-    padding-right: 0;
-    justify-items: center;
   }
   .dr-main {
     min-height: 0;
@@ -849,10 +834,6 @@
     }
     .layout:not(.collapsed) .dr-nav button.selected::after {
       display: none;
-    }
-    .host-status {
-      justify-items: center;
-      padding: 12px 0 0;
     }
     .content,
     .home-content {
@@ -1282,9 +1263,6 @@
   }
   .dr-card {
     border-color: color-mix(in srgb, var(--border) 85%, var(--card));
-  }
-  .host-status {
-    border-color: color-mix(in srgb, var(--border) 90%, var(--muted));
   }
   .gated-area.is-unavailable > .action-buttons,
   .gated-area.is-unavailable > .marker-buttons {
@@ -2214,10 +2192,6 @@
     padding-right: 14px;
     padding-left: 0;
   }
-  .host-status {
-    padding-bottom: 3px;
-    gap: 9px;
-  }
   .app-text-button {
     font-size: 11px;
   }
@@ -2346,16 +2320,6 @@
   justify-content: space-between;
   gap: 10px;
   text-align: left;
-}
-.prototype-shell .host-label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-}
-.prototype-shell .host-label .dot {
-  margin: 0;
-  flex-shrink: 0;
 }
 .prototype-shell .start-button-wrap {
   margin-left: auto;

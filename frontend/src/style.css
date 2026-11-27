@@ -418,9 +418,13 @@ pre {
   width: 12px;
   height: 12px;
 }
+.prototype-shell .window-buttons button:hover {
+  background: color-mix(in srgb, var(--foreground) 18%, var(--background));
+  color: var(--foreground);
+}
 .prototype-shell .window-buttons .close:hover {
-  background: var(--destructive);
-  color: var(--destructive-foreground);
+  background: #c42b1c;
+  color: #fff;
 }
 .prototype-shell .settings-checks {
   align-items: flex-end;
@@ -657,6 +661,54 @@ pre {
 .prototype-shell .title-collapse {
   flex: none;
 }
+.prototype-shell .config-nav {
+  margin-block-start: auto;
+}
+.prototype-shell .simulator-status-tag,
+.prototype-shell .title-preset {
+  height: 26px;
+  flex: none;
+  gap: 6px;
+  padding-inline: 10px;
+  border: 1px solid color-mix(in srgb, var(--muted-foreground) 20%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 75%, transparent);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.prototype-shell .simulator-status-tag {
+  margin-inline: 8px;
+}
+.prototype-shell .simulator-status-tag:hover,
+.prototype-shell .title-preset:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-color: var(--muted-foreground);
+}
+.prototype-shell .simulator-status-tag[data-status="connected"],
+.prototype-shell .simulator-status-tag[data-status="running"],
+.prototype-shell .simulator-status-tag[data-status="previewing"],
+.prototype-shell .simulator-status-tag[data-status="replaying"] {
+  background: color-mix(in srgb, var(--primary) 8%, var(--background));
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--border));
+  color: var(--primary);
+}
+.prototype-shell .simulator-status-tag[data-status="error"] {
+  background: color-mix(in srgb, var(--destructive) 8%, var(--background));
+  border-color: color-mix(in srgb, var(--destructive) 25%, var(--border));
+  color: var(--destructive);
+}
+.prototype-shell .simulator-status-tag .dot {
+  flex: none;
+  margin: 0;
+}
+.prototype-shell .simulator-status-tag .dot.connecting {
+  background: var(--primary);
+  animation: connection-pulse 1s ease-in-out infinite;
+}
 .prototype-shell .title-preset {
   max-width: 250px;
   overflow: hidden;
@@ -673,30 +725,23 @@ pre {
   border-bottom: 1px solid var(--border);
   margin-bottom: 14px;
 }
-.prototype-shell .host-status-button {
-  width: 100%;
-  height: 28px;
-  justify-content: flex-start;
-  padding-inline: 3px;
+
+[data-sonner-toast][data-styled="true"] .toast-dismiss {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  left: auto;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  transform: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
-.prototype-shell .host-status-line {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  width: 100%;
-  height: 28px;
-  padding-inline: 3px;
-  color: var(--muted-foreground);
-  font-size: inherit;
-}
-.prototype-shell .host-status {
-  gap: 2px;
-}
-.prototype-shell .layout.collapsed .host-status-line {
-  justify-content: center;
-}
-.prototype-shell .layout.collapsed .host-status-button {
-  justify-content: center;
+[data-sonner-toast] .toast-dismiss svg {
+  width: 11px;
+  height: 11px;
 }
 .prototype-shell .save-status {
   flex: none;
@@ -878,15 +923,11 @@ pre {
   stroke: var(--card);
   stroke-width: 3px;
 }
-.prototype-shell .host-status-button .dot.connecting {
-  background: var(--primary);
-  animation: connection-pulse 1s ease-in-out infinite;
-}
 @keyframes connection-pulse {
   50% { opacity: 0.3; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .prototype-shell .host-status-button .dot.connecting {
+  .prototype-shell .simulator-status-tag .dot.connecting {
     animation: none;
   }
 }

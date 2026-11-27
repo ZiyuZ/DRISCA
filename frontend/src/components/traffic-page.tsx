@@ -1,3 +1,4 @@
+import { zhCN, format } from "../i18n";
 import { useState } from "react";
 import { useRememberedTab } from "../hooks/use-remembered-tab";
 import { Shuffle, SlidersHorizontal } from "lucide-react";
@@ -28,8 +29,8 @@ type Props = {
   onOpenPresets: () => void;
 };
 const TRAFFIC_TABS = [
-  ["config", "交通流配置"],
-  ["events", "交通事件"],
+  ["config", zhCN.traffic.configTab],
+  ["events", zhCN.traffic.eventsTab],
 ] as const;
 export function TrafficPage({
   preset,
@@ -55,29 +56,29 @@ export function TrafficPage({
   const preview = state.traffic_preview;
   const previewDisabled = !online || !state.carla_connected || state.phase !== "idle" || totalVehicles <= 0;
   const previewDisabledReason = !online
-    ? "管理端连接已断开"
+    ? zhCN.status.serviceDisconnected
     : !state.carla_connected
-      ? "请先启动并连接 CARLA 模拟器"
+      ? zhCN.traffic.connectFirst
       : state.phase !== "idle"
-        ? "实验运行中无法开启空闲期车流预览"
+        ? zhCN.traffic.previewWhileRunning
         : totalVehicles <= 0
-          ? "请先设置至少 1 辆背景车"
+          ? zhCN.traffic.vehiclesRequired
           : null;
   const stopPreviewDisabledReason = !online
-    ? "管理端连接已断开"
+    ? zhCN.status.serviceDisconnected
     : !preview.running
-      ? "当前未开启车流预览"
+      ? zhCN.traffic.noPreview
       : null;
   const eventDisabledReason = !online
-    ? "管理端连接已断开"
+    ? zhCN.status.serviceDisconnected
     : state.phase !== "running"
-      ? "仅在实验运行期间可即时触发交通事件"
+      ? zhCN.traffic.eventRunningOnly
       : undefined;
   const startPreview = async () => {
     if (!traffic) return;
     try {
       await api("/api/traffic/preview/start", "POST", traffic);
-      toast.success("车流预览已启动");
+      toast.success(zhCN.traffic.previewStarted);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     }
@@ -85,7 +86,7 @@ export function TrafficPage({
   const stopPreview = async () => {
     try {
       await api("/api/traffic/preview/stop", "POST");
-      toast.success("车流预览已停止");
+      toast.success(zhCN.traffic.previewStopped);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     }
@@ -127,62 +128,57 @@ export function TrafficPage({
               category="traffic"
               disabled={!online || state.phase !== "running"}
               disabledReason={eventDisabledReason}
-              title="交通事件"
+              title={zhCN.traffic.eventsTab}
               description={state.phase === "running"
-                ? "即时触发已注册的交通事件，结果记录到当前实验。"
-                : "实验运行时可即时触发已注册的交通事件。"}
+                ? zhCN.traffic.eventHint
+                : zhCN.traffic.eventIdleHint}
             />
           ) : !preset || !traffic || !counts ? (
             <Card className="dr-card gap-0">
               <div className="card-head">
-                <h2>背景交通流</h2>
+                <h2>{zhCN.traffic.title}</h2>
               </div>
               <div className="spawn-missing">
-                <span>尚未选择预设，交通流参数保存在实验预设中。</span>
-                <Button variant="outline" onClick={onOpenPresets}>打开方案管理</Button>
+                <span>{zhCN.traffic.noPreset}</span>
+                <Button variant="outline" onClick={onOpenPresets}>{zhCN.traffic.openPresets}</Button>
               </div>
             </Card>
           ) : (
             <>
               {state.phase !== "idle" && (
                 <p className="small" role="status">
-                  实验进行中；本页修改保存到预设，对下一次实验生效。
-                </p>
+                  {zhCN.traffic.nextExperimentHint}</p>
               )}
               <Card className="dr-card gap-0">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="grid min-w-0 gap-2">
                     <div className="flex flex-wrap items-center gap-3">
-                      <h2>背景交通流</h2>
+                      <h2>{zhCN.traffic.title}</h2>
                       <label className="check">
-                        <Switch aria-label="启用背景交通流" checked={traffic.enabled}
+                        <Switch aria-label={zhCN.traffic.enable} checked={traffic.enabled}
                           onCheckedChange={value => update(["traffic", "enabled"], value)} />
-                        {traffic.enabled ? "已启用" : "未启用"}
+                        {traffic.enabled ? zhCN.traffic.enabled : zhCN.traffic.disabled}
                       </label>
-                      <label className="check" title="开启后，在非封闭地图上车辆离开边界或侧翻销毁时会自动在空闲出生点补充同风格车辆">
-                        <Switch aria-label="越界自动补充" checked={traffic.auto_respawn} disabled={!enabled}
+                      <label className="check" title={zhCN.traffic.autoRespawnHint}>
+                        <Switch aria-label={zhCN.traffic.autoRespawn} checked={traffic.auto_respawn} disabled={!enabled}
                           onCheckedChange={value => update(["traffic", "auto_respawn"], value)} />
-                        越界自动补充
-                      </label>
+                        {zhCN.traffic.autoRespawn}</label>
                       <span className={`dr-badge${preview.running ? " live" : ""}`}>
-                        {preview.running ? `预览中 · ${preview.vehicle_count} 辆车` : "未开启预览"}
+                        {preview.running ? format(zhCN.traffic.previewCount, { vehicleCount: preview.vehicle_count }) : zhCN.traffic.notPreviewing}
                       </span>
                     </div>
                     <p className="small">
-                      总开关决定正式实验是否生成背景车；空闲期可按下方车辆构成与模型直接预览，不保存实验数据，开跑实验或切换地图时自动停止。
-                    </p>
+                      {zhCN.traffic.previewHint}</p>
                     {preview.error && <p className="text-sm text-destructive" role="alert">{preview.error}</p>}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <ActionTooltip reason={previewDisabled ? previewDisabledReason : null}>
                       <Button disabled={previewDisabled} onClick={() => void startPreview()}>
-                        预览当前交通流
-                      </Button>
+                        {zhCN.traffic.startPreview}</Button>
                     </ActionTooltip>
                     <ActionTooltip reason={!online || !preview.running ? stopPreviewDisabledReason : null}>
                       <Button variant="outline" disabled={!online || !preview.running} onClick={() => void stopPreview()}>
-                        停止预览
-                      </Button>
+                        {zhCN.traffic.stopPreview}</Button>
                     </ActionTooltip>
                   </div>
                 </div>
@@ -190,19 +186,18 @@ export function TrafficPage({
               <Card className="dr-card gap-0">
                 <div className="card-head">
                   <div>
-                    <h2>车辆数量与驾驶风格</h2>
-                    <p className="small">分别指定各类驾驶风格的车辆数，总车辆数自动汇总（上限 100 辆）。</p>
+                    <h2>{zhCN.traffic.countsTitle}</h2>
+                    <p className="small">{zhCN.traffic.countsHint}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="dr-badge">总计 {totalVehicles} 辆</span>
-                    <ActionTooltip reason={!enabled ? "请先启用背景交通流" : "按当前总数随机打散到四种风格"}>
+                    <span className="dr-badge">{format(zhCN.traffic.total, { count: totalVehicles })}</span>
+                    <ActionTooltip reason={!enabled ? zhCN.traffic.enableFirst : zhCN.traffic.randomizeHint}>
                       <Button variant="outline" size="sm" disabled={!enabled} onClick={randomizeStyles}>
                         <Shuffle className="mr-1.5 size-3.5" />
-                        随机分配
-                      </Button>
+                        {zhCN.traffic.randomize}</Button>
                     </ActionTooltip>
-                    <ActionTooltip reason={!enabled ? "请先启用背景交通流" : `同风格个体差异分布（当前 ±${diversityPct}%）`}>
-                      <Button variant="ghost" size="sm" aria-label="个体差异分布设置" disabled={!enabled}
+                    <ActionTooltip reason={!enabled ? zhCN.traffic.enableFirst : format(zhCN.traffic.diversityHint, { diversityPct: diversityPct })}>
+                      <Button variant="ghost" size="sm" aria-label={zhCN.traffic.diversitySettings} disabled={!enabled}
                         onClick={() => setDiversityOpen(true)}>
                         <SlidersHorizontal className="size-4" />
                       </Button>
@@ -227,29 +222,35 @@ export function TrafficPage({
                       </label>
                     ))}
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-3">
                     <label className="dr-field">
-                      <span>随机种子</span>
+                      <span>{zhCN.traffic.seed}</span>
                       <NumberInput className="input mono" step="1" disabled={!enabled}
                         value={traffic.seed}
                         onValueChange={value => update(["traffic", "seed"], Math.trunc(value))} />
                     </label>
                     <label className="dr-field">
-                      <span>速度系数</span>
+                      <span>{zhCN.traffic.speedFactor}</span>
                       <NumberInput className="input mono" min="0.3" max="1.5" step="0.05" disabled={!enabled}
                         value={traffic.speed_factor}
                         onValueChange={value => update(["traffic", "speed_factor"], value)} />
+                    </label>
+                    <label className="dr-field">
+                      <span>{zhCN.traffic.activeRadius}</span>
+                      <NumberInput className="input mono" min="80" max="2000" step="any" disabled={!enabled}
+                        value={traffic.active_radius_m}
+                        onValueChange={value => update(["traffic", "active_radius_m"], value)} />
                     </label>
                   </div>
                 </div>
               </Card>
               <Card className="dr-card gap-0">
                 <div className="card-head">
-                  <h2>行为模型</h2>
+                  <h2>{zhCN.traffic.models}</h2>
                 </div>
                 <div className="form">
                   <label className="dr-field">
-                    <span>跟驰模型</span>
+                    <span>{zhCN.traffic.followingModel}</span>
                     <SharedSelect
                       value={traffic.car_following_model}
                       disabled={!enabled}
@@ -258,12 +259,11 @@ export function TrafficPage({
                   </label>
                   <p className="small">{following?.description}</p>
                   <label className="check">
-                    <Switch aria-label="允许换道" checked={traffic.enable_lane_change} disabled={!enabled}
+                    <Switch aria-label={zhCN.traffic.laneChange} checked={traffic.enable_lane_change} disabled={!enabled}
                       onCheckedChange={value => update(["traffic", "enable_lane_change"], value)} />
-                    允许换道
-                  </label>
+                    {zhCN.traffic.laneChange}</label>
                   <label className="dr-field">
-                    <span>换道模型</span>
+                    <span>{zhCN.traffic.laneChangeModel}</span>
                     <SharedSelect
                       value={traffic.lane_change_model}
                       disabled={!laneChangeEnabled}
@@ -271,25 +271,24 @@ export function TrafficPage({
                       onValueChange={value => update(["traffic", "lane_change_model"], value)} />
                   </label>
                   <p className="small">
-                    {laneChangeEnabled ? laneChange?.description : "启用换道后可选择换道模型。"}
+                    {laneChangeEnabled ? laneChange?.description : zhCN.traffic.laneChangeHint}
                   </p>
                 </div>
               </Card>
               <Dialog open={diversityOpen} onOpenChange={setDiversityOpen}>
                 <DialogContent className="sm:max-w-lg">
                   <DialogHeader>
-                    <DialogTitle>同风格个体差异分布</DialogTitle>
+                    <DialogTitle>{zhCN.traffic.diversityTitle}</DialogTitle>
                     <DialogDescription>
-                      在同一驾驶风格均值附近，以截断高斯分布为每辆车独立抽样速度倍率、车头时距、加速度、换道冷却与感知延迟；受预设随机种子控制，可完整复现。
-                    </DialogDescription>
+                      {zhCN.traffic.diversityDescription}</DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-4 py-2">
                     <div className="weather-field">
-                      <span>参数离散度 · %（0% 为完全一致，默认 12%）</span>
+                      <span>{zhCN.traffic.diversityRange}</span>
                       <div className="weather-range">
                         <Slider
                           className="prototype-slider"
-                          aria-label="参数离散度"
+                          aria-label={zhCN.traffic.diversitySlider}
                           min={0}
                           max={35}
                           step={1}
@@ -307,8 +306,7 @@ export function TrafficPage({
                       </div>
                     </div>
                     <p className="small">
-                      实际抽样范围会被截断在 ±2σ 内并夹紧到物理安全上下界，避免出现过小安全距离或异常加减速。
-                    </p>
+                      {zhCN.traffic.diversitySafetyHint}</p>
                   </div>
                 </DialogContent>
               </Dialog>

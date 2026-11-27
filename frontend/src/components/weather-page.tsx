@@ -1,3 +1,4 @@
+import { zhCN } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { useRememberedTab } from "../hooks/use-remembered-tab";
 import { SlidersHorizontal } from "lucide-react";
@@ -24,8 +25,8 @@ type Props = {
   onOpenPresets: () => void;
 };
 const WEATHER_TABS = [
-  ["global", "全局天气"],
-  ["events", "天气事件"],
+  ["global", zhCN.weather.globalTab],
+  ["events", zhCN.weather.eventsTab],
 ] as const;
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -54,9 +55,9 @@ export function WeatherPage({
   useEffect(() => () => clearTimeout(previewTimer.current), [canPreview, presetName]);
   const defaultWeather = state.catalog.weather_presets.Default ?? state.catalog.weather_presets.ClearNoon;
   const eventDisabledReason = !online
-    ? "管理端连接已断开"
+    ? zhCN.status.serviceDisconnected
     : !live
-      ? "仅在实验运行期间可即时触发天气事件"
+      ? zhCN.weather.eventRunningOnly
       : undefined;
   const preview = async (value: Weather) => {
     try {
@@ -80,7 +81,7 @@ export function WeatherPage({
   const writeBack = () => {
     if (!state.weather) return;
     update(["world", "weather"], { ...state.weather, preset_name: "Custom" });
-    toast.success("已写回当前预设");
+    toast.success(zhCN.weather.writeBackSuccess);
   };
   return (
     <PageTabs
@@ -97,17 +98,17 @@ export function WeatherPage({
               category="weather"
               disabled={!online || !live}
               disabledReason={eventDisabledReason}
-              title="天气事件"
+              title={zhCN.weather.eventsTab}
               description={live
-                ? "即时触发已注册的天气事件，结果记录到当前实验。"
-                : "实验运行时可即时触发已注册的天气事件；点击团雾右上角按钮可管理预设团雾。"}
+                ? zhCN.weather.eventHint
+                : zhCN.weather.eventIdleHint}
               cardHeaderAction={command => command.id === "local_fog_burst" ? (
-                <ActionTooltip reason={!live && !preset ? "请先选择一个实验预设" : (live ? "管理当前已创建的团雾" : "管理预设初始团雾")}>
+                <ActionTooltip reason={!live && !preset ? zhCN.weather.choosePreset : (live ? zhCN.weather.manageLiveRegions : zhCN.weather.managePresetRegions)}>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="shrink-0 gap-1.5"
-                    aria-label="管理团雾"
+                    aria-label={zhCN.weather.manageRegions}
                     disabled={!live && !preset}
                     onClick={() => setFogDialogOpen(true)}
                   >
@@ -120,11 +121,11 @@ export function WeatherPage({
             <Dialog open={fogDialogOpen} onOpenChange={setFogDialogOpen}>
               <DialogContent className="fog-dialog flex flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
                 <DialogHeader className="shrink-0 border-b px-6 py-5 text-left">
-                  <DialogTitle>管理已添加的团雾</DialogTitle>
+                  <DialogTitle>{zhCN.weather.regionsDialog}</DialogTitle>
                   <DialogDescription>
                     {live
-                      ? "运行期场景团雾：调整半径、雾强度或渐隐删除当前实验中的团雾，操作记录到日志与实验事件。"
-                      : "空闲期预设团雾：维护实验启动时自动部署的初始团雾，修改自动保存到当前预设。"}
+                      ? zhCN.weather.liveRegionsHint
+                      : zhCN.weather.presetRegionsHint}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="fog-dialog-body">
@@ -142,7 +143,7 @@ export function WeatherPage({
                 ) : null}
                 </div>
                 <DialogFooter className="shrink-0 border-t px-6 py-3">
-                  <Button variant="outline" onClick={() => setFogDialogOpen(false)}>完成</Button>
+                  <Button variant="outline" onClick={() => setFogDialogOpen(false)}>{zhCN.common.done}</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -151,11 +152,11 @@ export function WeatherPage({
           <div className="stack config-page">
             <Card className="dr-card gap-0">
               <div className="card-head">
-                <h2>全局天气</h2>
+                <h2>{zhCN.weather.globalTab}</h2>
               </div>
               <div className="spawn-missing">
-                <span>尚未选择预设，天气参数保存在实验预设中。</span>
-                <Button variant="outline" onClick={onOpenPresets}>打开方案管理</Button>
+                <span>{zhCN.weather.noPreset}</span>
+                <Button variant="outline" onClick={onOpenPresets}>{zhCN.weather.openPresets}</Button>
               </div>
             </Card>
           </div>
@@ -164,19 +165,18 @@ export function WeatherPage({
             {live ? (
               <>
                 <div className="spawn-status" role="status">
-                  <strong>实时调控模式</strong>
-                  <span>运行期调整实时生效，不会自动覆盖预设文件。</span>
+                  <strong>{zhCN.weather.liveMode}</strong>
+                  <span>{zhCN.weather.liveModeHint}</span>
                 </div>
                 <Card className="dr-card gap-0">
                   <div className="card-head">
                     <div>
-                      <h2>全局天气</h2>
-                      <p className="small">调整经驾驶端实时应用，可按需写回当前预设。</p>
+                      <h2>{zhCN.weather.globalTab}</h2>
+                      <p className="small">{zhCN.weather.liveHint}</p>
                     </div>
-                    <ActionTooltip reason={!state.weather ? "等待驾驶端上报当前天气" : null}>
+                    <ActionTooltip reason={!state.weather ? zhCN.weather.waiting : null}>
                       <Button variant="outline" disabled={!state.weather} onClick={writeBack}>
-                        写回当前预设
-                      </Button>
+                        {zhCN.weather.writeBack}</Button>
                     </ActionTooltip>
                   </div>
                   {state.weather
@@ -186,20 +186,19 @@ export function WeatherPage({
                         presets={state.catalog.weather_presets}
                       />
                     )
-                    : <p className="small">等待驾驶端上报当前天气。</p>}
+                    : <p className="small">{zhCN.weather.waitingSentence}</p>}
                 </Card>
               </>
             ) : (
               <Card className="dr-card gap-0">
                 <div className="card-head">
                   <div>
-                    <h2>全局天气</h2>
-                    <p className="small">{canPreview ? "修改自动保存到预设，并在 300ms 后预览到场景。" : "修改自动保存到当前预设；空闲且连接模拟器时自动预览。"}</p>
+                    <h2>{zhCN.weather.globalTab}</h2>
+                    <p className="small">{canPreview ? zhCN.weather.autosavePreviewHint : zhCN.weather.autosaveHint}</p>
                   </div>
-                  <ActionTooltip reason={!defaultWeather ? "等待模拟器提供默认天气目录" : null}>
+                  <ActionTooltip reason={!defaultWeather ? zhCN.weather.waitingDefault : null}>
                     <Button variant="outline" disabled={!defaultWeather} onClick={restoreDefault}>
-                      复原默认
-                    </Button>
+                      {zhCN.weather.resetDefault}</Button>
                   </ActionTooltip>
                 </div>
                 <WeatherEditor

@@ -1,3 +1,4 @@
+import { zhCN, format } from "../i18n";
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -44,7 +45,7 @@ export function EventActionPanel({ commands, category, disabled, disabledReason,
       ?? Object.fromEntries(command.fields.map(field => [field.key, defaultEventFieldValue(field)]));
     try {
       await api(`/api/commands/${encodeURIComponent(command.id)}/trigger`, "POST", params);
-      toast.success(`${command.label}已触发`);
+      toast.success(format(zhCN.console.eventTriggered, { label: command.label }));
     } catch (error) {
       toast.error(errorText(error));
     } finally {
@@ -59,7 +60,7 @@ export function EventActionPanel({ commands, category, disabled, disabledReason,
           {description && <p className="small">{description}</p>}
         </div>
       </div>
-      {items.length === 0 && <p className="small">当前没有可触发的事件。</p>}
+      {items.length === 0 && <p className="small">{zhCN.console.noEvents}</p>}
       {items.length > 0 && (
         <div className="grid items-stretch gap-4 [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
           {items.map(command => (

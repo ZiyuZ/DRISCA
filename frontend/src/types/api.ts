@@ -18,6 +18,7 @@ export type TrafficConfig = {
   style_counts: TrafficStyleCounts;
   seed: number;
   speed_factor: number;
+  active_radius_m: number;
   diversity: number;
   enable_lane_change: boolean;
   auto_respawn: boolean;

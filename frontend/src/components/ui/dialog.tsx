@@ -1,3 +1,4 @@
+import { zhCN } from "../../i18n";
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { XIcon } from "lucide-react";
@@ -88,7 +89,7 @@ function DialogContent({
               variant="ghost"
               size="icon-sm"
               className="absolute top-4 right-4"
-              aria-label="关闭对话框"
+              aria-label={zhCN.common.closeDialog}
             >
               <XIcon />
             </Button>
@@ -129,7 +130,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>
-          <Button variant="outline">Close</Button>
+          <Button variant="outline">{zhCN.common.close}</Button>
         </DialogPrimitive.Close>
       )}
     </div>

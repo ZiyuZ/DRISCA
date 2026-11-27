@@ -1,3 +1,4 @@
+import { zhCN, format } from "../i18n";
 import { NumberInput } from "./number-input";
 import { CircleHelp, Eye, EyeOff, RotateCcw } from "lucide-react";
 import { useRef, useState, type CSSProperties, type PointerEvent } from "react";
@@ -10,7 +11,7 @@ import { Card } from "./ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 
 type MirrorName = keyof Omit<DisplayLayout, "show_rearview">;
-const names: Record<MirrorName, string> = { rear_top: "中央后视镜", rear_left: "左后视镜", rear_right: "右后视镜" };
+const names: Record<MirrorName, string> = { rear_top: zhCN.settings.cameraRearTop, rear_left: zhCN.settings.cameraRearLeft, rear_right: zhCN.settings.cameraRearRight };
 const mirrorNames = Object.keys(names) as MirrorName[];
 type Props = {
   layout: DisplayLayout;
@@ -114,7 +115,7 @@ export function DisplayLayoutEditor({ layout, applied, resolution, running, onCh
                   <span className="mirror-number">{i + 1}</span>
                   <button
                     className="resize-handle"
-                    aria-label={`缩放${names[n]}`}
+                    aria-label={format(zhCN.settings.resizeMirror, { mirror: names[n] })}
                     onPointerDown={(e) => startDrag(e, n, true)}
                   />
                 </div>
@@ -124,7 +125,7 @@ export function DisplayLayoutEditor({ layout, applied, resolution, running, onCh
             <SharedSelect
               className="select canvas-resolution"
               disabled={running}
-              aria-label="驾驶分辨率"
+              aria-label={zhCN.settings.drivingResolution}
               value={resolution.join("x")}
               onValueChange={(value) => {
                 if (value === "custom") {
@@ -141,26 +142,26 @@ export function DisplayLayoutEditor({ layout, applied, resolution, running, onCh
                   "3840x1080",
                   "5760x1080",
                 ]),
-              ].map((value) => [value, value.replace("x", " × ")] as const).concat([["custom", "自定义…"]])}
+              ].map((value) => [value, value.replace("x", " × ")] as const).concat([["custom", zhCN.settings.customResolution]])}
             />
             <div className="row">
               <Hint
-                text={layout.show_rearview ? "隐藏后视镜" : "显示后视镜"}
+                text={layout.show_rearview ? zhCN.settings.hideMirrors : zhCN.settings.showMirrors}
               >
                 <Button
                   variant="ghost"
                   className="canvas-control app-icon-button"
                   onClick={() => onChange({ ...layout, show_rearview: !layout.show_rearview })}
-                  aria-label="切换后视镜"
+                  aria-label={zhCN.settings.toggleMirrors}
                 >
                   {layout.show_rearview ? <Eye /> : <EyeOff />}
                 </Button>
               </Hint>
-              <Hint text="拖动后视镜移动位置；拖动右下角调整尺寸。">
+              <Hint text={zhCN.settings.layoutHint}>
                 <Button
                   variant="ghost"
                   className="canvas-control app-icon-button"
-                  aria-label="布局操作说明"
+                  aria-label={zhCN.settings.layoutHelp}
                 >
                   <CircleHelp />
                 </Button>
@@ -194,7 +195,7 @@ export function DisplayLayoutEditor({ layout, applied, resolution, running, onCh
               onValueChange={(value) => setSelected(value as MirrorName)}
               options={mirrorNames.map((name) => [name, names[name]])}
             />
-            {["中心 X · px", "中心 Y · px", "宽度 · px", "高度 · px"].map(
+            {[zhCN.settings.centerX, zhCN.settings.centerY, zhCN.settings.width, zhCN.settings.height].map(
               (label, i) => (
                 <label className="dr-field" key={label}>
                   <span>{label}</span>
@@ -227,26 +228,25 @@ export function DisplayLayoutEditor({ layout, applied, resolution, running, onCh
           </div>
         </div>
         <div className="layout-footer">
-          <IconAction label="撤销本页布局调整" onClick={() => onChange(structuredClone(initial.current))}>
+          <IconAction label={zhCN.settings.undoLayout} onClick={() => onChange(structuredClone(initial.current))}>
             <RotateCcw />
           </IconAction>
-          {pending && <span className="small">待应用</span>}
+          {pending && <span className="small">{zhCN.settings.pending}</span>}
           <div className="row">
             <Button
               variant="outline"
               disabled={!pending}
               onClick={() => onApply(layout)}
             >
-              应用到实验
-            </Button>
+              {zhCN.settings.applyToExperiment}</Button>
           </div>
         </div>
       </Card>
       <Dialog open={customOpen} onOpenChange={setCustomOpen}>
         <DialogContent aria-describedby={undefined}>
-          <DialogHeader><DialogTitle>自定义驾驶分辨率</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{zhCN.settings.resolutionDialog}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
-            {(["宽度 · px", "高度 · px"] as const).map((label, i) => (
+            {([zhCN.settings.width, zhCN.settings.height] as const).map((label, i) => (
               <label className="field" key={label}><span>{label}</span>
                 <NumberInput  min={1} step={1} value={customSize[i]}
                   onValueChange={(value) => setCustomSize((old) => i === 0 ? [value, old[1]] : [old[0], value])} />
@@ -255,7 +255,7 @@ export function DisplayLayoutEditor({ layout, applied, resolution, running, onCh
           </div>
           <DialogFooter>
             <Button disabled={!customSize.every((v) => Number.isInteger(v) && v > 0)}
-              onClick={() => { onResolutionChange(customSize); setCustomOpen(false); }}>应用</Button>
+              onClick={() => { onResolutionChange(customSize); setCustomOpen(false); }}>{zhCN.settings.apply}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

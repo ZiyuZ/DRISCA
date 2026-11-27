@@ -1,3 +1,4 @@
+import { zhCN } from "../i18n";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -29,7 +30,7 @@ export function useRuntime() {
           setLogs(items => [...items.slice(-499), message.data]);
           const level = String(message.data.level ?? "").toUpperCase();
           if (level === "ERROR" || level === "CRITICAL") {
-            toast.error(String(message.data.message ?? "后台运行异常"));
+            toast.error(String(message.data.message ?? zhCN.status.backendError));
           }
         }
         if (message.type === "experiment_event") setEvents(items => [...items.slice(-499), message.data]);

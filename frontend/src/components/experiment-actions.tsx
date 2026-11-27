@@ -1,3 +1,4 @@
+import { zhCN } from "../i18n";
 import { X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { CommandDefinition, Instruction } from "../types/api";
@@ -53,16 +54,15 @@ export function ExperimentActions({
   return (<>
     {children({ editInstruction: onInstruction, editMarkers })}
     <Modal
-      title="预设事件标记"
+      title={zhCN.console.markerDialog}
       className={markerDraft.length >= 4 ? "sm:max-w-2xl" : undefined}
       open={modal === "markers"}
       onClose={() => setModal("")}
       footer={
         <>
           <span className="marker-add">
-            <Button onClick={() => setMarkerDraft([...markerDraft, "新打点"])}>
-              添加打点
-            </Button>
+            <Button onClick={() => setMarkerDraft([...markerDraft, zhCN.console.newMarker])}>
+              {zhCN.console.addMarker}</Button>
           </span>
           <Button
             variant="default"
@@ -71,8 +71,7 @@ export function ExperimentActions({
               setModal("");
             }}
           >
-            完成
-          </Button>
+            {zhCN.common.done}</Button>
         </>
       }
     >
@@ -82,7 +81,7 @@ export function ExperimentActions({
             <Input
               className="input"
               value={label}
-              placeholder="打点名称"
+              placeholder={zhCN.console.markerName}
               onChange={(e) =>
                 setMarkerDraft(
                   markerDraft.map((item, i) =>
@@ -94,7 +93,7 @@ export function ExperimentActions({
             <Button
               variant="destructive"
               size="icon"
-              aria-label="删除打点"
+              aria-label={zhCN.console.deleteMarker}
               onClick={() =>
                 setMarkerDraft(markerDraft.filter((_, i) => i !== index))
               }
@@ -106,13 +105,13 @@ export function ExperimentActions({
       </div>
     </Modal>
     <Modal
-      title="快捷指令"
+      title={zhCN.console.instructionDialog}
       className="sm:max-w-2xl"
       open={modal === "instruction"}
       onClose={() => setModal("")}
       footer={
         <>
-          <Button variant="outline" onClick={() => setModal("")}>取消</Button>
+          <Button variant="outline" onClick={() => setModal("")}>{zhCN.common.cancel}</Button>
           {instruction &&
             instructions.some(
               (i: Instruction) => i.id === instruction.id,
@@ -127,8 +126,7 @@ export function ExperimentActions({
                   );
                 }}
               >
-                删除
-              </Button>
+                {zhCN.common.delete}</Button>
             )}
           <Button
             variant="default"
@@ -144,8 +142,7 @@ export function ExperimentActions({
               }
             }}
           >
-            完成
-          </Button>
+            {zhCN.common.done}</Button>
         </>
       }
     >
@@ -153,7 +150,7 @@ export function ExperimentActions({
         <div className="dialog-parameters">
           <div className="parameter-wide">
           <Field
-            label="按钮名称"
+            label={zhCN.console.instructionName}
             value={instruction.name}
             onChange={(v: string) =>
               setInstruction({ ...instruction, name: v })
@@ -162,7 +159,7 @@ export function ExperimentActions({
           </div>
           <div className="parameter-wide">
           <Field
-            label="指令类型"
+            label={zhCN.console.instructionType}
             value={instruction.command}
             options={commands.map((d) => ({
               value: d.id,

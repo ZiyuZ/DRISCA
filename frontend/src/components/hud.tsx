@@ -1,3 +1,4 @@
+import { zhCN, format } from "../i18n";
 import { useEffect, useState } from "react";
 type Snapshot = { running: boolean; speed_mps: number; speed_limit_mps: number; gear: number; control_mode: string; steer: number; takeover_requested: boolean; };
 export function Hud() {
@@ -12,23 +13,22 @@ export function Hud() {
   }, []);
   return (
     <div className="hud">
-      {!online ? <h2>管理服务连接已断开</h2> : s?.running ? (
+      {!online ? <h2>{zhCN.hud.disconnected}</h2> : s?.running ? (
         <>
           <div className="hud-speed">
             {Math.round(s.speed_mps * 3.6)}
             <small> km/h</small>
           </div>
           <p>
-            限速 {Math.round(s.speed_limit_mps * 3.6)}　挡位 {s.gear}
-            {s.control_mode === "autopilot" ? "自动驾驶" : "人工驾驶"}
+            {format(zhCN.hud.drivingStats, { speedLimit: Math.round(s.speed_limit_mps * 3.6), gear: s.gear, mode: s.control_mode === "autopilot" ? zhCN.hud.autopilot : zhCN.hud.manual })}
           </p>
           <p>
-            转向 {Math.round(s.steer * 100)}%
-            {s.takeover_requested ? "请接管车辆" : ""}
+            {format(zhCN.hud.steer, { percent: Math.round(s.steer * 100) })}
+            {s.takeover_requested ? zhCN.hud.takeover : ""}
           </p>
         </>
       ) : (
-        <h2>等待实验开始</h2>
+        <h2>{zhCN.hud.waiting}</h2>
       )}
     </div>
   );

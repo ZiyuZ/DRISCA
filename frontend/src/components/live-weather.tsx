@@ -1,3 +1,4 @@
+import { zhCN, format } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -38,9 +39,9 @@ export function LiveWeatherControls({ weather, presets }: Props) {
   return (
     <div className="grid gap-5">
       <label className="weather-field">
-        <span>全局渐变时长 · s</span>
+        <span>{zhCN.weather.transitionSeconds}</span>
         <div className="weather-range">
-          <span className="text-sm text-muted-foreground">下一次天气调整使用该时长</span>
+          <span className="text-sm text-muted-foreground">{zhCN.weather.transitionHint}</span>
           <NumberInput className="input mono" min="0" step="0.5" value={transition}
             onValueChange={setTransition} />
         </div>
@@ -73,9 +74,9 @@ export function LiveFogRegionManager({ regions, telemetry, running }: {
       telemetry={telemetry}
       running={running}
       busy={busy}
-      onCreate={(body) => void submit(() => api("/api/weather/regions", "POST", body), "团雾已创建")}
-      onUpdate={(regionId, body) => void submit(() => api(`/api/weather/regions/${regionId}`, "PATCH", body), "团雾已更新")}
-      onDelete={(regionId, seconds) => void submit(() => api(`/api/weather/regions/${regionId}?transition_seconds=${seconds}`, "DELETE"), "团雾删除已提交")}
+      onCreate={(body) => void submit(() => api("/api/weather/regions", "POST", body), zhCN.weather.fogCreated)}
+      onUpdate={(regionId, body) => void submit(() => api(`/api/weather/regions/${regionId}`, "PATCH", body), zhCN.weather.fogUpdated)}
+      onDelete={(regionId, seconds) => void submit(() => api(`/api/weather/regions/${regionId}?transition_seconds=${seconds}`, "DELETE"), zhCN.weather.fogDeleteSubmitted)}
     />
   );
 }
@@ -106,12 +107,12 @@ function FogRegionEditor({ regions, telemetry, running, busy, onCreate, onUpdate
     <section className="fog-regions">
       <div className="fog-section-head">
         <div>
-          <strong>已添加的团雾</strong>
-          <span>{regions.length} 个区域</span>
+          <strong>{zhCN.weather.regions}</strong>
+          <span>{format(zhCN.weather.regionCount, { count: regions.length })}</span>
         </div>
       </div>
       {regions.length === 0
-        ? <p className="weather-note fog-empty">当前没有已创建的团雾。可在下方新建立即生效。</p>
+        ? <p className="weather-note fog-empty">{zhCN.weather.noLiveRegions}</p>
         : (
           <div className="fog-region-list">
             {regions.map(region => (
@@ -122,18 +123,18 @@ function FogRegionEditor({ regions, telemetry, running, busy, onCreate, onUpdate
           </div>
         )}
       <div className="fog-regions-divider" />
-      <div className="fog-section-head"><div><strong>新增团雾</strong><span>立即应用到场景</span></div></div>
+      <div className="fog-section-head"><div><strong>{zhCN.weather.newRegion}</strong><span>{zhCN.weather.applyImmediately}</span></div></div>
       <div className="fog-add">
         <div className="fog-region-head">
-          <strong>设置新区域</strong>
+          <strong>{zhCN.weather.configureRegion}</strong>
           {running && telemetry
-            ? <Button variant="ghost" disabled={busy} onClick={fillFront}>主车前方 25m</Button>
-            : <span className="weather-note">运行中且有遥测时可填入主车前方</span>}
+            ? <Button variant="ghost" disabled={busy} onClick={fillFront}>{zhCN.weather.aheadOfEgo}</Button>
+            : <span className="weather-note">{zhCN.weather.aheadOfEgoHint}</span>}
         </div>
         <div className="fog-region-grid">
           {(["X", "Y", "Z"] as const).map((axis, index) => (
             <label className="field-row" key={axis}>
-              <span>中心 {axis} · m</span>
+              <span>{format(zhCN.weather.center, { axis })}</span>
               <NumberInput className="input mono" step="0.1" value={center[index]}
                 onValueChange={value => setCenter(old => {
                   const next = [...old] as [number, number, number];
@@ -143,24 +144,23 @@ function FogRegionEditor({ regions, telemetry, running, busy, onCreate, onUpdate
             </label>
           ))}
           <label className="field-row">
-            <span>半径 · m</span>
+            <span>{zhCN.weather.radius}</span>
             <NumberInput className="input mono" min="0.1" step="any" value={radius} onValueChange={setRadius} />
           </label>
           <label className="field-row">
-            <span>雾强度 · %</span>
+            <span>{zhCN.weather.density}</span>
             <NumberInput className="input mono" min="0" max="100" step="1" value={density} onValueChange={setDensity} />
           </label>
           <label className="field-row">
-            <span>渐变 · s</span>
+            <span>{zhCN.weather.transition}</span>
             <NumberInput className="input mono" min="0" step="0.5" value={transition} onValueChange={setTransition} />
           </label>
         </div>
         <div className="fog-region-actions">
           <Button disabled={busy}
             onClick={() => onCreate({ center_m: center, radius_m: radius, density: density / 100, transition_seconds: transition })}>
-            创建并应用
-          </Button>
-          <span className="small">创建后立即生效，无需再点“应用更新”。</span>
+            {zhCN.weather.createAndApply}</Button>
+          <span className="small">{zhCN.weather.createHint}</span>
         </div>
       </div>
     </section>
@@ -185,36 +185,34 @@ function FogRegionRow({ region, busy, onUpdate, onDelete }: {
   return (
     <div className="fog-region">
       <div className="fog-region-head">
-        <strong>团雾 #{region.region_id}</strong>
-        <span className="rounded-full border bg-background px-2 py-1 text-xs font-normal text-muted-foreground">{region.deleting ? "渐隐中" : "已创建"}</span>
+        <strong>{format(zhCN.weather.regionTitle, { id: region.region_id })}</strong>
+        <span className="rounded-full border bg-background px-2 py-1 text-xs font-normal text-muted-foreground">{region.deleting ? zhCN.weather.deleting : zhCN.weather.created}</span>
       </div>
-      <p className="px-4 pt-3 text-xs text-muted-foreground">中心坐标 · m <span className="ml-2 font-mono">{region.center_m.map(value => value.toFixed(2)).join(" / ")}</span></p>
+      <p className="px-4 pt-3 text-xs text-muted-foreground">{zhCN.weather.centerCoordinates}<span className="ml-2 font-mono">{region.center_m.map(value => value.toFixed(2)).join(" / ")}</span></p>
       <div className="fog-region-grid">
         <label className="field-row">
-          <span>半径 · m</span>
+          <span>{zhCN.weather.radius}</span>
           <NumberInput className="input mono" disabled={disabled} min="0.1" step="any" value={radius} onValueChange={setRadius} />
         </label>
         <label className="field-row">
-          <span>雾强度 · %</span>
+          <span>{zhCN.weather.density}</span>
           <NumberInput className="input mono" disabled={disabled} min="0" max="100" step="1" value={density} onValueChange={setDensity} />
         </label>
         <label className="field-row">
-          <span>渐变 · s</span>
+          <span>{zhCN.weather.transition}</span>
           <NumberInput className="input mono" disabled={disabled} min="0" step="0.5" value={transition} onValueChange={setTransition} />
         </label>
       </div>
       <div className="fog-region-actions">
         <Button disabled={disabled || !dirty}
           onClick={() => onUpdate({ radius_m: radius, density: density / 100, transition_seconds: transition })}>
-          应用更新
-        </Button>
+          {zhCN.weather.applyUpdate}</Button>
         <span className="small" role="status">
-          {region.deleting ? "渐隐中" : dirty ? "参数已修改，待应用" : "未修改"}
+          {region.deleting ? zhCN.weather.deleting : dirty ? zhCN.weather.dirty : zhCN.weather.unchanged}
         </span>
-        <Button variant="destructive" className="ml-auto" disabled={disabled} aria-label={`删除区域 ${region.region_id}`}
+        <Button variant="destructive" className="ml-auto" disabled={disabled} aria-label={format(zhCN.weather.deleteRegion, { regionId: region.region_id })}
           onClick={() => onDelete(transition)}>
-          渐隐删除
-        </Button>
+          {zhCN.weather.fadeDelete}</Button>
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import { zhCN } from "../i18n";
 import type { ReactNode } from "react";
 import type { CommandDefinition, CommandField } from "../types/api";
 import { ActionTooltip } from "./action-tooltip";
@@ -91,7 +92,7 @@ export function EventCard({ command, values, disabled, disabledReason, busy, hea
       <div className="mt-4 flex items-center justify-end border-t border-border/50 pt-3">
         <ActionTooltip reason={disabled ? disabledReason : null}>
           <Button disabled={disabled || busy} onClick={onTrigger}>
-            {busy ? "触发中…" : "立即触发"}
+            {busy ? zhCN.console.triggering : zhCN.console.triggerNow}
           </Button>
         </ActionTooltip>
       </div>

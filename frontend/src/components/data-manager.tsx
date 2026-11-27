@@ -1,3 +1,4 @@
+import { zhCN, format } from "../i18n";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRememberedTab } from "../hooks/use-remembered-tab";
@@ -135,14 +136,14 @@ export function DataManager({ state, online }: { state: RuntimeState; online: bo
               ...replay,
               follow_actor_id: replay.follow_ego ? 0 : replay.follow_actor_id,
             }),
-          "回放已开始",
+          zhCN.data.replayStarted,
         )
       }
-      onStopReplay={() => void call(() => api("/api/recordings/stop", "POST"), "回放已停止")}
+      onStopReplay={() => void call(() => api("/api/recordings/stop", "POST"), zhCN.data.replayStopped)}
     />
-    <Modal title="删除所选会话" open={modal === "delete"} onClose={() => { if (!deleting) setModal(""); }}
+    <Modal title={zhCN.data.deleteSessions} open={modal === "delete"} onClose={() => { if (!deleting) setModal(""); }}
       footer={<>
-        <Button variant="outline" disabled={deleting} onClick={() => setModal("")}>取消</Button>
+        <Button variant="outline" disabled={deleting} onClick={() => setModal("")}>{zhCN.common.cancel}</Button>
         <Button variant="destructive" disabled={deleting || !online} onClick={() => void call(async () => {
           setDeleting(true);
           try {
@@ -151,29 +152,29 @@ export function DataManager({ state, online }: { state: RuntimeState; online: bo
             setModal("");
             setRevision(value => value + 1);
           } finally { setDeleting(false); }
-        }, "所选会话已删除")}>删除</Button>
+        }, zhCN.data.sessionsDeleted)}>{zhCN.common.delete}</Button>
       </>}>
-      <p>删除选中的 {selected.length} 个会话及其逐帧数据和事件？</p>
+      <p>{format(zhCN.data.deleteSelectedPrompt, { count: selected.length })}</p>
     </Modal>
     <Modal
-      title="会话详情"
+      title={zhCN.data.sessionDetails}
       open={modal === "detail"}
       onClose={() => setModal("")}
     >
-      <h3>会话信息</h3>
+      <h3>{zhCN.data.sessionInfo}</h3>
       {detail && (
         <Table>
           <TableBody>
             {[
-              ["会话编号", detail.session.session_id],
-              ["被试编号", detail.session.subject_id],
-              ["开始时间", date(detail.session.started_at)],
-              ["结束时间", detail.session.finished_at ? date(detail.session.finished_at) : ""],
-              ["状态", { running: "进行中", committed: "已完成", aborted: "已中止" }[detail.session.status]],
-              ["地图", detail.session.map_name],
-              ["车辆", detail.session.ego_type_id],
-              ["记录帧数", detail.frame_count],
-              ["备注", detail.session.note],
+              [zhCN.data.sessionId, detail.session.session_id],
+              [zhCN.data.subjectId, detail.session.subject_id],
+              [zhCN.data.startedAt, date(detail.session.started_at)],
+              [zhCN.data.endedAt, detail.session.finished_at ? date(detail.session.finished_at) : ""],
+              [zhCN.data.status, { running: zhCN.data.running, committed: zhCN.data.completed, aborted: zhCN.data.aborted }[detail.session.status]],
+              [zhCN.data.map, detail.session.map_name],
+              [zhCN.data.vehicle, detail.session.ego_type_id],
+              [zhCN.data.frameCount, detail.frame_count],
+              [zhCN.data.notes, detail.session.note],
             ].map(([label, v]) => (
               <TableRow key={label}>
                 <TableHead>{label}</TableHead>
@@ -184,19 +185,19 @@ export function DataManager({ state, online }: { state: RuntimeState; online: bo
         </Table>
       )}
       <Collapsible>
-        <CollapsibleTrigger asChild><Button variant="ghost">完整运行配置<ChevronDown /></Button></CollapsibleTrigger>
+        <CollapsibleTrigger asChild><Button variant="ghost">{zhCN.data.runConfig}<ChevronDown /></Button></CollapsibleTrigger>
         <CollapsibleContent><pre>{detail && JSON.stringify(detail.run_config, null, 2)}</pre></CollapsibleContent>
       </Collapsible>
-      <h3>事件日志</h3>
+      <h3>{zhCN.data.events}</h3>
       {detail && (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>时间</TableHead>
-              <TableHead>帧号</TableHead>
-              <TableHead>事件</TableHead>
-              <TableHead>来源</TableHead>
-              <TableHead>详情</TableHead>
+              <TableHead>{zhCN.data.time}</TableHead>
+              <TableHead>{zhCN.data.frame}</TableHead>
+              <TableHead>{zhCN.data.event}</TableHead>
+              <TableHead>{zhCN.data.source}</TableHead>
+              <TableHead>{zhCN.common.details}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -214,7 +215,7 @@ export function DataManager({ state, online }: { state: RuntimeState; online: bo
       )}
     </Modal>
     <Modal
-      title="录像信息"
+      title={zhCN.data.recordingInfo}
       open={modal === "recording"}
       onClose={() => setModal("")}
     >

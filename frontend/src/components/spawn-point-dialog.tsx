@@ -1,3 +1,4 @@
+import { zhCN, format } from "../i18n";
 import { useEffect, useId, useRef, useState } from "react";
 import { catalogMatchesPreset, mapKey, matchSpawnIndex, spawnBound, spawnLabel } from "../lib/spawn";
 import type { PresetConfig, SpawnPoint, Telemetry } from "../types/api";
@@ -12,9 +13,9 @@ const fields = [
   ["x", "X · m"],
   ["y", "Y · m"],
   ["z", "Z · m"],
-  ["pitch", "俯仰 Pitch · °"],
-  ["yaw", "偏航 Yaw · °"],
-  ["roll", "翻滚 Roll · °"],
+  ["pitch", zhCN.spawn.pitch],
+  ["yaw", zhCN.spawn.yaw],
+  ["roll", zhCN.spawn.roll],
 ] as const;
 type Field = (typeof fields)[number][0];
 type Drafts = Record<Field, string>;
@@ -102,25 +103,25 @@ export function SpawnPointEditor({
   const parsed = fields.map(([key]) => parseDraft(drafts[key]));
   const complete = parsed.every((value): value is number => value !== null);
   const statusTitle = boundHere
-    ? "该地图的出生点已确认"
+    ? zhCN.spawn.confirmed
     : hasPoints
-      ? "尚未选择该地图的出生点"
+      ? zhCN.spawn.unselected
       : mapLoaded
-        ? "该地图没有预设出生点"
-        : "尚未选择该地图的出生点";
+        ? zhCN.spawn.noPresets
+        : zhCN.spawn.unselected;
   const statusText = boundHere
     ? !mapLoaded
-      ? "当前预设已有该地图的出生点；加载目标地图后可从预设点中改选。"
+      ? zhCN.spawn.boundUnloadedHint
       : hasPoints
-        ? "可继续使用当前坐标，或从地图预设出生点中改选。"
-        : "当前使用自定义坐标；该地图没有预设出生点。"
+        ? zhCN.spawn.boundHint
+        : zhCN.spawn.boundCustomHint
     : hasPoints
-      ? "已随机预选一个预设出生点，确认或改选后再开始实验。"
+      ? zhCN.spawn.randomHint
       : !connected
-        ? "连接模拟器后可加载目标地图并选择预设出生点，也可以直接填写坐标。"
+        ? zhCN.spawn.disconnectedHint
         : mapLoaded
-          ? "请填写完整坐标后确认。"
-          : `目标地图 ${mapKey(preset.world.map_name)} 尚未加载；加载后可选择预设出生点，也可以直接填写坐标。`;
+          ? zhCN.spawn.completeCoordinatesHint
+          : format(zhCN.spawn.unloadedHint, { mapName: mapKey(preset.world.map_name) });
   const confirm = () => {
     if (mode === "point") {
       if (chosen) onConfirm(chosen);
@@ -165,7 +166,7 @@ export function SpawnPointEditor({
             setDrafts((old) => ({ ...old, [key]: event.target.value }));
           }}
         />
-        {invalid && <small className="field-error">必填，且需为有限数值</small>}
+        {invalid && <small className="field-error">{zhCN.spawn.required}</small>}
       </label>
     );
   };
@@ -184,22 +185,22 @@ export function SpawnPointEditor({
           className="spawn-mode"
         >
           <TabsList className="spawn-mode-list w-full">
-            <TabsTrigger value="point" disabled={!hasPoints}>预设出生点</TabsTrigger>
-            <TabsTrigger value="custom">自定义坐标</TabsTrigger>
+            <TabsTrigger value="point" disabled={!hasPoints}>{zhCN.spawn.preset}</TabsTrigger>
+            <TabsTrigger value="custom">{zhCN.spawn.custom}</TabsTrigger>
           </TabsList>
           <TabsContent value="point" className="spawn-tab-panel">
             {hasPoints ? (
               <>
                 <div className="dr-field">
-                  <span id={labelId}>{mapKey(preset.world.map_name)} 的地图出生点</span>
+                  <span id={labelId}>{format(zhCN.spawn.mapPoints, { mapName: mapKey(preset.world.map_name) })}</span>
                   <SharedSelect
                     aria-labelledby={labelId}
                     disabled={!hasPoints}
-                    placeholder="选择地图出生点"
+                    placeholder={zhCN.spawn.chooseMapPoint}
                     value={pointIndex !== null ? `point:${pointIndex}` : ""}
                     options={points.map((point, index) => [
                       `point:${index}`,
-                      `出生点 ${index + 1} · ${spawnLabel(point)}`,
+                      format(zhCN.spawn.pointLabel, { index: index + 1, coordinates: spawnLabel(point) }),
                     ] as const)}
                     onValueChange={(value) => {
                       setSubmitted(false);
@@ -216,60 +217,56 @@ export function SpawnPointEditor({
                 {chosen && (
                   <div className="spawn-point-card">
                     <div className="spawn-point-row">
-                      <span>位置</span>
+                      <span>{zhCN.spawn.position}</span>
                       <strong>X {chosen.x.toFixed(2)} · Y {chosen.y.toFixed(2)} · Z {chosen.z.toFixed(2)}</strong>
                     </div>
                     <div className="spawn-point-row">
-                      <span>姿态</span>
+                      <span>{zhCN.spawn.rotation}</span>
                       <strong>
-                        俯仰 {chosen.pitch.toFixed(2)}° · 偏航 {chosen.yaw.toFixed(2)}° ·
-                        翻滚 {chosen.roll.toFixed(2)}°
+                        {format(zhCN.spawn.rotationValues, { pitch: chosen.pitch.toFixed(2), yaw: chosen.yaw.toFixed(2), roll: chosen.roll.toFixed(2) })}
                       </strong>
                     </div>
                   </div>
                 )}
                 {pointMissing && (
                   <p className="text-sm text-destructive" role="alert">
-                    出生点列表已更新，请重新选择出生点。
-                  </p>
+                    {zhCN.spawn.staleList}</p>
                 )}
-                <p className="spawn-hint">{boundHere ? "当前预设的出生点已保留，可从列表改选后确认。" : "已随机预选一个点，可直接确认，也可以从列表改选。"}</p>
+                <p className="spawn-hint">{boundHere ? zhCN.spawn.retained : zhCN.spawn.randomReady}</p>
               </>
             ) : (
-              <p className="spawn-hint">该地图没有预设出生点，请使用自定义坐标。</p>
+              <p className="spawn-hint">{zhCN.spawn.noPresetsCustom}</p>
             )}
           </TabsContent>
           <TabsContent value="custom" className="spawn-tab-panel">
             <div className="spawn-section">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <strong className="text-sm">自定义出生点</strong>
-                <ActionTooltip reason={!telemetry ? "暂无主车遥测，开始实验并收到遥测后可拾取当前位置" : "填入当前主车的位置与姿态，确认后保存到预设"}>
-                  <Button size="sm" variant="outline" disabled={!telemetry} onClick={pickCurrent}>拾取当前位置</Button>
+                <strong className="text-sm">{zhCN.spawn.customTitle}</strong>
+                <ActionTooltip reason={!telemetry ? zhCN.spawn.telemetryRequired : zhCN.spawn.pickupHint}>
+                  <Button size="sm" variant="outline" disabled={!telemetry} onClick={pickCurrent}>{zhCN.spawn.pickup}</Button>
                 </ActionTooltip>
               </div>
               <div className="spawn-coordinate-columns">
                 <section className="grid content-start gap-3 rounded-lg border bg-muted/20 p-4">
-                  <h3 className="text-xs font-semibold text-muted-foreground">位置 · m</h3>
+                  <h3 className="text-xs font-semibold text-muted-foreground">{zhCN.spawn.positionGroup}</h3>
                   {fields.slice(0, 3).map(field)}
                 </section>
                 <section className="grid content-start gap-3 rounded-lg border bg-muted/20 p-4">
-                  <h3 className="text-xs font-semibold text-muted-foreground">角度 · °</h3>
+                  <h3 className="text-xs font-semibold text-muted-foreground">{zhCN.spawn.rotationGroup}</h3>
                   {fields.slice(3).map(field)}
                 </section>
               </div>
             </div>
             {submitted && !complete && (
               <p className="text-sm text-destructive" role="alert">
-                请填写完整的出生点坐标（X、Y、Z、俯仰、偏航、翻滚）。
-              </p>
+                {zhCN.spawn.incompleteCoordinates}</p>
             )}
             <p className="spawn-hint">
-              坐标需落在目标地图的道路上；启动前会用道路查询校验，道路外会被拒绝。
-            </p>
+              {zhCN.spawn.roadValidationHint}</p>
           </TabsContent>
         </Tabs>
         <div className="flex justify-end border-t pt-4">
-          <Button onClick={confirm} disabled={mode === "point" && !chosen}>确认出生点</Button>
+          <Button onClick={confirm} disabled={mode === "point" && !chosen}>{zhCN.spawn.confirm}</Button>
         </div>
       </div>
   );

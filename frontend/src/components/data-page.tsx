@@ -1,3 +1,4 @@
+import { zhCN, format } from "../i18n";
 import { NumberInput } from "./number-input";
 import { Download, ListX, Play, Square, Trash2 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
@@ -86,14 +87,14 @@ export function DataPage(p: Props) {
     p.sessions.every((s) => p.selected.includes(s.session_id));
   return (
     <PageTabs value={p.tab} onValueChange={p.setTab}
-      items={[["sessions", "会话记录"], ["recordings", "录像回放"]]}>
+      items={[["sessions", zhCN.data.sessions], ["recordings", zhCN.data.recordings]]}>
       {p.tab === "sessions" ? (
         <div className="data-page">
           <Card className="dr-card table-card gap-0">
             <div className="table-top data-filters">
               <Input
                 className="input"
-                placeholder="搜索被试或会话编号"
+                placeholder={zhCN.data.searchSessions}
                 value={p.search}
                 onChange={(e) => p.setSearch(e.target.value)}
               />
@@ -104,25 +105,25 @@ export function DataPage(p: Props) {
                   p.setStatus(value === "all" ? "" : value)
                 }
                 options={[
-                  ["all", "全部状态"],
-                  ["running", "进行中"],
-                  ["committed", "已完成"],
-                  ["aborted", "已中止"],
+                  ["all", zhCN.data.allStatuses],
+                  ["running", zhCN.data.running],
+                  ["committed", zhCN.data.completed],
+                  ["aborted", zhCN.data.aborted],
                 ]}
               />
               <div className="date-filter">
                 <Input
                   className="input"
                   type="date"
-                  aria-label="开始日期"
+                  aria-label={zhCN.data.startDate}
                   value={p.from}
                   onChange={(e) => p.setFrom(e.target.value)}
                 />
-                <span>至</span>
+                <span>{zhCN.data.dateTo}</span>
                 <Input
                   className="input"
                   type="date"
-                  aria-label="结束日期"
+                  aria-label={zhCN.data.endDate}
                   value={p.to}
                   onChange={(e) => p.setTo(e.target.value)}
                 />
@@ -133,23 +134,21 @@ export function DataPage(p: Props) {
                 className="recent-filter app-text-button"
                 onClick={p.onRecent}
               >
-                最近一月
-              </Button>
+                {zhCN.data.lastMonth}</Button>
               <Button
                 disabled={!p.selected.length || p.state.export.running}
                 onClick={p.onExport}
               >
                 <Download />
-                导出所选{p.selected.length ? ` · ${p.selected.length}` : ""}
+                {zhCN.data.exportSelected}{p.selected.length ? ` · ${p.selected.length}` : ""}
               </Button>
               <Button variant="destructive" disabled={!p.selected.length || p.state.export.running}
                 onClick={p.onDelete}>
-                <Trash2 />删除所选
-              </Button>
+                <Trash2 />{zhCN.data.deleteSelected}</Button>
             </div>
             <div className="selection-toolbar">
-              <span className="small total-sessions">共 {p.total} 个会话</span>
-              <span className="small">已选 {p.selected.length} 个会话</span>
+              <span className="small total-sessions">{format(zhCN.data.totalSessions, { count: p.total })}</span>
+              <span className="small">{format(zhCN.data.selectedSessions, { count: p.selected.length })}</span>
               <Button
                 variant="ghost"
                 size="sm"
@@ -163,10 +162,9 @@ export function DataPage(p: Props) {
                   ])
                 }
               >
-                选择筛选结果全部 {p.sessions.length} 项
-              </Button>
+                {format(zhCN.data.selectAllFiltered, { count: p.sessions.length })}</Button>
               <IconAction
-                label="清空选择"
+                label={zhCN.data.clearSelection}
                 disabled={!p.selected.length}
                 onClick={() => p.setSelected([])}
               >
@@ -179,7 +177,7 @@ export function DataPage(p: Props) {
                   <TableRow>
                     <TableHead className="select-col">
                       <Checkbox
-                        aria-label="选择当前筛选的全部实验"
+                        aria-label={zhCN.data.selectAllSessions}
                         checked={allSelected}
                         onCheckedChange={(v) =>
                           p.setSelected((old) =>
@@ -200,13 +198,13 @@ export function DataPage(p: Props) {
                         }
                       />
                     </TableHead>
-                    <TableHead>会话编号</TableHead>
-                    <TableHead>被试编号</TableHead>
-                    <TableHead>开始时间</TableHead>
-                    <TableHead>地图</TableHead>
-                    <TableHead>状态</TableHead>
-                    <TableHead>记录帧数</TableHead>
-                    <TableHead>备注</TableHead>
+                    <TableHead>{zhCN.data.sessionId}</TableHead>
+                    <TableHead>{zhCN.data.subjectId}</TableHead>
+                    <TableHead>{zhCN.data.startedAt}</TableHead>
+                    <TableHead>{zhCN.data.map}</TableHead>
+                    <TableHead>{zhCN.data.status}</TableHead>
+                    <TableHead>{zhCN.data.frameCount}</TableHead>
+                    <TableHead>{zhCN.data.notes}</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -216,7 +214,7 @@ export function DataPage(p: Props) {
                       <TableCell>
                         <Checkbox
                           checked={p.selected.includes(s.session_id)}
-                          aria-label={`选择 ${s.subject_id}`}
+                          aria-label={format(zhCN.data.selectSubject, { subjectId: s.subject_id })}
                           onCheckedChange={(v) =>
                             p.setSelected((old) =>
                               v
@@ -237,10 +235,10 @@ export function DataPage(p: Props) {
                           className={`dr-badge ${s.status === "committed" ? "live" : "warn"}`}
                         >
                           {s.status === "committed"
-                            ? "已完成"
+                            ? zhCN.data.completed
                             : s.status === "aborted"
-                              ? "已中止"
-                              : "进行中"}
+                              ? zhCN.data.aborted
+                              : zhCN.data.running}
                         </span>
                       </TableCell>
                       <TableCell className="mono">
@@ -255,16 +253,14 @@ export function DataPage(p: Props) {
                           size="sm"
                           onClick={() => p.onDetail(s.session_id)}
                         >
-                          详情
-                        </Button>
+                          {zhCN.common.details}</Button>
                       </TableCell>
                     </TableRow>
                   ))}
                   {!p.sessions.length && (
                     <TableRow>
                       <TableCell colSpan={9} className="empty">
-                        当前条件下暂无实验记录
-                      </TableCell>
+                        {zhCN.data.noSessions}</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
@@ -278,8 +274,8 @@ export function DataPage(p: Props) {
                 <div className="row spread">
                   <span>
                     {p.state.export.running
-                      ? "正在导出"
-                      : p.state.export.error || "导出完成"}
+                      ? zhCN.data.exporting
+                      : p.state.export.error || zhCN.data.exportComplete}
                   </span>
                   <span className="mono">{p.state.export.progress}%</span>
                 </div>
@@ -291,7 +287,7 @@ export function DataPage(p: Props) {
                 {p.state.export.path && (
                   <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                     <span className="small mono min-w-0 break-all">{p.state.export.path}</span>
-                    <Button size="sm" variant="outline" onClick={p.onOpenExportDir}>打开导出文件夹</Button>
+                    <Button size="sm" variant="outline" onClick={p.onOpenExportDir}>{zhCN.data.openExportFolder}</Button>
                   </div>
                 )}
               </div>
@@ -303,7 +299,7 @@ export function DataPage(p: Props) {
             <div className="table-top">
               <Input
                 className="input"
-                placeholder="搜索录像名称"
+                placeholder={zhCN.data.searchRecordings}
                 value={p.recSearch}
                 onChange={(e) => {
                   p.setRecSearch(e.target.value);
@@ -315,9 +311,9 @@ export function DataPage(p: Props) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>录像文件</TableHead>
-                    <TableHead>大小</TableHead>
-                    <TableHead>修改时间</TableHead>
+                    <TableHead>{zhCN.data.recordingFile}</TableHead>
+                    <TableHead>{zhCN.data.size}</TableHead>
+                    <TableHead>{zhCN.data.modifiedAt}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -346,23 +342,21 @@ export function DataPage(p: Props) {
                   {!p.recordings.length && (
                     <TableRow>
                       <TableCell colSpan={3} className="empty">
-                        暂无匹配的录像
-                      </TableCell>
+                        {zhCN.data.noRecordings}</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
               </Table>
             </div>
             <div className="pagination">
-              <span className="small">共 {p.recTotal} 个录像</span>
+              <span className="small">{format(zhCN.data.totalRecordings, { count: p.recTotal })}</span>
               <div className="row">
                 <Button
                   variant="outline"
                   disabled={p.recPage <= 1}
                   onClick={() => p.setRecPage(p.recPage - 1)}
                 >
-                  上一页
-                </Button>
+                  {zhCN.data.previousPage}</Button>
                 <span className="small mono">
                   {p.recPage} / {Math.max(1, Math.ceil(p.recTotal / 8))}
                 </span>
@@ -371,32 +365,31 @@ export function DataPage(p: Props) {
                   disabled={p.recPage * 8 >= p.recTotal}
                   onClick={() => p.setRecPage(p.recPage + 1)}
                 >
-                  下一页
-                </Button>
+                  {zhCN.data.nextPage}</Button>
               </div>
             </div>
           </Card>
           <Card className="dr-card replay-settings gap-0">
             <div className="card-head">
-              <h2>回放设置</h2>
-              <span className="small mono">{p.recording || "请选择录像"}</span>
+              <h2>{zhCN.data.replaySettings}</h2>
+              <span className="small mono">{p.recording || zhCN.data.chooseRecording}</span>
             </div>
             {p.state.replay.running && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3" role="status">
-              <div className="min-w-0"><strong className="text-sm">正在回放</strong><p className="small break-all">{p.state.replay.name}</p></div>
-              <Button variant="destructive" size="sm" onClick={p.onStopReplay}><Square />停止回放</Button>
+              <div className="min-w-0"><strong className="text-sm">{zhCN.data.replaying}</strong><p className="small break-all">{p.state.replay.name}</p></div>
+              <Button variant="destructive" size="sm" onClick={p.onStopReplay}><Square />{zhCN.data.stopReplay}</Button>
             </div>}
             {p.state.replay.error && <p className="mb-3 text-sm text-destructive" role="alert">{p.state.replay.error}</p>}
             <div className="replay-form">
               <label className="parameter-wide flex items-start gap-3 rounded-lg border bg-muted/20 p-3">
                 <Switch checked={p.replay.follow_ego} onCheckedChange={value => p.setReplay({ ...p.replay, follow_ego: value })} />
-                <span className="grid gap-1 text-sm">跟随主车<span className="small">自动跟随该会话记录的主车；关闭后可指定车辆 ID。</span></span>
+                <span className="grid gap-1 text-sm">{zhCN.data.followEgo}<span className="small">{zhCN.data.followEgoHint}</span></span>
               </label>
               {(
                 [
-                  ["start_time", "起始时间 · 秒"],
-                  ["duration", "回放时长 · 秒"],
-                  ["time_factor", "倍速"],
-                  ["follow_actor_id", "跟随车辆 ID"],
+                  ["start_time", zhCN.data.replayStart],
+                  ["duration", zhCN.data.replayDuration],
+                  ["time_factor", zhCN.data.replaySpeed],
+                  ["follow_actor_id", zhCN.data.followActor],
                 ] as const
               ).map(([key, label]) => (
                 <label className="dr-field" key={key}>
@@ -421,16 +414,15 @@ export function DataPage(p: Props) {
                 disabled={!p.recording || !p.state.carla_connected || p.state.phase !== "idle"}
                 onClick={p.onInfo}
               >
-                查看信息
-              </Button>
+                {zhCN.data.viewRecordingInfo}</Button>
               <Hint
                 enabled={!p.state.carla_connected || p.state.phase !== "idle"}
                 text={
                   !p.state.carla_connected
-                    ? "请先连接 CARLA"
+                    ? zhCN.carla.connectFirst
                     : p.state.phase !== "idle"
-                      ? "请先结束实验"
-                      : "开始回放"
+                      ? zhCN.data.stopExperimentFirst
+                      : zhCN.data.startReplay
                 }
               >
                 <span>
@@ -444,8 +436,7 @@ export function DataPage(p: Props) {
                     onClick={p.onReplay}
                   >
                     <Play />
-                    开始回放
-                  </Button>
+                    {zhCN.data.startReplay}</Button>
                 </span>
               </Hint>
               </div>
