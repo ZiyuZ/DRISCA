@@ -107,6 +107,20 @@ class RoadGraph:
     def get(self, lane_key: str) -> LaneNode | None:
         return self._lanes.get(lane_key)
 
+    def project_on_lane(self, node: LaneNode, x: float, y: float) -> LaneProjection | None:
+        """将世界坐标直接投影到指定车道中心线上。"""
+        if node.points.shape[0] == 0:
+            return None
+        deltas = node.points[:, :2] - np.array([x, y], dtype=np.float64)
+        dist_sq = np.einsum('ij,ij->i', deltas, deltas)
+        idx = int(np.argmin(dist_sq))
+        return LaneProjection(
+            lane=node,
+            sample_index=idx,
+            s=float(node.s_values[idx]),
+            lateral_distance=float(math.sqrt(float(dist_sq[idx]))),
+        )
+
     def lanes_for_road(self, road_id: int, lane_id: int) -> tuple[LaneNode, ...]:
         return self._by_road_lane.get((road_id, lane_id), ())
 

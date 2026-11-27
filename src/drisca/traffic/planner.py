@@ -34,19 +34,26 @@ class LocalRoutePlanner:
         self._horizon_m = horizon_m
         self._rng = random.Random(random_seed) if random_seed is not None else None
         self._queue: list[str] = []
+        self._lane_change_target: str | None = None
 
     def reset(self) -> None:
         self._queue.clear()
+        self._lane_change_target = None
 
     def current_lane(self) -> LaneNode | None:
         if not self._queue:
             return None
         return self._graph.get(self._queue[0])
 
+    @property
+    def is_changing_lane(self) -> bool:
+        return self._lane_change_target is not None
+
     def switch_lane(self, target_lane_key: str) -> None:
-        """发起换道，将目标车道置为前瞻队列首段。"""
+        """发起换道，将目标车道置为前瞻队列首段并锁定，直到车身进入目标车道。"""
         if self._graph.get(target_lane_key) is not None:
             self._queue = [target_lane_key]
+            self._lane_change_target = target_lane_key
 
     def update(
         self,
@@ -58,14 +65,34 @@ class LocalRoutePlanner:
         lane_id: int | None = None,
     ) -> RoutePath | None:
         """根据当前车辆位姿更新前瞻路径。"""
-        proj = self._graph.locate(
-            x,
-            y,
-            yaw_deg,
-            road_id=road_id,
-            lane_id=lane_id,
-            preferred_keys=tuple(self._queue[:3]),
-        )
+        proj: LaneProjection | None = None
+        if self._lane_change_target is not None:
+            target_node = self._graph.get(self._lane_change_target)
+            if target_node is not None:
+                proj = self._graph.project_on_lane(target_node, x, y)
+                if proj is None:
+                    self._lane_change_target = None
+                elif proj.lateral_distance <= 0.8:
+                    self._lane_change_target = None
+                elif proj.s >= max(0.0, target_node.length - 1.5):
+                    nxt = self._pick_successor(target_node)
+                    if nxt is not None:
+                        self._lane_change_target = nxt.lane_key
+                        self._queue = [nxt.lane_key]
+                        proj = self._graph.project_on_lane(nxt, x, y)
+                    else:
+                        self._lane_change_target = None
+            else:
+                self._lane_change_target = None
+        if proj is None:
+            proj = self._graph.locate(
+                x,
+                y,
+                yaw_deg,
+                road_id=road_id,
+                lane_id=lane_id,
+                preferred_keys=tuple(self._queue[:3]),
+            )
         if proj is None:
             return None
         self._sync_queue(proj)

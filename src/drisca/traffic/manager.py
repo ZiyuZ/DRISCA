@@ -50,10 +50,16 @@ class ManagedVehicle:
     brake_override_value: float = 0.0
     speed_factor_override_until: float = 0.0
     speed_factor_override: float | None = None
+    target_speed_mps_override_until: float = 0.0
+    target_speed_mps_override: float | None = None
     ignore_signals_until: float = 0.0
     permanent_stop: bool = False
     pending_merge_lane: str | None = None
     merge_trigger_distance_m: float = 0.0
+    overtake_target_lane: str | None = None
+    overtake_return_side: str | None = None
+    overtake_clear_front_m: float = 10.0
+    overtake_extra_speed_mps: float = 0.0
 
 
 class TrafficManager:
@@ -89,6 +95,7 @@ class TrafficManager:
         default_speed_limit_mps: float,
         speed_factor: float,
         enable_lane_change: bool = False,
+        initial_speed_mps: float = 0.0,
     ) -> ManagedVehicle:
         """动态生成单辆由 TrafficManager 托管的背景车。"""
         catalog = api.catalog()
@@ -106,6 +113,7 @@ class TrafficManager:
             },
             role_name='autopilot',
             mode='external',
+            initial_speed_mps=initial_speed_mps,
         )
         actor_id = int(result['actor_id'])
         controller = AutopilotController(
@@ -146,7 +154,26 @@ class TrafficManager:
             return 0
 
         rng = random.Random(cfg.seed)
-        rng.shuffle(spawn_points)
+        radius = cfg.active_radius_m
+        # 大地图优先在主车周边 [25 m, active_radius_m] 内生成，避免在数公里外未加载区块生成导致超时
+        near_points = [
+            pt
+            for pt in spawn_points
+            if 25.0 <= math.hypot(pt.x - ego_location[0], pt.y - ego_location[1]) <= radius
+        ]
+        mid_points = [
+            pt
+            for pt in spawn_points
+            if radius < math.hypot(pt.x - ego_location[0], pt.y - ego_location[1]) <= radius * 1.5
+        ]
+        rng.shuffle(near_points)
+        rng.shuffle(mid_points)
+        ordered_points = near_points + mid_points
+        if not ordered_points:
+            ordered_points = sorted(
+                spawn_points,
+                key=lambda pt: math.hypot(pt.x - ego_location[0], pt.y - ego_location[1]),
+            )
 
         counts = cfg.style_counts
         style_queue: list[str] = (
@@ -160,7 +187,7 @@ class TrafficManager:
         occupied: list[tuple[float, float]] = [(ego_location[0], ego_location[1])]
         spawned = 0
         style_counts: dict[str, int] = {}
-        for point in spawn_points:
+        for point in ordered_points:
             if spawned >= len(style_queue):
                 break
             px, py, pz = point.x, point.y, point.z
@@ -234,8 +261,52 @@ class TrafficManager:
         ]
         for aid in gone_ids:
             removed = self.vehicles.pop(aid)
-            self._respawn_styles.append(removed.style_name)
-            logger.info(f'背景车 #{aid} 已离开场景控制范围，已移除并加入补充队列')
+            if self._config.auto_respawn:
+                self._respawn_styles.append(removed.style_name)
+            logger.info(f'背景车 #{aid} 已离开场景控制范围，已移除')
+
+    def adjust_target_count(
+        self,
+        target_count: int,
+        *,
+        ego_xy: tuple[float, float] | None,
+        scene: TrafficScene | None,
+    ) -> tuple[int, int]:
+        """运行期动态调整目标背景车数量：超额销毁最远车辆，不足则加入远处补车队列。"""
+        current = len(self.vehicles)
+        delta = target_count - current
+        if delta > 0:
+            styles = ('balanced', 'aggressive', 'conservative', 'sluggish')
+            for _ in range(delta):
+                self._respawn_styles.append(self._respawn_rng.choice(styles))
+            return current, delta
+
+        if delta < 0:
+            self._respawn_styles.clear()
+            to_remove = -delta
+            pos_by_id: dict[int, tuple[float, float]] = {}
+            if scene is not None:
+                for idx, aid in enumerate(scene.actor_ids):
+                    pos_by_id[int(aid)] = (float(scene.xy[idx, 0]), float(scene.xy[idx, 1]))
+
+            def _dist_key(aid: int) -> float:
+                if ego_xy is None or aid not in pos_by_id:
+                    return 0.0
+                px, py = pos_by_id[aid]
+                return math.hypot(px - ego_xy[0], py - ego_xy[1])
+
+            furthest = sorted(self.vehicles.keys(), key=_dist_key, reverse=True)[:to_remove]
+            destroy_ids: list[int] = []
+            for aid in furthest:
+                if self.vehicles.pop(aid, None) is not None:
+                    destroy_ids.append(aid)
+            if destroy_ids:
+                self._queued_operations.append(
+                    {'method': 'vehicle.destroy', 'params': {'actor_ids': destroy_ids}}
+                )
+            return current, -len(destroy_ids)
+
+        return current, 0
 
     def respawn_lost(
         self,
@@ -245,14 +316,11 @@ class TrafficManager:
         scene: TrafficScene | None,
         default_speed_limit_mps: float,
     ) -> int:
-        """在非封闭地图上有背景车离开边界销毁后，于空闲出生点补充同等风格车辆。"""
-        if not self._config.auto_respawn:
-            self._respawn_styles.clear()
-            return 0
+        """在主车周边外环空闲出生点补充背景车，维持目标交通规模。"""
         if not self._respawn_styles:
             return 0
         now = time.monotonic()
-        if now - self._last_respawn_at < 1.5:
+        if now - self._last_respawn_at < 1.0:
             return 0
         self._last_respawn_at = now
         catalog = api.catalog()
@@ -271,13 +339,28 @@ class TrafficManager:
             occupied.extend((float(xy[0]), float(xy[1])) for xy in scene.xy)
 
         cfg = self._config
+        radius = cfg.active_radius_m
+        inner_min = min(max(45.0, radius * 0.35), 140.0)
+        if ego_xy is not None:
+            ring_points = [
+                pt
+                for pt in spawn_points
+                if inner_min <= math.hypot(pt.x - ego_xy[0], pt.y - ego_xy[1]) <= radius
+            ]
+            fallback_points = [
+                pt
+                for pt in spawn_points
+                if 30.0 <= math.hypot(pt.x - ego_xy[0], pt.y - ego_xy[1]) < inner_min
+            ]
+            candidate_points = ring_points + fallback_points
+        else:
+            candidate_points = spawn_points
+
         respawned = 0
         while self._respawn_styles:
             style_name = self._respawn_styles[0]
             chosen = None
-            for pt in spawn_points:
-                if ego_xy is not None and math.hypot(pt.x - ego_xy[0], pt.y - ego_xy[1]) < 30.0:
-                    continue
+            for pt in candidate_points:
                 if any(math.hypot(pt.x - ox, pt.y - oy) < 15.0 for ox, oy in occupied):
                     continue
                 chosen = pt
@@ -343,6 +426,15 @@ class TrafficManager:
         vehicles = snapshot.vehicles
         index_by_id = {int(aid): idx for idx, aid in enumerate(scene.actor_ids)}
         now = time.monotonic()
+        ego_speed_live = 0.0
+        if ego_xy is not None:
+            for idx_all, aid_all in enumerate(scene.actor_ids):
+                if int(aid_all) not in self.vehicles:
+                    dx_e = float(scene.xy[idx_all, 0]) - ego_xy[0]
+                    dy_e = float(scene.xy[idx_all, 1]) - ego_xy[1]
+                    if dx_e * dx_e + dy_e * dy_e < 4.0:
+                        ego_speed_live = float(scene.speeds[idx_all])
+                        break
 
         out_of_bounds: list[int] = []
         for actor_id, entry in self.vehicles.items():
@@ -360,6 +452,11 @@ class TrafficManager:
                 continue
             vx = float(scene.xy[idx, 0])
             vy = float(scene.xy[idx, 1])
+            if ego_xy is not None:
+                despawn_radius = self._config.active_radius_m * 1.25
+                if math.hypot(vx - ego_xy[0], vy - ego_xy[1]) > despawn_radius:
+                    out_of_bounds.append(actor_id)
+                    continue
 
             if entry.pending_merge_lane is not None and ego_xy is not None:
                 dist_to_ego = math.hypot(vx - ego_xy[0], vy - ego_xy[1])
@@ -379,7 +476,51 @@ class TrafficManager:
                         f'距离={dist_to_ego:.1f}m'
                     )
 
+            if (
+                entry.overtake_target_lane is not None or entry.overtake_return_side is not None
+            ) and ego_xy is not None:
+                # 动态跟踪主车实时车速，保证主车提速时超车车仍能持续拉快超越
+                if entry.overtake_extra_speed_mps > 0.0:
+                    entry.target_speed_mps_override = max(
+                        ego_speed_live + entry.overtake_extra_speed_mps,
+                        entry.target_speed_mps_override or 20.0,
+                    )
+                    entry.target_speed_mps_override_until = max(
+                        entry.target_speed_mps_override_until, now + 3.0
+                    )
+                v_rad = math.radians(float(rec['rotation'][1]))
+                ahead_of_ego = (vx - ego_xy[0]) * math.cos(v_rad) + (vy - ego_xy[1]) * math.sin(v_rad)
+                if ahead_of_ego >= entry.overtake_clear_front_m:
+                    # 优先基于超车车当前所在路段动态解析切回的相邻同向车道，避免跨路段后旧 lane_key 失效
+                    resolved_target = entry.overtake_target_lane
+                    cur_lane = entry.controller._planner.current_lane()
+                    if cur_lane is not None and entry.overtake_return_side is not None:
+                        if (
+                            entry.overtake_return_side == 'left'
+                            and cur_lane.left_lane
+                            and cur_lane.left_same_direction
+                        ):
+                            resolved_target = cur_lane.left_lane
+                        elif (
+                            entry.overtake_return_side == 'right'
+                            and cur_lane.right_lane
+                            and cur_lane.right_same_direction
+                        ):
+                            resolved_target = cur_lane.right_lane
+                    entry.overtake_target_lane = None
+                    entry.overtake_return_side = None
+                    entry.overtake_extra_speed_mps = 0.0
+                    if resolved_target is not None:
+                        entry.controller.switch_lane(resolved_target)
+                        logger.info(
+                            f'超车车辆拉出前距，触发切回：actor_id={actor_id} -> 车道 {resolved_target}，'
+                            f'前距={ahead_of_ego:.1f}m'
+                        )
+
             speed_override = entry.speed_factor_override if now < entry.speed_factor_override_until else None
+            target_speed_override = (
+                entry.target_speed_mps_override if now < entry.target_speed_mps_override_until else None
+            )
             ignore_signals = now < entry.ignore_signals_until
 
             control = entry.controller.step(
@@ -396,6 +537,7 @@ class TrafficManager:
                 self_actor_id=actor_id,
                 ignore_signals=ignore_signals,
                 speed_factor_override=speed_override,
+                target_speed_mps_override=target_speed_override,
             )
             if entry.permanent_stop:
                 control = VehicleControl(throttle=0.0, steer=0.0, brake=0.85, hand_brake=True)
@@ -406,12 +548,16 @@ class TrafficManager:
                     brake=entry.brake_override_value,
                 )
             operations.append(control.to_operation(actor_id, entry.control_revision))
+        destroy_ids: list[int] = []
         for aid in out_of_bounds:
             removed = self.vehicles.pop(aid, None)
             if removed is not None:
-                self._respawn_styles.append(removed.style_name)
-                operations.append({'method': 'vehicle.destroy', 'params': {'actor_id': aid}})
-                logger.info(f'背景车 #{aid} 坠出地图边界或侧翻，已销毁并安排补充')
+                if self._config.auto_respawn:
+                    self._respawn_styles.append(removed.style_name)
+                destroy_ids.append(aid)
+                logger.info(f'背景车 #{aid} 超出活动半径或异常姿态，已销毁')
+        if destroy_ids:
+            operations.append({'method': 'vehicle.destroy', 'params': {'actor_ids': destroy_ids}})
         if selected_actor_id is not None and selected_actor_id in self.vehicles:
             pts = self.vehicles[selected_actor_id].controller.planned_points()
             if pts:
@@ -435,6 +581,7 @@ class TrafficManager:
         ego_yaw_deg: float,
         ego_road_id: int,
         ego_lane_id: int,
+        ego_speed_mps: float = 0.0,
         scene: TrafficScene | None,
         traffic_lights: tuple[dict[str, Any], ...] | list[dict[str, Any]] = (),
         default_speed_limit_mps: float,
@@ -452,6 +599,7 @@ class TrafficManager:
             ego_yaw_deg=ego_yaw_deg,
             ego_road_id=ego_road_id,
             ego_lane_id=ego_lane_id,
+            ego_speed_mps=ego_speed_mps,
             scene=scene,
             traffic_lights=traffic_lights,
             default_speed_limit_mps=default_speed_limit_mps,

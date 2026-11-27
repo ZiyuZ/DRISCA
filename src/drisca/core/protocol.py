@@ -543,10 +543,12 @@ class TrafficActionCommand(BaseModel, frozen=True):
     action: Literal[
         'lead_hard_brake',
         'adjacent_cut_in',
+        'rear_overtake',
         'lead_breakdown',
         'ahead_signal_change',
         'dual_lane_slowdown',
         'red_light_runner',
+        'set_traffic_count',
     ]
     params: dict[str, Any] = Field(default_factory=dict)
 

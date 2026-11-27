@@ -318,6 +318,7 @@ class NativeApiClient:
         role_name: str = '',
         attributes: dict[str, str] | None = None,
         mode: str = 'manual',
+        initial_speed_mps: float = 0.0,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
             **self._world(),
@@ -329,6 +330,8 @@ class NativeApiClient:
             params['role_name'] = role_name
         if attributes:
             params['attributes'] = attributes
+        if initial_speed_mps > 0.01:
+            params['initial_speed_mps'] = float(initial_speed_mps)
         return self.request('vehicle.spawn', params)
 
     def start_view(

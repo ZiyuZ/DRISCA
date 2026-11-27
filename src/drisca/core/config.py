@@ -292,10 +292,10 @@ class KeyboardControlConfig(BaseModel, frozen=True, extra='forbid'):
     toggle_light_left_blinker: KeyboardKey = KeyboardKey.Z
     toggle_light_right_blinker: KeyboardKey = KeyboardKey.X
     toggle_light_interior: KeyboardKey = KeyboardKey.I
-    drive_forward: KeyboardKey = KeyboardKey.UP
-    drive_backward: KeyboardKey = KeyboardKey.DOWN
-    drive_left: KeyboardKey = KeyboardKey.LEFT
-    drive_right: KeyboardKey = KeyboardKey.RIGHT
+    drive_forward: KeyboardKey = KeyboardKey.W
+    drive_backward: KeyboardKey = KeyboardKey.S
+    drive_left: KeyboardKey = KeyboardKey.A
+    drive_right: KeyboardKey = KeyboardKey.D
 
 
 class WheelControlConfig(BaseModel, frozen=True, extra='forbid'):
@@ -448,6 +448,7 @@ class TrafficConfig(BaseModel, frozen=True, extra='forbid'):
     diversity: float = Field(default=0.12, ge=0.0, le=0.35)  # 同风格车辆的个体参数随机离散度
     enable_lane_change: bool = True
     auto_respawn: bool = True  # 背景车离开非封闭地图边界或侧翻销毁后自动补充
+    active_radius_m: float = Field(default=350.0, ge=80.0, le=2000.0)  # 主车周边交通活动半径
     car_following_model: Literal['idm', 'gipps', 'krauss'] = 'idm'
     lane_change_model: Literal['gap', 'mobil'] = 'gap'
 

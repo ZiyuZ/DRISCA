@@ -5,6 +5,7 @@ import random
 from typing import Protocol
 
 from .idm import IDMModel, LeadVehicle
+from .planner import RoutePath
 from .profiles import DrivingProfile
 from .scene import TrafficScene
 
@@ -20,6 +21,8 @@ class CarFollowingModel(Protocol):
         x: float,
         y: float,
         yaw_deg: float,
+        speed_mps: float = 0.0,
+        path: RoutePath | None = None,
     ) -> LeadVehicle | None: ...
 
     def compute_accel(

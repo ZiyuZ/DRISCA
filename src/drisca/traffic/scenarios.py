@@ -32,6 +32,7 @@ def _spawn_along_ego(
     default_speed_limit_mps: float,
     speed_factor: float = 0.85,
     adjacent: str | None = None,
+    initial_speed_mps: float = 0.0,
 ) -> tuple[ManagedVehicle, str]:
     """沿主车当前车道（或相邻同向车道）在指定前方距离生成托管车，返回 (entry, base_lane_key)。"""
     proj = manager.graph.locate(
@@ -61,6 +62,7 @@ def _spawn_along_ego(
             yaw_deg=yaw_deg,
             default_speed_limit_mps=default_speed_limit_mps,
             speed_factor=speed_factor,
+            initial_speed_mps=initial_speed_mps,
         )
         return entry, base_lane.lane_key
 
@@ -99,6 +101,7 @@ def _spawn_along_ego(
         yaw_deg=side_yaw,
         default_speed_limit_mps=default_speed_limit_mps,
         speed_factor=speed_factor,
+        initial_speed_mps=initial_speed_mps,
     )
     return entry, base_lane.lane_key
 
@@ -115,6 +118,7 @@ def execute_traffic_action(
     ego_yaw_deg: float,
     ego_road_id: int,
     ego_lane_id: int,
+    ego_speed_mps: float = 0.0,
     scene: TrafficScene | None,
     traffic_lights: tuple[dict[str, Any], ...] | list[dict[str, Any]] = (),
     default_speed_limit_mps: float,
@@ -147,6 +151,23 @@ def execute_traffic_action(
             ego_yaw_deg=ego_yaw_deg,
             ego_road_id=ego_road_id,
             ego_lane_id=ego_lane_id,
+            ego_speed_mps=ego_speed_mps,
+            scene=scene,
+            default_speed_limit_mps=default_speed_limit_mps,
+            debug=debug,
+        )
+    elif action == 'rear_overtake':
+        result = _rear_overtake(
+            manager,
+            api,
+            params=params,
+            ego_actor_id=ego_actor_id,
+            ego_x=ego_x,
+            ego_y=ego_y,
+            ego_yaw_deg=ego_yaw_deg,
+            ego_road_id=ego_road_id,
+            ego_lane_id=ego_lane_id,
+            ego_speed_mps=ego_speed_mps,
             scene=scene,
             default_speed_limit_mps=default_speed_limit_mps,
             debug=debug,
@@ -207,6 +228,20 @@ def execute_traffic_action(
             default_speed_limit_mps=default_speed_limit_mps,
             debug=debug,
         )
+    elif action == 'set_traffic_count':
+        target_count = int(params.get('target_count', 10))
+        prev_count, delta = manager.adjust_target_count(
+            target_count,
+            ego_xy=(ego_x, ego_y),
+            scene=scene,
+        )
+        logger.info(f'已调整周边背景车目标数量：{prev_count} -> {target_count}（增量 {delta:+d}）')
+        return {
+            'action': 'set_traffic_count',
+            'previous_count': prev_count,
+            'target_count': target_count,
+            'delta': delta,
+        }
     else:
         raise ValueError(f'未知交通事件动作：{action}')
 
@@ -237,6 +272,7 @@ def _lead_hard_brake(
     ego_yaw_deg: float,
     ego_road_id: int,
     ego_lane_id: int,
+    ego_speed_mps: float = 0.0,
     scene: TrafficScene | None,
     default_speed_limit_mps: float,
     debug: bool,
@@ -299,6 +335,7 @@ def _adjacent_cut_in(
     ego_yaw_deg: float,
     ego_road_id: int,
     ego_lane_id: int,
+    ego_speed_mps: float = 0.0,
     scene: TrafficScene | None,
     default_speed_limit_mps: float,
     debug: bool,
@@ -308,9 +345,43 @@ def _adjacent_cut_in(
     )
     if proj is None:
         raise RuntimeError('主车当前不在可识别车道上，无法执行邻车切入')
+    mode = str(params.get('mode', 'reuse_adjacent'))
     side = str(params.get('side', 'any'))
-    min_front = float(params.get('min_front_m', 6.0))
-    max_front = float(params.get('max_front_m', 35.0))
+    min_front = float(params.get('min_front_m', 3.5))
+    max_front = float(params.get('max_front_m', 28.0))
+    spawn_distance_m = float(params.get('spawn_distance_m', 45.0))
+    trigger_distance_m = float(params.get('trigger_distance_m', 14.0))
+
+    if mode == 'spawn_cut_in':
+        init_speed = max(ego_speed_mps * 0.85, 6.0)
+        entry, target_lane = _spawn_along_ego(
+            manager,
+            api,
+            ego_x=ego_x,
+            ego_y=ego_y,
+            ego_yaw_deg=ego_yaw_deg,
+            ego_road_id=ego_road_id,
+            ego_lane_id=ego_lane_id,
+            distance_m=spawn_distance_m,
+            default_speed_limit_mps=default_speed_limit_mps,
+            speed_factor=0.85,
+            adjacent=side,
+            initial_speed_mps=init_speed,
+        )
+        entry.pending_merge_lane = target_lane
+        entry.merge_trigger_distance_m = trigger_distance_m
+        logger.info(
+            f'已布置邻道加塞待切入车：actor_id={entry.actor_id}，生成距={spawn_distance_m:g}m，'
+            f'初速度={init_speed:.1f}m/s，触发距={trigger_distance_m:g}m，目标车道={target_lane}'
+        )
+        return {
+            'action': 'adjacent_cut_in',
+            'mode': mode,
+            'target_actor_id': entry.actor_id,
+            'target_lane': target_lane,
+            'distance_m': spawn_distance_m,
+            'trigger_distance_m': trigger_distance_m,
+        }
 
     candidates: list[tuple[float, int]] = []
     if scene is not None and scene.actor_ids.size > 1:
@@ -366,6 +437,121 @@ def _adjacent_cut_in(
     }
 
 
+def _pick_adjacent_lane(base_lane: Any, side: str) -> str | None:
+    if side == 'left':
+        return base_lane.left_lane if base_lane.left_lane and base_lane.left_same_direction else None
+    if side == 'right':
+        return base_lane.right_lane if base_lane.right_lane and base_lane.right_same_direction else None
+    if base_lane.left_lane and base_lane.left_same_direction:
+        return base_lane.left_lane
+    if base_lane.right_lane and base_lane.right_same_direction:
+        return base_lane.right_lane
+    return None
+
+
+def _rear_overtake(
+    manager: TrafficManager,
+    api: NativeApiClient,
+    *,
+    params: dict[str, Any],
+    ego_actor_id: int,
+    ego_x: float,
+    ego_y: float,
+    ego_yaw_deg: float,
+    ego_road_id: int,
+    ego_lane_id: int,
+    ego_speed_mps: float = 0.0,
+    scene: TrafficScene | None,
+    default_speed_limit_mps: float,
+    debug: bool,
+) -> dict[str, Any]:
+    proj = manager.graph.locate(
+        ego_x, ego_y, ego_yaw_deg, road_id=ego_road_id or None, lane_id=ego_lane_id or None
+    )
+    if proj is None:
+        raise RuntimeError('主车当前不在可识别车道上，无法触发后车超车')
+
+    mode = str(params.get('mode', 'reuse_rear'))
+    side = str(params.get('side', 'any'))
+    rear_dist_m = float(params.get('rear_distance_m', 22.0))
+    extra_speed_mps = float(params.get('extra_speed_mps', 8.0))
+    clear_front_m = float(params.get('clear_front_m', 18.0))
+    return_to_lane = bool(params.get('return_to_lane', True))
+    overtake_speed_mps = max(ego_speed_mps + extra_speed_mps, 18.0)
+
+    pass_lane_key = _pick_adjacent_lane(proj.lane, side)
+    if pass_lane_key is None:
+        raise RuntimeError('当前路段没有可用于超车的相邻同向车道')
+    return_side = 'right' if pass_lane_key == proj.lane.left_lane else 'left'
+    pass_lane = manager.graph.get(pass_lane_key)
+    if pass_lane is None or pass_lane.points.shape[0] < 2:
+        raise RuntimeError('超车相邻车道几何数据缺失')
+
+    entry: ManagedVehicle | None = None
+    actual_dist = rear_dist_m
+    if mode == 'reuse_rear' and scene is not None and scene.actor_ids.size > 1:
+        local_x, local_y, cos_y, sin_y = world_to_local_xy(scene.xy, x=ego_x, y=ego_y, yaw_deg=ego_yaw_deg)
+        heading_dot = scene.headings[:, 0] * cos_y + scene.headings[:, 1] * sin_y
+        mask = (
+            (scene.actor_ids != ego_actor_id)
+            & (local_x <= -3.0)
+            & (local_x >= -max(rear_dist_m * 2.0, 50.0))
+            & (np.abs(local_y) <= 5.5)
+            & (heading_dot > 0.35)
+        )
+        candidates = [
+            (abs(float(local_x[i])), int(scene.actor_ids[i]))
+            for i in np.flatnonzero(mask)
+            if int(scene.actor_ids[i]) in manager.vehicles
+        ]
+        if candidates:
+            actual_dist, target_id = min(candidates, key=lambda item: item[0])
+            entry = manager.vehicles[target_id]
+
+    if entry is None:
+        if mode == 'reuse_rear' and not debug:
+            raise RuntimeError(f'主车后方 {max(rear_dist_m * 2.0, 50.0):g} 米内没有可复用的托管背景车')
+        ego_rad = math.radians(ego_yaw_deg)
+        rear_x = ego_x - math.cos(ego_rad) * rear_dist_m
+        rear_y = ego_y - math.sin(ego_rad) * rear_dist_m
+        dists = np.hypot(pass_lane.points[:, 0] - rear_x, pass_lane.points[:, 1] - rear_y)
+        s_idx = int(np.argmin(dists))
+        s_pt = pass_lane.points[s_idx]
+        s_prev = pass_lane.points[max(0, s_idx - 1)]
+        s_next = pass_lane.points[min(pass_lane.points.shape[0] - 1, s_idx + 1)]
+        s_yaw = math.degrees(math.atan2(float(s_next[1] - s_prev[1]), float(s_next[0] - s_prev[0])))
+        entry = manager.spawn_managed_vehicle(
+            api,
+            location=(float(s_pt[0]), float(s_pt[1]), float(s_pt[2])),
+            yaw_deg=s_yaw,
+            default_speed_limit_mps=default_speed_limit_mps,
+            speed_factor=1.2,
+            initial_speed_mps=overtake_speed_mps,
+        )
+        actual_dist = rear_dist_m
+
+    entry.controller.switch_lane(pass_lane_key, lock_s=15.0)
+    entry.target_speed_mps_override = overtake_speed_mps
+    entry.target_speed_mps_override_until = time.monotonic() + 25.0
+    entry.overtake_target_lane = proj.lane.lane_key if return_to_lane else None
+    entry.overtake_return_side = return_side if return_to_lane else None
+    entry.overtake_clear_front_m = clear_front_m
+    entry.overtake_extra_speed_mps = extra_speed_mps
+    logger.info(
+        f'已触发后车超车（无视限速）：actor_id={entry.actor_id}，超车道={pass_lane_key}，'
+        f'目标速度={overtake_speed_mps:.1f}m/s，切回车道={proj.lane.lane_key}，安全前距={clear_front_m:g}m'
+    )
+    return {
+        'action': 'rear_overtake',
+        'mode': mode,
+        'target_actor_id': entry.actor_id,
+        'pass_lane': pass_lane_key,
+        'target_lane': proj.lane.lane_key,
+        'target_speed_mps': round(overtake_speed_mps, 2),
+        'rear_distance_m': round(actual_dist, 2),
+    }
+
+
 def _lead_breakdown(
     manager: TrafficManager,
     api: NativeApiClient,
@@ -377,6 +563,7 @@ def _lead_breakdown(
     ego_yaw_deg: float,
     ego_road_id: int,
     ego_lane_id: int,
+    ego_speed_mps: float = 0.0,
     scene: TrafficScene | None,
     default_speed_limit_mps: float,
     debug: bool,
@@ -384,7 +571,6 @@ def _lead_breakdown(
     mode = str(params.get('mode', 'reuse_lead'))
     distance_m = float(params.get('distance_m', 130.0))
     speed_factor = float(params.get('speed_factor', 0.0))
-    trigger_distance_m = float(params.get('trigger_distance_m', 35.0))
 
     if mode == 'reuse_lead':
         candidates: list[tuple[float, int]] = []
@@ -477,42 +663,6 @@ def _lead_breakdown(
             'speed_factor': speed_factor,
         }
 
-    if mode == 'roadside_merge':
-        entry, target_lane = _spawn_along_ego(
-            manager,
-            api,
-            ego_x=ego_x,
-            ego_y=ego_y,
-            ego_yaw_deg=ego_yaw_deg,
-            ego_road_id=ego_road_id,
-            ego_lane_id=ego_lane_id,
-            distance_m=distance_m,
-            default_speed_limit_mps=default_speed_limit_mps,
-            speed_factor=max(0.5, speed_factor if speed_factor > 0.01 else 0.7),
-            adjacent='prefer_right',
-        )
-        entry.permanent_stop = True
-        entry.pending_merge_lane = target_lane
-        entry.merge_trigger_distance_m = trigger_distance_m
-        manager.queue_operation(
-            {
-                'method': 'vehicle.set_lights',
-                'params': {'actor_id': entry.actor_id, 'light_state': HAZARD_LIGHT_MASK},
-            }
-        )
-        logger.info(
-            f'已布置路侧停靠待切入车：actor_id={entry.actor_id}，距离={distance_m:g}m，'
-            f'触发距={trigger_distance_m:g}m，目标车道={target_lane}'
-        )
-        return {
-            'action': 'lead_breakdown',
-            'mode': mode,
-            'target_actor_id': entry.actor_id,
-            'distance_m': distance_m,
-            'trigger_distance_m': trigger_distance_m,
-            'target_lane': target_lane,
-        }
-
     raise ValueError(f'未知的故障/障碍车触发模式：{mode}')
 
 
@@ -572,6 +722,7 @@ def _dual_lane_slowdown(
     ego_yaw_deg: float,
     ego_road_id: int,
     ego_lane_id: int,
+    ego_speed_mps: float = 0.0,
     scene: TrafficScene | None,
     default_speed_limit_mps: float,
     debug: bool,
@@ -648,6 +799,7 @@ def _red_light_runner(
     ego_yaw_deg: float,
     ego_road_id: int,
     ego_lane_id: int,
+    ego_speed_mps: float = 0.0,
     scene: TrafficScene | None,
     default_speed_limit_mps: float,
     debug: bool,

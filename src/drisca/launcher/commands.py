@@ -412,17 +412,29 @@ class LeadHardBrakeParams(BaseModel):
 
 class AdjacentCutInParams(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
+    mode: Literal['reuse_adjacent', 'spawn_cut_in'] = 'reuse_adjacent'
     side: Literal['any', 'left', 'right'] = 'any'
-    min_front_m: float = Field(default=6.0, ge=0, le=100)
-    max_front_m: float = Field(default=35.0, gt=0, le=200)
+    min_front_m: float = Field(default=3.5, ge=-20, le=100)
+    max_front_m: float = Field(default=28.0, gt=0, le=200)
+    spawn_distance_m: float = Field(default=45.0, ge=10, le=200)
+    trigger_distance_m: float = Field(default=14.0, ge=4, le=80)
+
+
+class RearOvertakeParams(BaseModel):
+    model_config = ConfigDict(extra='forbid', frozen=True)
+    mode: Literal['reuse_rear', 'spawn_rear'] = 'reuse_rear'
+    side: Literal['any', 'left', 'right'] = 'any'
+    rear_distance_m: float = Field(default=22.0, ge=6, le=120)
+    extra_speed_mps: float = Field(default=8.0, ge=2.0, le=30.0)
+    clear_front_m: float = Field(default=18.0, ge=8, le=60)
+    return_to_lane: bool = True
 
 
 class LeadBreakdownParams(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
-    mode: Literal['reuse_lead', 'spawn_far', 'roadside_merge'] = 'reuse_lead'
+    mode: Literal['reuse_lead', 'spawn_far'] = 'reuse_lead'
     distance_m: float = Field(default=130.0, ge=15, le=350)
     speed_factor: float = Field(default=0.0, ge=0.0, le=1.2)
-    trigger_distance_m: float = Field(default=35.0, ge=8, le=120)
 
 
 class AheadSignalChangeParams(BaseModel):
@@ -444,13 +456,20 @@ class RedLightRunnerParams(BaseModel):
     duration_s: float = Field(default=8.0, ge=2.0, le=30.0)
 
 
+class SetTrafficCountParams(BaseModel):
+    model_config = ConfigDict(extra='forbid', frozen=True)
+    target_count: int = Field(default=10, ge=0, le=100)
+
+
 _TrafficActionName = Literal[
     'lead_hard_brake',
     'adjacent_cut_in',
+    'rear_overtake',
     'lead_breakdown',
     'ahead_signal_change',
     'dual_lane_slowdown',
     'red_light_runner',
+    'set_traffic_count',
 ]
 
 
@@ -471,6 +490,134 @@ def _send_traffic_action(
             params=params.model_dump(mode='json'),
         )
     )
+
+
+@register_command(
+    command_id='rear_overtake',
+    label='后车超车',
+    description='不受道路限速限制，让主车后方车辆变道加速超越主车并在拉出安全前距后切回主车车道',
+    category=CommandCategory.TRAFFIC,
+    params_model=RearOvertakeParams,
+    fields=[
+        {
+            'key': 'mode',
+            'label': '触发方式',
+            'type': 'select',
+            'required': True,
+            'default': 'reuse_rear',
+            'options': [
+                {'value': 'reuse_rear', 'label': '复用后方已有车'},
+                {'value': 'spawn_rear', 'label': '后方邻道临时生成超车车（带初速度）'},
+            ],
+        },
+        {
+            'key': 'side',
+            'label': '超车方向',
+            'type': 'select',
+            'required': True,
+            'default': 'any',
+            'options': [
+                {'value': 'any', 'label': '左右任意'},
+                {'value': 'left', 'label': '左侧超车'},
+                {'value': 'right', 'label': '右侧超车'},
+            ],
+        },
+        {
+            'key': 'rear_distance_m',
+            'label': '后方搜索或生成距离 · m',
+            'type': 'number',
+            'required': True,
+            'default': 22,
+        },
+        {
+            'key': 'extra_speed_mps',
+            'label': '超车相对主车增速 · m/s（无视限速）',
+            'type': 'number',
+            'required': True,
+            'default': 8,
+        },
+        {
+            'key': 'clear_front_m',
+            'label': '超越后安全切回前距 · m',
+            'type': 'number',
+            'required': True,
+            'default': 18,
+        },
+        {
+            'key': 'return_to_lane',
+            'label': '超越后切回主车车道',
+            'type': 'boolean',
+            'required': False,
+            'default': True,
+        },
+    ],
+)
+def _run_rear_overtake(rt: Any, params: RearOvertakeParams, command_id: str) -> None:
+    _send_traffic_action(rt, 'rear_overtake', params, command_id)
+
+
+@register_command(
+    command_id='adjacent_cut_in',
+    label='邻车切入 / 加塞',
+    description='让相邻同向车道的背景车立即切入，或在前方邻道生成车辆待主车靠近时起步加塞',
+    category=CommandCategory.TRAFFIC,
+    params_model=AdjacentCutInParams,
+    fields=[
+        {
+            'key': 'mode',
+            'label': '触发方式',
+            'type': 'select',
+            'required': True,
+            'default': 'reuse_adjacent',
+            'options': [
+                {'value': 'reuse_adjacent', 'label': '复用相邻车道已有车（立即切入）'},
+                {'value': 'spawn_cut_in', 'label': '前方邻道生成（主车靠近后加塞切入）'},
+            ],
+        },
+        {
+            'key': 'side',
+            'label': '切入方向',
+            'type': 'select',
+            'required': True,
+            'default': 'any',
+            'options': [
+                {'value': 'any', 'label': '左右任意'},
+                {'value': 'left', 'label': '左侧车道'},
+                {'value': 'right', 'label': '右侧车道'},
+            ],
+        },
+        {
+            'key': 'min_front_m',
+            'label': '最小前方距离 · m',
+            'type': 'number',
+            'required': True,
+            'default': 3.5,
+        },
+        {
+            'key': 'max_front_m',
+            'label': '最大前方距离 · m',
+            'type': 'number',
+            'required': True,
+            'default': 28,
+        },
+        {
+            'key': 'spawn_distance_m',
+            'label': '生成距离（生成模式）· m',
+            'type': 'number',
+            'required': True,
+            'default': 45,
+        },
+        {
+            'key': 'trigger_distance_m',
+            'label': '加塞触发距离（近距切入）· m',
+            'type': 'number',
+            'required': True,
+            'default': 14,
+        },
+    ],
+)
+def _run_adjacent_cut_in(rt: Any, params: AdjacentCutInParams, command_id: str) -> None:
+    _send_traffic_action(rt, 'adjacent_cut_in', params, command_id)
 
 
 @register_command(
@@ -508,42 +655,9 @@ def _run_lead_hard_brake(rt: Any, params: LeadHardBrakeParams, command_id: str) 
 
 
 @register_command(
-    command_id='adjacent_cut_in',
-    label='邻车切入',
-    description='让主车相邻同向车道前方的背景车强制变道切入主车车道',
-    category=CommandCategory.TRAFFIC,
-    params_model=AdjacentCutInParams,
-    fields=[
-        {
-            'key': 'side',
-            'label': '切入方向',
-            'type': 'select',
-            'required': True,
-            'default': 'any',
-            'options': [
-                {'value': 'any', 'label': '左右任意'},
-                {'value': 'left', 'label': '左侧车道'},
-                {'value': 'right', 'label': '右侧车道'},
-            ],
-        },
-        {'key': 'min_front_m', 'label': '最小前方距离 · m', 'type': 'number', 'required': True, 'default': 6},
-        {
-            'key': 'max_front_m',
-            'label': '最大前方距离 · m',
-            'type': 'number',
-            'required': True,
-            'default': 35,
-        },
-    ],
-)
-def _run_adjacent_cut_in(rt: Any, params: AdjacentCutInParams, command_id: str) -> None:
-    _send_traffic_action(rt, 'adjacent_cut_in', params, command_id)
-
-
-@register_command(
     command_id='lead_breakdown',
     label='前车故障停驶 / 障碍车',
-    description='支持复用已有前车停驶开双闪、远距离生成低速/静止车，或路侧停靠待主车靠近后切入',
+    description='支持复用已有前车停驶开双闪，或在前方同车道远距离生成低速/静止故障车',
     category=CommandCategory.TRAFFIC,
     params_model=LeadBreakdownParams,
     fields=[
@@ -556,7 +670,6 @@ def _run_adjacent_cut_in(rt: Any, params: AdjacentCutInParams, command_id: str) 
             'options': [
                 {'value': 'reuse_lead', 'label': '复用已有前车（停驶并开双闪）'},
                 {'value': 'spawn_far', 'label': '远距离生成低速 / 静止障碍车'},
-                {'value': 'roadside_merge', 'label': '路侧停靠，主车靠近后起步切入'},
             ],
         },
         {
@@ -572,13 +685,6 @@ def _run_adjacent_cut_in(rt: Any, params: AdjacentCutInParams, command_id: str) 
             'type': 'number',
             'required': True,
             'default': 0,
-        },
-        {
-            'key': 'trigger_distance_m',
-            'label': '路侧切入触发距离 · m',
-            'type': 'number',
-            'required': True,
-            'default': 35,
         },
     ],
 )
@@ -677,3 +783,23 @@ def _run_dual_lane_slowdown(rt: Any, params: DualLaneSlowdownParams, command_id:
 )
 def _run_red_light_runner(rt: Any, params: RedLightRunnerParams, command_id: str) -> None:
     _send_traffic_action(rt, 'red_light_runner', params, command_id)
+
+
+@register_command(
+    command_id='set_traffic_count',
+    label='动态调整周边车流数量',
+    description='设置主车周边目标背景车数量：偏多时销毁最远车辆，偏少时在远处活动半径内逐步补充',
+    category=CommandCategory.TRAFFIC,
+    params_model=SetTrafficCountParams,
+    fields=[
+        {
+            'key': 'target_count',
+            'label': '目标背景车数量 (0–100)',
+            'type': 'number',
+            'required': True,
+            'default': 10,
+        },
+    ],
+)
+def _run_set_traffic_count(rt: Any, params: SetTrafficCountParams, command_id: str) -> None:
+    _send_traffic_action(rt, 'set_traffic_count', params, command_id)

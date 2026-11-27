@@ -1,6 +1,7 @@
 """单车自动驾驶组合控制器（支持驾驶风格、IDM 跟驰、感知延迟与安全换道）。"""
 
 import random
+import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
@@ -85,6 +86,7 @@ class AutopilotController:
         self._elapsed_s = 0.0
         self._perception_buffer: deque[tuple[float, LeadVehicle | None, float | None]] = deque()
         self._last_path_points: list[list[float]] = []
+        self._lane_change_lock_until = 0.0
 
     def reset(self) -> None:
         self._planner.reset()
@@ -95,14 +97,16 @@ class AutopilotController:
         self._elapsed_s = 0.0
         self._perception_buffer.clear()
         self._last_path_points = []
+        self._lane_change_lock_until = 0.0
 
     def planned_points(self) -> list[list[float]]:
         """返回最近一步局部规划路径的稀疏世界坐标点 [[x, y, z], ...]，供自由视角轨迹高亮。"""
         return self._last_path_points
 
-    def switch_lane(self, lane_key: str) -> None:
-        """强制将局部规划器切换到指定目标车道（用于场景事件切入等指令）。"""
+    def switch_lane(self, lane_key: str, *, lock_s: float = 6.0) -> None:
+        """强制将局部规划器切换到指定目标车道，并在锁定期内禁止自主换道抢回控制权。"""
         self._planner.switch_lane(lane_key)
+        self._lane_change_lock_until = max(self._lane_change_lock_until, time.monotonic() + lock_s)
 
     def _apply_reaction_delay(
         self,
@@ -140,27 +144,48 @@ class AutopilotController:
         self_actor_id: int = 0,
         ignore_signals: bool = False,
         speed_factor_override: float | None = None,
+        target_speed_mps_override: float | None = None,
     ) -> VehicleControl:
         """根据当前车辆状态、周边车辆场景与实时信号灯计算本步控制量。"""
         path = self._planner.update(x, y, yaw_deg, road_id=road_id, lane_id=lane_id)
         if path is None:
             return VehicleControl(throttle=0.0, steer=0.0, brake=0.6)
 
-        speed_limit = self._default_speed_limit_mps
-        if self._dynamic_speed_limit and road_speed_limit_mps > 0.1:
-            speed_limit = road_speed_limit_mps
-        factor = self._speed_factor if speed_factor_override is None else speed_factor_override
-        speed_limit = max(0.0, speed_limit * factor)
+        if target_speed_mps_override is not None:
+            speed_limit = max(0.0, target_speed_mps_override)
+        else:
+            speed_limit = self._default_speed_limit_mps
+            if self._dynamic_speed_limit and road_speed_limit_mps > 0.1:
+                speed_limit = road_speed_limit_mps
+            factor = self._speed_factor if speed_factor_override is None else speed_factor_override
+            speed_limit = max(0.0, speed_limit * factor)
 
         raw_lead = (
-            self._cf.detect_lead(scene, self_actor_id=self_actor_id, x=x, y=y, yaw_deg=yaw_deg)
+            self._cf.detect_lead(
+                scene,
+                self_actor_id=self_actor_id,
+                x=x,
+                y=y,
+                yaw_deg=yaw_deg,
+                speed_mps=speed_mps,
+                path=path,
+            )
             if scene is not None and self_actor_id > 0
             else None
         )
         raw_stop = None if ignore_signals else self._signals.nearest_stop_distance(path, traffic_lights)
         lead, stop_distance = self._apply_reaction_delay(dt, raw_lead, raw_stop)
 
-        if self._lane_change is not None and scene is not None and self_actor_id > 0:
+        can_auto_lc = (
+            self._lane_change is not None
+            and scene is not None
+            and self_actor_id > 0
+            and not self._planner.is_changing_lane
+            and time.monotonic() >= self._lane_change_lock_until
+        )
+        if can_auto_lc:
+            assert self._lane_change is not None
+            assert scene is not None
             target_lane = self._lane_change.decide(
                 graph=self._graph,
                 current_lane=self._planner.current_lane(),
