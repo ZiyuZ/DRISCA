@@ -22,8 +22,8 @@ features:
     details: 在桌面管理端准备实验预设、调整天气与交通流、下发语音指令并记录实验标记。
     link: /guide/02-ExperimentWorkflow
     linkText: 查看实验流程
-  - title: 原生驾驶与交通流
-    details: CARLA 原生渲染主视图与三路后视镜，支持多视角切换、背景交通流与交互场景触发。
+  - title: 驾驶渲染与交通流
+    details: 在 CARLA Unreal 内直接渲染主视图与三路后视镜，支持多视角切换、背景交通流与交互场景触发。
     link: /guide/03-SceneAndTraffic
     linkText: 场景与交通流
   - title: 记录、回放与导出
@@ -35,3 +35,7 @@ features:
     link: /deploy/01-CarlaSourceAndPatch
     linkText: 构建与部署指南
 ---
+
+<div align="center" style="margin-top: 24px;">
+  <img src="./assets/screenshots/running.webp" alt="DRISCA 运行界面：CARLA 驾驶窗口与桌面管理端" style="border-radius: 10px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);" />
+</div>

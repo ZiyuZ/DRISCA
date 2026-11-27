@@ -1,37 +1,38 @@
-# CARLA 源码与补丁接入
+# CARLA 源码补丁
 
-DRISCA 的驾驶渲染、三路后视镜、环境控制和高速遥测接口以原生 C++ 模块集成在 CARLA UE5 的 `Carla` 插件中。本文说明如何从零准备 CARLA UE5 源码并接入 DRISCA 原生模块。
+DRISCA 的驾驶渲染、三路后视镜、环境控制和高速遥测接口以 C++ 模块集成在 CARLA UE5 的 `Carla` 插件中。本文说明如何从零准备 CARLA UE5 源码并接入 DRISCA C++ 模块。
 
 ## 交付结构说明
 
-DRISCA 将 Unreal 侧改动拆分为两部分存放在本仓库的 `native/carla/` 目录，尽量减少对上游 CARLA 源码的侵入：
+DRISCA 将 Unreal 侧改动拆分为两部分存放在本仓库的 `native/carla/` 目录，与上游 CARLA 源码解耦维护：
 
 ```text
 native/carla/
-├── DrivingView/                     # DRISCA 自研模块（24 个独立 C++ 源码文件）
+├── DrivingView/                     # DRISCA C++ 模块（24 个独立源码文件）
 └── patches/
-    └── carla-drisca-native.patch    # 对既有 CARLA 源码的轻量补丁（16 个文件）
+    ├── carla-drisca-native.patch    # 对既有 CARLA 源码的补丁（16 个文件）
+    └── carla-windows-uv-setup.patch # 可选：Windows 环境下改用 uv 管理 CARLA 前置安装脚本的补丁
 ```
 
 | 类别 | 目标位置（相对 CARLA 根目录） | 作用 |
 | --- | --- | --- |
-| 自研模块（24 个文件） | `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/DrivingView/` | 驾驶视图、三路后视镜 HUD、WebSocket 服务端（7910）、二进制快照投影、环境控制器、路网与信号查询 |
-| 轻量补丁（16 个文件） | `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/` | 接入 `Carla.Build.cs`、HUD 绘制钩子、天气执行器单向投影、GNSS/IMU 帧时间记录、信号触发区及回放视角释放接口 |
+| C++ 模块（24 个文件） | `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/DrivingView/` | 驾驶视图、三路后视镜 HUD、WebSocket 服务端（7910）、二进制快照投影、环境控制器、路网与信号查询 |
+| 源码补丁（16 个文件） | `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/` | 接入 `Carla.Build.cs`、HUD 绘制钩子、天气执行器单向投影、GNSS/IMU 帧时间记录、信号触发区及回放视角释放接口 |
 
 ## 1. 准备基础编译环境
 
-在 Windows 开发机上准备以下基础环境（只需维护一套 UE 引擎与一套 CARLA 源码目录，即可同时承担日常开发、单 EXE 补丁编译与自定义地图烘焙）：
+在 Windows 环境中准备以下构建工具与源码：
 
 - **Unreal Engine 5（CARLA 定制分支，当前验证版本 UE 5.8）**：完成源码拉取与引擎构建，记录引擎根目录（例如 `D:/Simulator/UnrealEngine5_carla`）。
-- **CARLA UE5 源码与 Content 资产**：**推荐直接检出官方 CARLA 1.0 基线提交（`3ea166118d`）** 及配套 `Content/Carla` 资产（含 Git LFS 实体文件），并运行官方前置依赖配置，使 `Build/` 目录完成 CMake 配置及 `LibCarla`、Boost、Recast 等依赖拉取。对齐官方 1.0 基线后，编译出的单个 `CarlaUnreal-Win64-Shipping.exe` 可直接覆盖进官方预编译包运行，无需重编或分发 7–12 GB 资源包。
+- **CARLA UE5 源码与 Content 资产**：完成官方前置依赖配置，使 `Build/` 目录就绪 `LibCarla`、Boost、Recast 等依赖，并拉取配套 `Content/Carla` 资产（含 Git LFS 实体文件）。如需构建兼容官方 CARLA 1.0 预编译包的单 EXE 补丁，检出官方 1.0 基线提交 `3ea166118d`；如需最新上游修复与完整自托管打包，检出最新主线即可。
 - **Visual Studio Build Tools（MSVC + Windows SDK）**、**CMake**、**Ninja** 与 **Git**。
 - **磁盘空间**：建议预留 180 GiB 以上可用空间用于中间构建与 Cook 缓存。
 
-> **二进制兼容红线（面向开发者）**：UE5 `-iostore -unversioned` 打包模式按 `UPROPERTY` 顺序反序列化旧资产。16 文件补丁中严禁向任何既有 CARLA 原生类（如 `AWeather`、`UTrafficLightComponent`、`ATrafficLightBase` 等）新增、删除或重排 `UPROPERTY`；DRISCA 新增的运行期数据统一使用普通 C++ 成员变量或独立 `DrivingView` 类。遵守该约束后，后续升级 DRISCA 代码只需重编单 EXE，无需重 Cook 资源或地图包。
+> **二进制兼容约束**：UE5 `-iostore -unversioned` 打包模式按 `UPROPERTY` 顺序反序列化既有资产。16 文件补丁保持既有 CARLA C++ 类（如 `AWeather`、`UTrafficLightComponent`、`ATrafficLightBase` 等）的 `UPROPERTY` 布局不变；DRISCA 新增的运行期数据统一使用普通 C++ 成员变量或独立 `DrivingView` 类。保持该约束后，后续更新 DRISCA 代码只需重新编译单 EXE。
 >
-> `Carla.Build.cs` 中 Boost 扩展头文件路径（`beast`、`logic`、`static_string`）默认指向 CARLA 根目录下的 `Build/_deps/boost-src/libs/`。首次接入请保持 CARLA 默认的 `Build/` 目录布局，并先完成 CMake 依赖配置后再编译插件。
+> `Carla.Build.cs` 中 Boost 扩展头文件路径（`beast`、`logic`、`static_string`）默认指向 CARLA 根目录下的 `Build/_deps/boost-src/libs/`。首次接入保持 CARLA 默认的 `Build/` 目录布局，先完成 CMake 依赖配置再编译插件。
 
-## 2. 复制 DRISCA 自研源码
+## 2. 复制 DRISCA C++ 模块
 
 在 PowerShell 中将 DRISCA 仓库内的 `native/carla/DrivingView/` 完整复制到 CARLA 源码目录：
 
@@ -44,9 +45,9 @@ if (Test-Path $TargetDir) { Remove-Item -Recurse -Force $TargetDir }
 Copy-Item -Recurse -Force "$DriscaRoot/native/carla/DrivingView" $TargetDir
 ```
 
-后续 DRISCA 更新自研 C++ 代码时，重新执行上述复制命令即可同步，不会干扰 CARLA 仓库的 Git 历史。
+后续 DRISCA 更新 C++ 代码时，重新执行上述复制命令即可同步。
 
-## 3. 应用 16 文件轻量补丁
+## 3. 应用 16 文件补丁
 
 进入 CARLA 根目录，先使用 `--check` 验证补丁与当前基线完全匹配，再正式应用：
 

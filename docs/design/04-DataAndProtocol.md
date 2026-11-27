@@ -23,7 +23,7 @@ flowchart LR
 
 `launcher` 与 `simulator` 之间通过本地 WebSocket（`/ws/worker`）通信，消息结构定义在 `src/drisca/core/protocol.py`：
 
-- **下行命令（`launcher` → `simulator`）**：停止实验、切换视角（`free / cockpit / chase`）、切换自动驾驶/接管、更新天气或局部雾、触发阵雨或六类交通场景事件、调试标注等。
+- **下行命令（`launcher` → `simulator`）**：停止实验、切换视角（`free / cockpit / chase`）、切换自动驾驶/接管、更新天气或局部雾、触发阵雨、调节周边车流数量、触发七类交通场景事件、调试标注等。
 - **上行遥测快照（`simulator` → `launcher`）**：与数据库落盘独立运行，仅保留最新一份，按约 20–30 Hz 推送给管理端数据面板与平板 HUD。
 - **上行离散事件与日志（`simulator` → `launcher`）**：控制动作实际应用后上报事件，由 `launcher` 统一写入数据库 `event` 表；子进程日志经 WebSocket 结构化回传，未连接前或崩溃时的 stderr Traceback 由父进程聚合成单条 `ERROR` 日志（附完整 `detail`）展示。
 

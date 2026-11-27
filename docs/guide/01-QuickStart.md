@@ -6,14 +6,14 @@ DRISCA 由两个窗口协同工作：**管理端（Launcher）** 供实验操作
 
 ## 1. 准备可运行的 CARLA
 
-DRISCA 需要配合已集成 DRISCA 原生模块的 CARLA UE5 程序运行，提供以下两种准备方式：
+DRISCA 需要配合已集成 DRISCA C++ 模块的 CARLA UE5 程序运行，提供以下两种准备方式：
 
-- **方式一：官方 CARLA 1.0 + 单文件补丁（推荐，零编译）**
-  1. 从 [CARLA 官方发布页](https://github.com/carla-simulator/carla/releases/tag/1.0)下载 **CARLA 1.0（Windows Shipping，UE 5.8）** 预编译包并解压到本地目录。
-  2. 下载 DRISCA 发布的 Windows 原生可执行补丁包（压缩约 73 MB），将其中的 `CarlaUnreal-Win64-Shipping.exe` 覆盖替换到 `<CARLA目录>\CarlaUnreal\Binaries\Win64\`。
-  3. 记下根目录下的 `CarlaUnreal.exe` 路径，即可直接使用（自带官方全套地图，无需安装 Unreal Engine）。
-- **方式二：从源码自行构建（二次开发适用）**
-  - 如需修改原生 C++ 模块或自行打包，请按照[构建与部署：CARLA 源码与补丁接入](../deploy/01-CarlaSourceAndPatch.md)完成编译。
+- **方式一：官方 CARLA 1.0 + 单文件补丁（快速上手，使用官方地图）**
+  1. 从 [CARLA 官方发布页](https://github.com/carla-simulator/carla/releases/tag/1.0) 下载 **CARLA_1.0.zip** 预编译包并解压到本地目录。
+  2. 从 [DRISCA 发布页](https://github.com/ZiyuZ/DRISCA/releases) 下载 Windows 可执行补丁包，将其中的 `CarlaUnreal-Win64-Shipping.exe` 覆盖替换到 `<CARLA目录>\CarlaUnreal\Binaries\Win64\`。
+  3. 记下根目录下的 `CarlaUnreal.exe` 路径即可直接使用，内置官方全套地图。
+- **方式二：从源码自行构建（自定义地图或二次开发）**
+  - 按[构建与部署：CARLA 源码补丁](../deploy/01-CarlaSourceAndPatch.md)完成编译与打包。
 
 ## 2. 安装管理端运行环境
 
@@ -28,12 +28,12 @@ DRISCA 需要配合已集成 DRISCA 原生模块的 CARLA UE5 程序运行，提
 克隆或下载 DRISCA 项目文件夹后，直接双击根目录下的 **`DRISCA.exe`** 即可启动管理端。
 
 - **首次启动**：启动器会自动检查环境，缺少 Python 虚拟环境时自动同步依赖，缺少界面文件时自动构建前端（期间会短暂显示安装进度窗口），完成后自动打开桌面管理窗口。
-- **后续启动**：直接无黑框启动窗口，不会重复同步依赖或编译前端。
+- **后续启动**：直接打开桌面管理窗口。
 - 如需在终端中手动启动并查看完整输出，也可以在项目目录执行 `uv run -m drisca.launcher`。
 
 管理端首次打开时，会自动在 `configs/` 目录生成默认配置文件。
 
-<!-- 待补图：管理端主界面与左下角状态按钮 -->
+![DRISCA 管理端主界面](../assets/screenshots/guide-launcher-home.png)
 
 接下来进入左侧菜单的 **主机配置**：
 
@@ -52,7 +52,9 @@ DRISCA 需要配合已集成 DRISCA 原生模块的 CARLA UE5 程序运行，提
 3. 进入左侧 **场景** 页面，确认地图、车辆蓝图和主车出生点已选好。首次使用新地图时，点击出生点选择按钮从预设出生点列表中挑选一个道路上的位置并保存。
 4. 回到 **控制台** 页面，填写被试编号，点击 **开始实验**。
 
-<!-- 待补图：控制台开始实验界面 -->
+![CARLA 服务启动弹窗与驾驶窗口](../assets/screenshots/launch-carla-unreal.webp)
+
+![实验运行中的驾驶画面与控制台](../assets/screenshots/running.webp)
 
 实验启动后，CARLA 窗口会自动切入驾驶视角，被试即可使用键盘（默认 `W / A / S / D` 驾驶、`Q` 切换倒挡，具体按键可在 **输入配置** 修改）驾驶车辆。点击控制台或右上角浮动面板中的红色 **停止** 按钮，即可结束本次实验并填写实验备注。
 

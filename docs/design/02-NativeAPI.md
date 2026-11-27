@@ -1,13 +1,13 @@
-# 原生 WebSocket 接口
+# DRISCA WebSocket 接口
 
 `launcher` 和 `simulator` 通过本机 WebSocket 访问 CARLA Unreal 内嵌的 `DriscaApi` 服务。Python 侧使用自有数值类型和 NumPy 零拷贝解析二进制快照，运行期不依赖官方 `carla` Python wheel。
 
 ## 连接与传输机制
 
 - **服务地址**：`ws://127.0.0.1:7910/drisca/v1`（主机与端口由 `machine.toml` 的 `[driving_view]` 决定）。
-- **生命周期**：原生服务端由 `GameInstance` 托管，切换地图时保持 TCP/WS 连接不断开；每次世界切换递增 `world_id`，客户端据此刷新路网与对象缓存。
+- **生命周期**：`DriscaApi` 服务端由 `GameInstance` 托管，切换地图时保持 TCP/WS 连接不断开；每次世界切换递增 `world_id`，客户端据此刷新路网与对象缓存。
 - **消息约束**：文本帧承载 UTF-8 JSON，二进制帧承载完整世界快照；单条消息上限 `8 MiB`，关闭 WebSocket 压缩与自动分片，服务端与 Python 客户端均启用 `TCP_NODELAY`。
-- **帧内推进优化**：原生网络在游戏线程运行，除了常规的物理后推进外，新增了**物理前非阻塞网络推进**——及时到达的控制操作可在当帧物理更新前立即应用并在当帧结束后采样，显著降低 `exchange` 往返等待延迟；物理后受理的操作则等待下一次完整物理更新。
+- **帧内推进优化**：WebSocket 服务在游戏线程运行，除了常规的物理后推进外，新增了**物理前非阻塞网络推进**——及时到达的控制操作可在当帧物理更新前立即应用并在当帧结束后采样，显著降低 `exchange` 往返等待延迟；物理后受理的操作则等待下一次完整物理更新。
 
 ### 握手校验
 
@@ -98,5 +98,5 @@
 ### 关键特性说明
 
 - **三视角与回放接管**：`driving_view.update` 支持在 `free`、`cockpit`、`chase` 三种视角间平滑切换。追尾视角内置相机去抖、滚轮调距（4–18 m）与右键环视自动回正；自由视角支持点击拾取车辆（`selected_actor_id`）与路口信号灯（`selected_signal_actor_id`）。录像回放期间可直接调用 `driving_view.update` 并传入 `actor_id_space: "recorded"` 接管三视角与切车，退出回放或切回 `free` 时自动将 Spectator 对齐到车尾上方高空位姿。
-- **环境唯一权威**：原生环境子系统唯一持有全局天气状态（`current` / `target`）与过渡时钟，并管理世界空间球形局部雾（`ALocalFogVolume` 归一化径向衰减）。旧 CARLA RPC 天气写入已显式禁用。
+- **环境唯一权威**：环境子系统唯一持有全局天气状态（`current` / `target`）与过渡时钟，并管理世界空间球形局部雾（`ALocalFogVolume` 归一化径向衰减）。旧 CARLA RPC 天气写入已显式禁用。
 - **调试与屏幕提示抑制**：`scene.set_world` 支持 `suppress_screen_messages` 控制 VSM 溢出等引擎调试文字显示；`debug.highlight_actor` 与 `debug.highlight_path` 用于运行期可视化标注车辆与规划轨迹。
