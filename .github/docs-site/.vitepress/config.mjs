@@ -36,6 +36,21 @@ export default withMermaid(
     outDir: resolve(root, '.local/docs-site/dist'),
     cacheDir: resolve(root, '.local/docs-site/cache'),
     lastUpdated: true,
+    markdown: {
+      config(md) {
+        const defaultImage = md.renderer.rules.image;
+        md.renderer.rules.image = (tokens, idx, options, env, self) => {
+          const token = tokens[idx];
+          const rendered = defaultImage
+            ? defaultImage(tokens, idx, options, env, self)
+            : self.renderToken(tokens, idx, options);
+          const alt = token.content?.trim();
+          if (!alt) return rendered;
+          const caption = md.utils.escapeHtml(alt);
+          return `<span class="drisca-figure">${rendered}<span class="drisca-figcaption">${caption}</span></span>`;
+        };
+      },
+    },
     vite: {
       resolve: {
         alias: [

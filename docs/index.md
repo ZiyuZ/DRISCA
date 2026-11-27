@@ -36,6 +36,7 @@ features:
     linkText: 构建与部署指南
 ---
 
-<div align="center" style="margin-top: 24px;">
+<div class="drisca-hero-showcase" align="center" style="margin-top: 24px;">
   <img src="./assets/screenshots/running.webp" alt="DRISCA 运行界面：CARLA 驾驶窗口与桌面管理端" style="border-radius: 10px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);" />
+  <p style="margin-top: 10px; font-size: 0.875rem; color: var(--vp-c-text-2);">DRISCA 运行界面：左侧 CARLA 驾驶窗口与三路后视镜，右侧桌面管理端控制台</p>
 </div>

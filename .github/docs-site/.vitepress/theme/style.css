@@ -6,3 +6,81 @@
   margin: 0;
   line-height: 1.5;
 }
+
+.drisca-figure {
+  display: block;
+  margin: 1.25rem 0;
+  text-align: center;
+}
+
+.drisca-figure img,
+.drisca-hero-showcase img {
+  display: block;
+  margin: 0 auto;
+  border-radius: 8px;
+  border: 1px solid var(--vp-c-divider);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+  cursor: zoom-in;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.drisca-figure img:hover,
+.drisca-hero-showcase img:hover {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
+}
+
+.drisca-figcaption {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--vp-c-text-2);
+  text-align: center;
+}
+
+.drisca-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.86);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.drisca-lightbox.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drisca-lightbox-stage {
+  max-width: 94vw;
+  max-height: 86vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+.drisca-lightbox-img {
+  max-width: 92vw;
+  max-height: 84vh;
+  border-radius: 8px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+  cursor: zoom-out;
+  transition: transform 0.14s ease-out;
+  user-select: none;
+}
+
+.drisca-lightbox-caption {
+  margin-top: 12px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: center;
+}
