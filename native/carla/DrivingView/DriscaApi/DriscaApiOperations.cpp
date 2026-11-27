@@ -24,6 +24,7 @@
 #include "Carla/Vehicle/VehicleLightState.h"
 
 #include <util/ue-header-guard-begin.h>
+#include "Components/PrimitiveComponent.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Engine/World.h"
@@ -363,6 +364,17 @@ bool UDriscaApiSubsystem::ExecuteVehicle(
       return false;
     }
 
+    double InitialSpeedMps = 0.0;
+    if (Params->HasField(TEXT("initial_speed_mps")) &&
+        (!Params->TryGetNumberField(TEXT("initial_speed_mps"), InitialSpeedMps) ||
+         !FMath::IsFinite(InitialSpeedMps) || InitialSpeedMps < 0.0))
+    {
+      bOutFormatError = true;
+      OutResult.ErrorCode = CodeInvalidRequest;
+      OutResult.ErrorMessage = TEXT("initial_speed_mps 必须是有限非负数，单位为 m/s");
+      return false;
+    }
+
     FString Blueprint;
     if (!Params->TryGetStringField(TEXT("blueprint"), Blueprint) || Blueprint.IsEmpty())
     {
@@ -456,6 +468,19 @@ bool UDriscaApiSubsystem::ExecuteVehicle(
       OutResult.ErrorMessage = FString::Printf(
           TEXT("车辆创建失败：%s"), *FActorSpawnResult::StatusToString(SpawnResult.Key));
       return false;
+    }
+
+    if (InitialSpeedMps > 0.01)
+    {
+      if (ACarlaWheeledVehicle *Vehicle = Cast<ACarlaWheeledVehicle>(SpawnResult.Value->GetActor()))
+      {
+        if (UPrimitiveComponent *Root = Cast<UPrimitiveComponent>(Vehicle->GetRootComponent()))
+        {
+          // 接口使用米每秒，物理线速度使用厘米每秒。
+          const FVector Forward = Vehicle->GetActorForwardVector();
+          Root->SetPhysicsLinearVelocity(Forward * static_cast<float>(InitialSpeedMps * 100.0), false);
+        }
+      }
     }
 
     const uint32 ActorId = SpawnResult.Value->GetActorId();

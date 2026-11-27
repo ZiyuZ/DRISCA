@@ -420,43 +420,35 @@ index b31f75d..69e6ea1 100644
        }
      }
 diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.h b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.h
-index 01dba56..cf109a7 100644
+index 01dba56..77a2b9b 100644
 --- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.h
 +++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.h
-@@ -19,6 +19,32 @@ class UTrafficLightController;
+@@ -19,6 +19,24 @@ class UTrafficLightController;
  // Delegate to define dispatcher
  DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLightChangeDispatcher);
  
 +class UTrafficLightComponent;
 +
-+USTRUCT(BlueprintType)
++// 触发区仅供原生 API 查询，不进入反射或资产序列化布局。
 +struct FTrafficLightTriggerZone
 +{
-+  GENERATED_BODY()
-+
-+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 +  int32 RoadId = 0;
 +
-+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 +  int32 SectionId = 0;
 +
-+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 +  int32 LaneId = 0;
 +
-+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 +  double S = 0.0;
 +
-+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 +  FTransform Transform = FTransform::Identity;
 +
-+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 +  FVector Extent = FVector::ZeroVector;
 +};
 +
  /// Class representing an OpenDRIVE Traffic Signal
  UCLASS(Blueprintable, ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
  class CARLA_API UTrafficLightComponent : public USignComponent
-@@ -52,6 +78,12 @@ public:
+@@ -52,6 +70,12 @@ public:
  
    virtual void InitializeSign(const carla::road::Map &Map) override;
  
@@ -469,11 +461,11 @@ index 01dba56..cf109a7 100644
    /// Deregister from the controller so streamed-out lights (World Partition)
    /// never leave dangling entries behind.
    virtual void OnComponentDestroyed(bool bDestroyingHierarchy) override;
-@@ -97,6 +129,9 @@ private:
+@@ -97,6 +121,9 @@ private:
    UPROPERTY(Category = "Traffic Light", VisibleAnywhere)
    UTrafficLightController *TrafficLightController = nullptr;
  
-+  UPROPERTY(VisibleAnywhere)
++  // 保持既有 UPROPERTY 顺序，与官方未版本化 Cook 资产一致。
 +  TArray<FTrafficLightTriggerZone> TriggerZones;
 +
    // Vehicles that have entered the trigger box of the traffic light
