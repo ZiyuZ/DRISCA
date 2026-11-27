@@ -1,5 +1,5 @@
 diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Carla.Build.cs b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Carla.Build.cs
-index 5307f18..bf96d90 100644
+index d80312c..ebd56eb 100644
 --- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Carla.Build.cs
 +++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Carla.Build.cs
 @@ -35,6 +35,8 @@ public class Carla :
@@ -39,7 +39,7 @@ index 5307f18..bf96d90 100644
      // OSM2ODR needs no extra library: the converter is compiled into
      // libcarla-server, which this module already links.
 diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaGameModeBase.cpp b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaGameModeBase.cpp
-index 9ac098f..ca70e7f 100644
+index 69a9648..dc72aa6 100644
 --- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaGameModeBase.cpp
 +++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaGameModeBase.cpp
 @@ -5,6 +5,7 @@
@@ -50,7 +50,7 @@ index 9ac098f..ca70e7f 100644
  #include "Carla.h"
  #include "Carla/Game/Tagger.h"
  #include "Carla/Game/CarlaHUD.h"
-@@ -175,51 +176,24 @@ void ACarlaGameModeBase::InitGame(
+@@ -198,51 +199,24 @@ void ACarlaGameModeBase::InitGame(
      // needed.
    }
  
@@ -113,7 +113,7 @@ index 9ac098f..ca70e7f 100644
    LoadGeoReference();
  }
  
-@@ -243,45 +217,6 @@ void ACarlaGameModeBase::RestartPlayer(AController *NewPlayer)
+@@ -266,45 +240,6 @@ void ACarlaGameModeBase::RestartPlayer(AController *NewPlayer)
    Super::RestartPlayer(NewPlayer);
  }
  
@@ -159,7 +159,7 @@ index 9ac098f..ca70e7f 100644
  void ACarlaGameModeBase::BeginPlay()
  {
    Super::BeginPlay();
-@@ -324,48 +259,14 @@ void ACarlaGameModeBase::BeginPlay()
+@@ -348,48 +283,14 @@ void ACarlaGameModeBase::BeginPlay()
  
    if (Episode->Weather != nullptr)
    {
@@ -262,22 +262,21 @@ index eaee3bf..3baea1a 100644
    void SetEpisode(UCarlaEpisode *ThisEpisode)
    {
 diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/GnssSensor.cpp b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/GnssSensor.cpp
-index 874a3a0..332ba17 100644
+index 2066de6..5e9ad57 100644
 --- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/GnssSensor.cpp
 +++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/GnssSensor.cpp
-@@ -8,6 +8,7 @@
+@@ -6,6 +6,7 @@
+ 
+ #include "Carla/Sensor/GnssSensor.h"
  #include "Carla.h"
++#include "Carla/Game/CarlaEngine.h"
  #include "Carla/Actor/ActorBlueprintFunctionLibrary.h"
  #include "Carla/Game/CarlaEpisode.h"
-+#include "Carla/Game/CarlaEngine.h"
  #include "Carla/Game/CarlaStatics.h"
- 
- #include <util/disable-ue4-macros.h>
-@@ -75,6 +76,9 @@ void AGnssSensor::PostPhysTick(UWorld *World, ELevelTick TickType, float DeltaSe
+@@ -82,6 +83,8 @@ void AGnssSensor::PostPhysTick(UWorld *World, ELevelTick TickType, float DeltaSe
      TRACE_CPUPROFILER_EVENT_SCOPE_STR("AGnssSensor Stream Send");
      DataStream.SerializeAndSend(*this, carla::geom::GeoLocation{LatitudeValue, LongitudeValue, AltitudeValue});
    }
-+
 +  SampleFrameNo = static_cast<uint64>(FCarlaEngine::GetFrameCounter());
 +  SampleSimulationTimeSeconds = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0;
  }
@@ -314,22 +313,21 @@ index a90edba..ccd653e 100644
 +  double SampleSimulationTimeSeconds = 0.0;
  };
 diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/InertialMeasurementUnit.cpp b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/InertialMeasurementUnit.cpp
-index 11447cb..181c542 100644
+index c05c179..f28f511 100644
 --- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/InertialMeasurementUnit.cpp
 +++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/InertialMeasurementUnit.cpp
-@@ -8,6 +8,7 @@
+@@ -6,6 +6,7 @@
+ 
+ #include "Carla/Sensor/InertialMeasurementUnit.h"
  #include "Carla.h"
++#include "Carla/Game/CarlaEngine.h"
  #include "Carla/Actor/ActorBlueprintFunctionLibrary.h"
  #include "Carla/Actor/CarlaActor.h"
-+#include "Carla/Game/CarlaEngine.h"
  #include "Carla/Game/CarlaStatics.h"
- #include "Carla/Sensor/WorldObserver.h"
- #include "Carla/Vehicle/CarlaWheeledVehicle.h"
-@@ -232,6 +233,9 @@ void AInertialMeasurementUnit::PostPhysTick(UWorld *World, ELevelTick TickType,
+@@ -233,6 +234,8 @@ void AInertialMeasurementUnit::PostPhysTick(UWorld *World, ELevelTick TickType,
      TRACE_CPUPROFILER_EVENT_SCOPE(AInertialMeasurementUnit::SerializeAndSend);
      DataStream.SerializeAndSend(*this, AccelerometerValue, GyroscopeValue, CompassValue);
    }
-+
 +  SampleFrameNo = static_cast<uint64>(FCarlaEngine::GetFrameCounter());
 +  SampleSimulationTimeSeconds = World != nullptr ? World->GetTimeSeconds() : 0.0;
  }
@@ -367,10 +365,10 @@ index 2e2b92a..a440383 100644
 +  double SampleSimulationTimeSeconds = 0.0;
  };
 diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Server/CarlaServer.cpp b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Server/CarlaServer.cpp
-index 7931245..5c57a00 100644
+index dd1eefe..59b2dba 100644
 --- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Server/CarlaServer.cpp
 +++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Server/CarlaServer.cpp
-@@ -1064,8 +1064,7 @@ void FCarlaServer::FPimpl::BindActions()
+@@ -1082,8 +1082,7 @@ void FCarlaServer::FPimpl::BindActions()
      {
        RESPOND_ERROR("set_weather_parameters internal error: unable to find weather:: weather is disabled");
      }
@@ -380,7 +378,7 @@ index 7931245..5c57a00 100644
    };
  
    // Environment map for the sky light: an equirectangular linear RGB(A) float
-@@ -3656,6 +3655,10 @@ BIND_SYNC(is_sensor_enabled_for_ros) << [this](carla::streaming::detail::stream_
+@@ -3657,6 +3656,10 @@ BIND_SYNC(is_sensor_enabled_for_ros) << [this](carla::streaming::detail::stream_
        const cr::Transform& offset,
        std::string map_override) -> R<std::string>
    {
@@ -392,10 +390,10 @@ index 7931245..5c57a00 100644
      REQUIRE_PRIMARY_SERVER();
      return R<std::string>(Episode->GetRecorder()->ReplayFile(
 diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.cpp b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.cpp
-index b31f75d..69e6ea1 100644
+index d202c29..f4b9a4a 100644
 --- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.cpp
 +++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.cpp
-@@ -28,6 +28,7 @@ void UTrafficLightComponent::InitializeSign(const carla::road::Map &Map)
+@@ -29,6 +29,7 @@ void UTrafficLightComponent::InitializeSign(const carla::road::Map &Map)
    const double epsilon = 0.00001;
  
    auto References = GetAllReferencesToThisSignal(Map);
@@ -403,10 +401,10 @@ index b31f75d..69e6ea1 100644
  
    for (auto& Reference : References)
    {
-@@ -81,6 +82,15 @@ void UTrafficLightComponent::InitializeSign(const carla::road::Map &Map)
-               LaneDistance + epsilon, LaneDistance + LaneLength - epsilon);
+@@ -87,6 +88,14 @@ void UTrafficLightComponent::InitializeSign(const carla::road::Map &Map)
+         {
+           BoxTransform = LargeMapManager->GlobalToLocalTransform(BoxTransform);
          }
-         FTransform BoxTransform = Map.ComputeTransform(signal_waypoint);
 +        FTrafficLightTriggerZone Zone;
 +        Zone.RoadId = static_cast<int32>(RoadId);
 +        Zone.SectionId = static_cast<int32>(signal_waypoint.section_id);
@@ -415,12 +413,11 @@ index b31f75d..69e6ea1 100644
 +        Zone.Transform = BoxTransform;
 +        Zone.Extent = FVector(100*BoxLength, 100*BoxWidth, 100*BoxHeight);
 +        TriggerZones.Add(Zone);
-+
          GenerateTrafficLightBox(BoxTransform, FVector(100*BoxLength, 100*BoxWidth, 100*BoxHeight));
        }
      }
 diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.h b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.h
-index 01dba56..77a2b9b 100644
+index 0ba404c..db69599 100644
 --- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.h
 +++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightComponent.h
 @@ -19,6 +19,24 @@ class UTrafficLightController;
@@ -461,7 +458,7 @@ index 01dba56..77a2b9b 100644
    /// Deregister from the controller so streamed-out lights (World Partition)
    /// never leave dangling entries behind.
    virtual void OnComponentDestroyed(bool bDestroyingHierarchy) override;
-@@ -97,6 +121,9 @@ private:
+@@ -94,6 +118,9 @@ private:
    UPROPERTY(Category = "Traffic Light", VisibleAnywhere)
    UTrafficLightController *TrafficLightController = nullptr;
  
@@ -472,20 +469,18 @@ index 01dba56..77a2b9b 100644
    UPROPERTY()
    TArray<AWheeledVehicleAIController*> Vehicles;
 diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightController.h b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightController.h
-index 58e0fd6..a22782c 100644
+index 58e0fd6..a721f39 100644
 --- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightController.h
 +++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightController.h
-@@ -89,6 +89,18 @@ public:
+@@ -89,6 +89,16 @@ public:
    UFUNCTION(Category = "Traffic Controller", BlueprintCallable)
    int GetSequence() const;
  
-+  UFUNCTION(Category = "Traffic Controller", BlueprintPure)
 +  int32 GetCurrentStateIndex() const
 +  {
 +    return CurrentState;
 +  }
 +
-+  UFUNCTION(Category = "Traffic Controller", BlueprintPure)
 +  int32 GetStateCount() const
 +  {
 +    return LightStates.Num();
@@ -495,20 +490,18 @@ index 58e0fd6..a22782c 100644
    void SetSequence(int InSequence);
  
 diff --git a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightGroup.h b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightGroup.h
-index 9b574b2..338117a 100644
+index 9b574b2..43d186a 100644
 --- a/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightGroup.h
 +++ b/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightGroup.h
-@@ -39,6 +39,18 @@ public:
+@@ -39,6 +39,16 @@ public:
    UFUNCTION(Category = "Traffic Group", BlueprintPure)
    int GetJunctionId() const;
  
-+  UFUNCTION(Category = "Traffic Group", BlueprintPure)
 +  int32 GetCurrentControllerIndex() const
 +  {
 +    return CurrentController;
 +  }
 +
-+  UFUNCTION(Category = "Traffic Group", BlueprintPure)
 +  int32 GetControllerCount() const
 +  {
 +    return Controllers.Num();

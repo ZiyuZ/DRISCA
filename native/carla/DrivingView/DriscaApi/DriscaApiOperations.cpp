@@ -367,7 +367,8 @@ bool UDriscaApiSubsystem::ExecuteVehicle(
     double InitialSpeedMps = 0.0;
     if (Params->HasField(TEXT("initial_speed_mps")) &&
         (!Params->TryGetNumberField(TEXT("initial_speed_mps"), InitialSpeedMps) ||
-         !FMath::IsFinite(InitialSpeedMps) || InitialSpeedMps < 0.0))
+         !FMath::IsFinite(InitialSpeedMps) || InitialSpeedMps < 0.0 ||
+         !FMath::IsFinite(static_cast<float>(InitialSpeedMps * 100.0))))
     {
       bOutFormatError = true;
       OutResult.ErrorCode = CodeInvalidRequest;
@@ -553,7 +554,7 @@ bool UDriscaApiSubsystem::ExecuteVehicle(
     for (const TSharedPtr<FJsonValue> &Value : *ActorIds)
     {
       const uint32 ActorId = static_cast<uint32>(Value->AsNumber());
-      if (ActorId == Session.EgoActorId)
+      if (Session.bActive && ActorId == Session.EgoActorId)
       {
         OutResult.ErrorCode = CodeInvalidState;
         OutResult.ErrorMessage = TEXT("不能销毁当前实验主车");
@@ -1162,14 +1163,14 @@ bool UDriscaApiSubsystem::ExecuteDrivingView(
             TSharedPtr<FJsonObject> Payload = MakeShared<FJsonObject>();
             Payload->SetStringField(TEXT("camera_name"), Name);
             Payload->SetObjectField(TEXT("mount"), Applied->GetObjectField(Name));
-            EmitEvent(TEXT("update_camera"), TEXT("launcher"), Payload,
+            EmitEvent(TEXT("update_camera"), GetConnectionSource(ConnectionId), Payload,
                 RequestId, OperationIndex);
           }
         }
       }
       if (Params->HasField(TEXT("layout")) && Config->HasField(TEXT("layout")))
       {
-        EmitEvent(TEXT("update_layout"), TEXT("launcher"),
+        EmitEvent(TEXT("update_layout"), GetConnectionSource(ConnectionId),
             Config->GetObjectField(TEXT("layout")), RequestId, OperationIndex);
       }
       if (Params->HasField(TEXT("view_mode")))
@@ -1208,7 +1209,6 @@ bool UDriscaApiSubsystem::ExecuteDrivingView(
       OutResult.ErrorMessage = Error;
       return false;
     }
-    Config->SetNumberField(TEXT("ego_actor_id"), Session.EgoActorId);
     Config->SetStringField(TEXT("session_id"), Session.SessionId);
     Config->SetBoolField(TEXT("dynamic_speed_limit"), bDynamicSpeedLimit);
     Config->SetNumberField(TEXT("default_speed_limit_mps"), DefaultSpeedLimitMps);
@@ -1237,6 +1237,7 @@ bool UDriscaApiSubsystem::ExecuteDrivingView(
     Connection->bControl = false;
     Connection->SessionId.Empty();
     Session.bActive = false;
+    Session.EgoActorId = 0;
     Session.ControlConnection = -1;
     Session.OwnedActors.Empty();
     bTakeoverThisFrame = false;

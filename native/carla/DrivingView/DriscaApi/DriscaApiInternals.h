@@ -48,9 +48,14 @@ namespace DriscaApiInternal
       return false;
     }
     const TArray<TSharedPtr<FJsonValue>> &Array = Value->AsArray();
-    if (Array.Num() < 3)
+    if (Array.Num() != 3)
     {
       return false;
+    }
+    for (const auto &Element : Array)
+    {
+      if (!Element.IsValid() || Element->Type != EJson::Number ||
+          !FMath::IsFinite(Element->AsNumber())) return false;
     }
     OutVector = FVector(
         Array[0]->AsNumber(), Array[1]->AsNumber(), Array[2]->AsNumber());

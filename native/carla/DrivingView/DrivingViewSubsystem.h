@@ -47,11 +47,6 @@ private:
   bool StartViewInternal(const TSharedPtr<FJsonObject> &Params, FString &OutError);
   void ApplyViewMode(const FString &Mode, bool bInitial);
 
-  TSharedPtr<FJsonObject> StateToJson(const FDrivingViewState &State) const;
-  TSharedPtr<FJsonObject> InputToJson(const FDrivingViewInput &Input) const;
-  static TArray<TSharedPtr<FJsonValue>> VectorToJson(const FVector &Value);
-  static TArray<TSharedPtr<FJsonValue>> RotatorToJson(const FRotator &Value);
-
   static bool ParseCamera(const TSharedPtr<FJsonObject> &Object, FDrivingViewCamera &OutCamera);
   static bool ParseBox(const TSharedPtr<FJsonObject> &Object, FDrivingViewBox &OutBox);
   static bool ParseLayout(const TSharedPtr<FJsonObject> &Object, FDrivingViewLayout &OutLayout);

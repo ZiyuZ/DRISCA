@@ -66,38 +66,29 @@ bool UDrivingViewSubsystem::StartViewInternal(
   FDrivingViewCamera RearLeft;
   FDrivingViewCamera RearRight;
   const TSharedPtr<FJsonObject> *CamerasObject = nullptr;
-  const TSharedPtr<FJsonObject> *FrontObject = nullptr;
-  const TSharedPtr<FJsonObject> *RearTopObject = nullptr;
-  const TSharedPtr<FJsonObject> *RearLeftObject = nullptr;
-  const TSharedPtr<FJsonObject> *RearRightObject = nullptr;
-  if (Params->TryGetObjectField(TEXT("cameras"), CamerasObject) && CamerasObject != nullptr)
+  if (Params->HasField(TEXT("cameras")))
   {
-    if ((*CamerasObject)->TryGetObjectField(TEXT("front"), FrontObject) && FrontObject != nullptr)
+    if (!Params->TryGetObjectField(TEXT("cameras"), CamerasObject))
+    { OutError = TEXT("cameras 必须是对象"); return false; }
+    for (const auto &Pair : (*CamerasObject)->Values)
     {
-      if (!ParseCamera(*FrontObject, Front))
-      {
-        OutError = TEXT("invalid front camera");
-        return false;
-      }
-    }
-    if ((*CamerasObject)->TryGetObjectField(TEXT("rear_top"), RearTopObject) && RearTopObject != nullptr)
-    {
-      ParseCamera(*RearTopObject, RearTop);
-    }
-    if ((*CamerasObject)->TryGetObjectField(TEXT("rear_left"), RearLeftObject) && RearLeftObject != nullptr)
-    {
-      ParseCamera(*RearLeftObject, RearLeft);
-    }
-    if ((*CamerasObject)->TryGetObjectField(TEXT("rear_right"), RearRightObject) && RearRightObject != nullptr)
-    {
-      ParseCamera(*RearRightObject, RearRight);
+      FDrivingViewCamera *Camera = nullptr;
+      if (Pair.Key == TEXT("front")) Camera = &Front;
+      else if (Pair.Key == TEXT("rear_top")) Camera = &RearTop;
+      else if (Pair.Key == TEXT("rear_left")) Camera = &RearLeft;
+      else if (Pair.Key == TEXT("rear_right")) Camera = &RearRight;
+      if (!Camera || !Pair.Value.IsValid() || Pair.Value->Type != EJson::Object ||
+          !ParseCamera(Pair.Value->AsObject(), *Camera))
+      { OutError = TEXT("相机字段无效，数值须有限且 FOV 在 0 至 180 度之间"); return false; }
     }
   }
 
   FDrivingViewLayout Layout;
   const TSharedPtr<FJsonObject> *LayoutObject = nullptr;
-  if (Params->TryGetObjectField(TEXT("layout"), LayoutObject) && LayoutObject != nullptr)
+  if (Params->HasField(TEXT("layout")))
   {
+    if (!Params->TryGetObjectField(TEXT("layout"), LayoutObject))
+    { OutError = TEXT("layout 必须是对象"); return false; }
     if (!ParseLayout(*LayoutObject, Layout))
     {
       OutError = TEXT("invalid layout");
@@ -198,6 +189,7 @@ bool UDrivingViewSubsystem::UpdateView(
   if (Params->HasField(TEXT("view_mode")) && (!Params->TryGetStringField(TEXT("view_mode"), Mode) ||
       (Mode != TEXT("free") && Mode != TEXT("cockpit") && Mode != TEXT("chase"))))
   { OutError = TEXT("view_mode 必须是 free、cockpit 或 chase"); return false; }
+  ACarlaWheeledVehicle *RequestedVehicle = nullptr;
   if (Params->HasField(TEXT("ego_actor_id")) || (Mode != TEXT("free") && ActivePawn->GetViewVehicle() == nullptr))
   {
     double Id = 0;
@@ -208,7 +200,7 @@ bool UDrivingViewSubsystem::UpdateView(
     FCarlaActor *Actor = Episode ? Episode->FindCarlaActor(static_cast<uint32>(Id)) : nullptr;
     auto *Vehicle = Actor ? Cast<ACarlaWheeledVehicle>(Actor->GetActor()) : nullptr;
     if (!Vehicle) { OutError = TEXT("切换视角需要绑定车辆"); return false; }
-    if (ActivePawn->GetViewVehicle() != Vehicle) ActivePawn->BindViewVehicle(Vehicle);
+    RequestedVehicle = Vehicle;
   }
 
   // 只更新调用方提供的部分，未提供的保持当前值（便于实验时动态调布局）。
@@ -217,37 +209,35 @@ bool UDrivingViewSubsystem::UpdateView(
   FDrivingViewCamera RearLeft = ActivePawn->GetRearLeftCamera();
   FDrivingViewCamera RearRight = ActivePawn->GetRearRightCamera();
   const TSharedPtr<FJsonObject> *CamerasObject = nullptr;
-  const TSharedPtr<FJsonObject> *FrontObject = nullptr;
-  const TSharedPtr<FJsonObject> *RearTopObject = nullptr;
-  const TSharedPtr<FJsonObject> *RearLeftObject = nullptr;
-  const TSharedPtr<FJsonObject> *RearRightObject = nullptr;
-  if (Params->TryGetObjectField(TEXT("cameras"), CamerasObject) && CamerasObject != nullptr)
+  if (Params->HasField(TEXT("cameras")))
   {
-    if ((*CamerasObject)->TryGetObjectField(TEXT("front"), FrontObject) && FrontObject != nullptr)
+    if (!Params->TryGetObjectField(TEXT("cameras"), CamerasObject))
+    { OutError = TEXT("cameras 必须是对象"); return false; }
+    for (const auto &Pair : (*CamerasObject)->Values)
     {
-      ParseCamera(*FrontObject, Front);
-    }
-    if ((*CamerasObject)->TryGetObjectField(TEXT("rear_top"), RearTopObject) && RearTopObject != nullptr)
-    {
-      ParseCamera(*RearTopObject, RearTop);
-    }
-    if ((*CamerasObject)->TryGetObjectField(TEXT("rear_left"), RearLeftObject) && RearLeftObject != nullptr)
-    {
-      ParseCamera(*RearLeftObject, RearLeft);
-    }
-    if ((*CamerasObject)->TryGetObjectField(TEXT("rear_right"), RearRightObject) && RearRightObject != nullptr)
-    {
-      ParseCamera(*RearRightObject, RearRight);
+      FDrivingViewCamera *Camera = nullptr;
+      if (Pair.Key == TEXT("front")) Camera = &Front;
+      else if (Pair.Key == TEXT("rear_top")) Camera = &RearTop;
+      else if (Pair.Key == TEXT("rear_left")) Camera = &RearLeft;
+      else if (Pair.Key == TEXT("rear_right")) Camera = &RearRight;
+      if (!Camera || !Pair.Value.IsValid() || Pair.Value->Type != EJson::Object ||
+          !ParseCamera(Pair.Value->AsObject(), *Camera))
+      { OutError = TEXT("相机字段无效，数值须有限且 FOV 在 0 至 180 度之间"); return false; }
     }
   }
 
   FDrivingViewLayout Layout = ActivePawn->GetLayout();
   const TSharedPtr<FJsonObject> *LayoutObject = nullptr;
-  if (Params->TryGetObjectField(TEXT("layout"), LayoutObject) && LayoutObject != nullptr)
+  if (Params->HasField(TEXT("layout")))
   {
-    ParseLayout(*LayoutObject, Layout);
+    if (!Params->TryGetObjectField(TEXT("layout"), LayoutObject))
+    { OutError = TEXT("layout 必须是对象"); return false; }
+    if (!ParseLayout(*LayoutObject, Layout))
+    { OutError = TEXT("后视镜布局无效，尺寸须为整数，宽 32 至 4096、高 24 至 4096"); return false; }
   }
 
+  if (RequestedVehicle && ActivePawn->GetViewVehicle() != RequestedVehicle)
+    ActivePawn->BindViewVehicle(RequestedVehicle);
   ActivePawn->UpdateConfig(Front, RearTop, RearLeft, RearRight, Layout);
   if (Mode != ActivePawn->GetViewMode()) ApplyViewMode(Mode, false);
   return true;
@@ -339,56 +329,6 @@ const FDrivingViewState *UDrivingViewSubsystem::GetState() const
   return IsActive() ? &ActivePawn->GetState() : nullptr;
 }
 
-TSharedPtr<FJsonObject> UDrivingViewSubsystem::StateToJson(const FDrivingViewState &State) const
-{
-  TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
-  Result->SetNumberField(TEXT("timestamp"), State.Timestamp);
-  Result->SetNumberField(TEXT("wall_time"), State.WallTime);
-  Result->SetNumberField(TEXT("frame_no"), static_cast<double>(State.FrameNo));
-  Result->SetNumberField(TEXT("delta"), State.Delta);
-  Result->SetObjectField(TEXT("input"), InputToJson(State.Input));
-  Result->SetObjectField(TEXT("control"), InputToJson(State.Control));
-  Result->SetArrayField(TEXT("location"), VectorToJson(State.Location));
-  Result->SetArrayField(TEXT("rotation"), RotatorToJson(State.Rotation));
-  Result->SetArrayField(TEXT("velocity"), VectorToJson(State.Velocity));
-  Result->SetStringField(TEXT("mode"), State.Mode);
-  Result->SetBoolField(TEXT("active"), State.bActive);
-  Result->SetBoolField(TEXT("ready"), State.bReady);
-  Result->SetStringField(TEXT("error"), State.Error);
-  return Result;
-}
-
-TSharedPtr<FJsonObject> UDrivingViewSubsystem::InputToJson(const FDrivingViewInput &Input) const
-{
-  TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
-  Result->SetNumberField(TEXT("throttle"), Input.Throttle);
-  Result->SetNumberField(TEXT("steer"), Input.Steer);
-  Result->SetNumberField(TEXT("brake"), Input.Brake);
-  Result->SetBoolField(TEXT("reverse"), Input.bReverse);
-  Result->SetBoolField(TEXT("hand_brake"), Input.bHandBrake);
-  Result->SetBoolField(TEXT("manual_gear_shift"), Input.bManualGearShift);
-  Result->SetNumberField(TEXT("gear"), Input.Gear);
-  Result->SetBoolField(TEXT("takeover_requested"), Input.bTakeoverRequested);
-  Result->SetBoolField(TEXT("toggle_autopilot_requested"), Input.bToggleAutopilotRequested);
-  return Result;
-}
-
-TArray<TSharedPtr<FJsonValue>> UDrivingViewSubsystem::VectorToJson(const FVector &Value)
-{
-  return {
-      MakeShared<FJsonValueNumber>(Value.X),
-      MakeShared<FJsonValueNumber>(Value.Y),
-      MakeShared<FJsonValueNumber>(Value.Z)};
-}
-
-TArray<TSharedPtr<FJsonValue>> UDrivingViewSubsystem::RotatorToJson(const FRotator &Value)
-{
-  return {
-      MakeShared<FJsonValueNumber>(Value.Pitch),
-      MakeShared<FJsonValueNumber>(Value.Yaw),
-      MakeShared<FJsonValueNumber>(Value.Roll)};
-}
-
 bool UDrivingViewSubsystem::GetViewConfig(
     TSharedPtr<FJsonObject> &OutResult, FString &OutError) const
 {
@@ -468,14 +408,31 @@ FString UDrivingViewSubsystem::ColorToHex(const FLinearColor &Color)
 bool UDrivingViewSubsystem::ParseCamera(
     const TSharedPtr<FJsonObject> &Object, FDrivingViewCamera &OutCamera)
 {
-  OutCamera.X = Object->GetNumberField(TEXT("x"));
-  OutCamera.Y = Object->GetNumberField(TEXT("y"));
-  OutCamera.Z = Object->GetNumberField(TEXT("z"));
-  OutCamera.Pitch = Object->GetNumberField(TEXT("pitch"));
-  OutCamera.Yaw = Object->GetNumberField(TEXT("yaw"));
-  OutCamera.Roll = Object->GetNumberField(TEXT("roll"));
-  const double Fov = Object->GetNumberField(TEXT("fov"));
-  OutCamera.Fov = Fov > 0.0 ? static_cast<float>(Fov) : 90.0f;
+  struct FField { const TCHAR *Name; float FDrivingViewCamera::*Member; };
+  const FField Fields[] = {
+      {TEXT("x"), &FDrivingViewCamera::X}, {TEXT("y"), &FDrivingViewCamera::Y},
+      {TEXT("z"), &FDrivingViewCamera::Z}, {TEXT("pitch"), &FDrivingViewCamera::Pitch},
+      {TEXT("yaw"), &FDrivingViewCamera::Yaw}, {TEXT("roll"), &FDrivingViewCamera::Roll},
+      {TEXT("fov"), &FDrivingViewCamera::Fov}};
+  FDrivingViewCamera Camera = OutCamera;
+  for (const auto &Pair : Object->Values)
+  {
+    bool bKnown = false;
+    for (const FField &Field : Fields)
+    {
+      if (Pair.Key != Field.Name) continue;
+      double Number = 0;
+      if (!Pair.Value.IsValid() || Pair.Value->Type != EJson::Number ||
+          !Object->TryGetNumberField(Field.Name, Number) || !FMath::IsFinite(Number) ||
+          !FMath::IsFinite(static_cast<float>(Number))) return false;
+      if (Field.Member == &FDrivingViewCamera::Fov && (Number <= 0 || Number >= 180)) return false;
+      Camera.*(Field.Member) = static_cast<float>(Number);
+      bKnown = true;
+      break;
+    }
+    if (!bKnown) return false;
+  }
+  OutCamera = Camera;
   return true;
 }
 
@@ -513,30 +470,37 @@ bool UDrivingViewSubsystem::ParseLayout(
     const TSharedPtr<FJsonObject> &Object, FDrivingViewLayout &OutLayout)
 {
   bool bShowRearview = OutLayout.bShowRearview;
-  if (Object->TryGetBoolField(TEXT("show_rearview"), bShowRearview))
+  if (Object->HasField(TEXT("show_rearview")))
   {
+    if (!Object->TryGetBoolField(TEXT("show_rearview"), bShowRearview)) return false;
     OutLayout.bShowRearview = bShowRearview;
   }
 
   double BorderWidth = OutLayout.BorderWidth;
-  if (Object->TryGetNumberField(TEXT("border_width"), BorderWidth))
+  if (Object->HasField(TEXT("border_width")))
   {
-    OutLayout.BorderWidth = FMath::Max(0.0f, static_cast<float>(BorderWidth));
+    if (!Object->TryGetNumberField(TEXT("border_width"), BorderWidth) ||
+        !FMath::IsFinite(BorderWidth) || BorderWidth < 0 ||
+        !FMath::IsFinite(static_cast<float>(BorderWidth))) return false;
+    OutLayout.BorderWidth = static_cast<float>(BorderWidth);
   }
   OutLayout.BorderColor = ParseColor(Object->TryGetField(TEXT("border_color")), OutLayout.BorderColor);
 
   const TSharedPtr<FJsonObject> *ViewportObject = nullptr;
-  if (Object->TryGetObjectField(TEXT("rear_top"), ViewportObject) && ViewportObject != nullptr)
+  if (Object->HasField(TEXT("rear_top")))
   {
-    ParseViewport(*ViewportObject, OutLayout.RearTop);
+    if (!Object->TryGetObjectField(TEXT("rear_top"), ViewportObject) ||
+        !ParseViewport(*ViewportObject, OutLayout.RearTop)) return false;
   }
-  if (Object->TryGetObjectField(TEXT("rear_left"), ViewportObject) && ViewportObject != nullptr)
+  if (Object->HasField(TEXT("rear_left")))
   {
-    ParseViewport(*ViewportObject, OutLayout.RearLeft);
+    if (!Object->TryGetObjectField(TEXT("rear_left"), ViewportObject) ||
+        !ParseViewport(*ViewportObject, OutLayout.RearLeft)) return false;
   }
-  if (Object->TryGetObjectField(TEXT("rear_right"), ViewportObject) && ViewportObject != nullptr)
+  if (Object->HasField(TEXT("rear_right")))
   {
-    ParseViewport(*ViewportObject, OutLayout.RearRight);
+    if (!Object->TryGetObjectField(TEXT("rear_right"), ViewportObject) ||
+        !ParseViewport(*ViewportObject, OutLayout.RearRight)) return false;
   }
   return true;
 }
@@ -588,21 +552,27 @@ FLinearColor UDrivingViewSubsystem::ParseColor(
 bool UDrivingViewSubsystem::ParseViewport(
     const TSharedPtr<FJsonObject> &Object, FDrivingViewViewport &OutViewport)
 {
-  const TArray<TSharedPtr<FJsonValue>> *Position = nullptr;
-  if (Object->TryGetArrayField(TEXT("screen_position"), Position) && Position != nullptr &&
-      Position->Num() >= 2)
+  FDrivingViewViewport Viewport = OutViewport;
+  for (const auto &Pair : Object->Values)
   {
-    OutViewport.ScreenPosition = FVector2D(
-        static_cast<float>((*Position)[0]->AsNumber()),
-        static_cast<float>((*Position)[1]->AsNumber()));
+    if (Pair.Key != TEXT("screen_position") && Pair.Key != TEXT("image_size")) return false;
+    if (!Pair.Value.IsValid() || Pair.Value->Type != EJson::Array) return false;
+    const auto &Array = Pair.Value->AsArray();
+    if (Array.Num() != 2) return false;
+    for (const auto &Value : Array)
+      if (!Value.IsValid() || Value->Type != EJson::Number || !FMath::IsFinite(Value->AsNumber()) ||
+          !FMath::IsFinite(static_cast<float>(Value->AsNumber()))) return false;
+    const double X = Array[0]->AsNumber(), Y = Array[1]->AsNumber();
+    if (Pair.Key == TEXT("screen_position"))
+      Viewport.ScreenPosition = FVector2D(X, Y);
+    else
+    {
+      // 下限与渲染目标的实际分配下限一致，上限限制单镜资源用量。
+      if (X < 32 || X > 4096 || Y < 24 || Y > 4096 ||
+          FMath::FloorToDouble(X) != X || FMath::FloorToDouble(Y) != Y) return false;
+      Viewport.ImageSize = FIntPoint(static_cast<int32>(X), static_cast<int32>(Y));
+    }
   }
-
-  const TArray<TSharedPtr<FJsonValue>> *Size = nullptr;
-  if (Object->TryGetArrayField(TEXT("image_size"), Size) && Size != nullptr && Size->Num() >= 2)
-  {
-    OutViewport.ImageSize = FIntPoint(
-        FMath::RoundToInt((*Size)[0]->AsNumber()),
-        FMath::RoundToInt((*Size)[1]->AsNumber()));
-  }
+  OutViewport = Viewport;
   return true;
 }

@@ -264,7 +264,6 @@ private:
   TArray<DriscaApi::FEvent> EventQueue;
   uint64 NextEventId = 1;
 
-  FString ActiveWeatherPreset = TEXT("Custom");
   bool bDynamicSpeedLimit = false;
   float DefaultSpeedLimitMps = 33.33f;
 

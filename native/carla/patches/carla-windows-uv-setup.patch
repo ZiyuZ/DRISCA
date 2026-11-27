@@ -1,0 +1,522 @@
+diff --git a/CarlaSetup.bat b/CarlaSetup.bat
+index f60d9d9..4ab1785 100644
+--- a/CarlaSetup.bat
++++ b/CarlaSetup.bat
+@@ -1,45 +1,55 @@
+ @echo off
+ setlocal EnableDelayedExpansion
+ 
+-set skip_prerequisites=false
+-set launch=false
+-set interactive=false
+-set python_path=python
+-set python_root=
++rem Work from the repository root so the script can be run from any directory.
++cd /d "%~dp0" || exit /b
++
++set "skip_prerequisites=false"
++set "launch=false"
++set "interactive=false"
++set "python_root="
++
++set "content_branch=ue58-dev-carla"
++set "engine_branch=ue58-dev-carla"
++set "cmake_min_version=3.27.2"
++
++set "content_dir=%cd%\Unreal\CarlaUnreal\Content"
++set "content_path=%content_dir%\Carla"
++rem Full path of the engine checkout next to this one, without ".." in it.
++for %%p in ("%cd%\..\UnrealEngine5_carla") do set "engine_repo=%%~fp"
+ 
+ rem -- PARSE COMMAND LINE ARGUMENTS --
+ 
+ :parse
+-    if "%1"=="" (
+-        goto main
+-    )
+-    if "%1"=="--interactive" (
+-        set interactive=true
+-    ) else if "%1"=="-i" (
+-        set interactive=true
+-    ) else if "%1"=="--skip-prerequisites" (
+-        set skip_prerequisites=true
+-    ) else if "%1"=="-p" (
+-        set skip_prerequisites=true
+-    ) else if "%1"=="--launch" (
+-        set launch=true
+-    ) else if "%1"=="-l" (
+-        set launch=true
++    if "%~1"=="" goto main
++    set "arg=%~1"
++    if /i "!arg!"=="-h" goto usage
++    if /i "!arg!"=="--help" goto usage
++    if /i "!arg!"=="--interactive" (
++        set "interactive=true"
++    ) else if /i "!arg!"=="-i" (
++        set "interactive=true"
++    ) else if /i "!arg!"=="--skip-prerequisites" (
++        set "skip_prerequisites=true"
++    ) else if /i "!arg!"=="-p" (
++        set "skip_prerequisites=true"
++    ) else if /i "!arg!"=="--launch" (
++        set "launch=true"
++    ) else if /i "!arg!"=="-l" (
++        set "launch=true"
++    ) else if /i "!arg:~0,14!"=="--python-root=" (
++        set "python_root=!arg:~14!"
++    ) else if /i "!arg!"=="--python-root" (
++        set "python_root=%~2"
++        shift
++    ) else if /i "!arg!"=="-pyroot" (
++        set "python_root=%~2"
++        shift
+     ) else (
+-        echo %1 | findstr /B /C:"--python-root=" >nul
+-        if not errorlevel 1 (
+-            set python_root="%1"
+-            set python_root="!python_root:--python-root=!"
+-        ) else if "%1"=="--python-root" (
+-            set python_root=%2
+-            shift
+-        ) else if "%1"=="-pyroot" (
+-            set python_root=%2
+-            shift
+-        ) else (
+-            echo Unknown argument "%1"
+-            exit /b
+-        )
++        echo Unknown argument "!arg!"
++        echo.
++        call :usage
++        exit /b 1
+     )
+     shift
+     goto parse
+@@ -48,69 +58,195 @@ rem -- MAIN --
+ 
+ :main
+ 
++rem -- RESOLVE PYTHON --
++rem --python-root takes either a Python installation directory (python.exe) or a
++rem virtual environment (Scripts\python.exe), e.g. one created with uv. The
++rem interpreter is both the one CMake configures against and the one
++rem carla-python-api-install installs into, which on Windows runs the "python"
++rem in PATH, so its directory goes first in PATH.
++set "python_exe="
+ if not "%python_root%"=="" (
+-    set python_path=%python_root%\python
++    if exist "%python_root%\python.exe" set "python_exe=%python_root%\python.exe"
++    if exist "%python_root%\Scripts\python.exe" set "python_exe=%python_root%\Scripts\python.exe"
+ )
+ 
++set "python_path=python"
++if not "%python_exe%"=="" set "python_path=%python_exe%"
++
+ rem -- PREREQUISITES INSTALL STEP --
+ 
+-if %skip_prerequisites%==false (
++if "%skip_prerequisites%"=="false" (
+     echo Installing prerequisites...
+-    call Util/SetupUtils/InstallPrerequisites.bat --python-path=%python_path% || exit /b
++    call Util/SetupUtils/InstallPrerequisites.bat --python-path="%python_path%" || exit /b
+ ) else (
+     echo Skipping prerequisites install step.
+ )
+ 
++rem The prerequisites step installs Python into the user PATH, which does not reach
++rem this session, and a Store alias stub in PATH can shadow the real interpreter,
++rem so point CMake at the interpreter it installed.
++if "%skip_prerequisites%"=="false" if "%python_exe%"=="" (
++    if exist "%LocalAppData%\Programs\Python\Python38\python.exe" (
++        set "python_exe=%LocalAppData%\Programs\Python\Python38\python.exe"
++    )
++)
++
++rem -- CHECK GIT --
++
++where git >nul 2>nul || (
++    echo ERROR: Git was not found in PATH. Install Git for Windows, then rerun setup.
++    exit /b 1
++)
++rem The content is a Git LFS repository: without LFS the checkout holds pointer
++rem files instead of the assets and the editor fails to load the maps.
++git lfs version >nul 2>nul || (
++    echo ERROR: Git LFS was not found. Install it from https://git-lfs.com so the CARLA content
++    echo arrives as assets and not as LFS pointer files, then rerun setup.
++    exit /b 1
++)
++
+ rem -- CLONE CONTENT --
+-if exist "%cd%\Unreal\CarlaUnreal\Content" (
+-    echo Found CARLA content.
++
++set "content_ready=false"
++if exist "%content_path%" (
++    dir /b /a "%content_path%" 2>nul | findstr "^" >nul && set "content_ready=true"
++)
++
++if "!content_ready!"=="true" (
++    echo Found CARLA content at "%content_path%".
++    rem Warn about a content checkout of the wrong branch, but tolerate a plain
++    rem copy of the content that has no repository of its own.
++    if exist "%content_path%\.git" (
++        for /f "delims=" %%b in ('git -C "%content_path%" rev-parse --abbrev-ref HEAD 2^>nul') do set "content_current_branch=%%b"
++        if defined content_current_branch if /i not "!content_current_branch!"=="%content_branch%" (
++            echo WARNING: the content is on branch "!content_current_branch!", not "%content_branch%".
++        )
++    )
+ ) else (
+     echo Could not find CARLA content. Downloading...
+-    mkdir %cd%\Unreal\CarlaUnreal\Content
+-    git ^
+-        -C %cd%\Unreal\CarlaUnreal\Content ^
++    rem Clone shallow: the content repository carries a long history of large binary
++    rem assets and only the tip of the branch is needed to build, as the Linux guide does.
++    if exist "%content_path%" rmdir /s /q "%content_path%"
++    if not exist "%content_dir%" mkdir "%content_dir%" || exit /b
++    git -C "%content_dir%" ^
++        -c core.longpaths=true ^
+         clone ^
+-        -b ue58-dev-carla ^
++        --depth 1 ^
++        --single-branch ^
++        --progress ^
++        -b %content_branch% ^
+         https://bitbucket.org/carla-simulator/carla-content.git ^
+-        Carla ^
+-    || exit /b
++        Carla || exit /b
++    rem Some large-map packages of the content exceed MAX_PATH.
++    git -C "%content_path%" config core.longpaths true
++    rem Make sure the LFS filters are set locally and the assets are downloaded,
++    rem not only their pointers, even if the global Git configuration lacks them.
++    git -C "%content_path%" lfs install --local
++    git -C "%content_path%" lfs pull || exit /b
+ )
+ 
+-rem Activate VS terminal development environment:
++rem Activate VS terminal development environment. vswhere reports any Visual
++rem Studio with the C++ tools, whatever its version, edition or install drive
++rem (2022, 2026, Build Tools); the default 2022 locations are the fallback.
+ set "vs_env_bat="
+-if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" (
+-    set "vs_env_bat=%PROGRAMFILES%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+-)
+-if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat" (
+-    set "vs_env_bat=%PROGRAMFILES%\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat"
++set "vswhere=%PROGRAMFILES(X86)%\Microsoft Visual Studio\Installer\vswhere.exe"
++if exist "%vswhere%" (
++    for /f "delims=" %%i in ('"%vswhere%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2^>nul') do (
++        if exist "%%i\VC\Auxiliary\Build\vcvars64.bat" set "vs_env_bat=%%i\VC\Auxiliary\Build\vcvars64.bat"
++    )
+ )
+-if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
+-    set "vs_env_bat=%PROGRAMFILES%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
++if "%vs_env_bat%"=="" (
++    if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" (
++        set "vs_env_bat=%PROGRAMFILES%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
++    )
++    if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat" (
++        set "vs_env_bat=%PROGRAMFILES%\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat"
++    )
++    if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
++        set "vs_env_bat=%PROGRAMFILES%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
++    )
++    if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
++        set "vs_env_bat=%PROGRAMFILES%\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
++    )
+ )
+ 
+ if not "%vs_env_bat%"=="" (
+     echo Activating "x64 Native Tools Command Prompt" terminal environment.
++    echo Using "%vs_env_bat%".
+     call "%vs_env_bat%" || exit /b
+ ) else (
+-    echo Could not find vcvars64.bat for VS 2022, aborting setup...
+-    exit 1
++    echo Could not find vcvars64.bat for a Visual Studio with the C++ tools, aborting setup...
++    echo Install the "Desktop development with C++" workload in Visual Studio, then rerun setup.
++    exit /b 1
++)
++
++rem -- CHECK BUILD TOOLS --
++
++rem Visual Studio ships CMake and Ninja, and vcvars64.bat puts them in PATH, so
++rem check for them only now.
++where cmake >nul 2>nul || (
++    echo ERROR: CMake was not found in PATH. Install CMake %cmake_min_version% or later, then rerun setup.
++    exit /b 1
++)
++where ninja >nul 2>nul || (
++    echo ERROR: Ninja was not found in PATH. Install Ninja, then rerun setup.
++    exit /b 1
++)
++
++set "cmake_version="
++for /f "tokens=3" %%v in ('cmake --version') do if not defined cmake_version set "cmake_version=%%v"
++set "ninja_version="
++for /f "delims=" %%v in ('ninja --version') do if not defined ninja_version set "ninja_version=%%v"
++
++set "cmake_major=0"
++set "cmake_minor=0"
++set "cmake_patch=0"
++for /f "tokens=1-3 delims=.-" %%a in ("!cmake_version!") do (
++    set "cmake_major=%%a"
++    set "cmake_minor=%%b"
++    set "cmake_patch=%%c"
++)
++set "cmake_version_ok=false"
++if !cmake_major! GTR 3 set "cmake_version_ok=true"
++if !cmake_major! EQU 3 if !cmake_minor! GTR 27 set "cmake_version_ok=true"
++if !cmake_major! EQU 3 if !cmake_minor! EQU 27 if !cmake_patch! GEQ 2 set "cmake_version_ok=true"
++if "!cmake_version_ok!"=="false" (
++    echo ERROR: CMake !cmake_version! is too old, CARLA needs CMake %cmake_min_version% or later.
++    exit /b 1
++)
++
++echo Using CMake !cmake_version! and Ninja !ninja_version!.
++
++rem Unreal's build tooling needs Windows Developer Mode.
++set "dev_mode=0x0"
++for /f "tokens=3" %%v in ('reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /v AllowDevelopmentWithoutDevLicense 2^>nul ^| findstr /i AllowDevelopmentWithoutDevLicense') do set "dev_mode=%%v"
++if not "!dev_mode!"=="0x1" (
++    echo WARNING: Windows Developer Mode is not enabled, the build will fail.
++    echo Enable it in Settings, System, For developers, Developer Mode.
+ )
+ 
+ rem -- DOWNLOAD + BUILD UNREAL ENGINE --
+-if exist "%CARLA_UNREAL_ENGINE_PATH%" (
++if not "%CARLA_UNREAL_ENGINE_PATH%"=="" (
++    if not exist "%CARLA_UNREAL_ENGINE_PATH%\Engine\Build" (
++        echo ERROR: CARLA_UNREAL_ENGINE_PATH is "%CARLA_UNREAL_ENGINE_PATH%", which is not an Unreal Engine tree.
++        exit /b 1
++    )
+     echo Found Unreal Engine 5 at "%CARLA_UNREAL_ENGINE_PATH%".
+-) else if exist ..\UnrealEngine5_carla (
+-    echo Found CARLA Unreal Engine at %cd%/UnrealEngine5_carla. Assuming already built...
++) else if exist "%engine_repo%\Engine\Build" (
++    echo Found CARLA Unreal Engine at "%engine_repo%". Assuming already built...
++    rem Point this build at it without touching the user environment.
++    set "CARLA_UNREAL_ENGINE_PATH=%engine_repo%"
+ ) else (
+     echo Could not find CARLA Unreal Engine, downloading...
+-    pushd ..
++    echo The engine repository needs a GitHub account linked to Epic Games.
++    pushd ".." || exit /b
+     git clone ^
+-        -b ue58-dev-carla ^
++        -b %engine_branch% ^
+         https://github.com/CarlaUnreal/UnrealEngine.git ^
+         UnrealEngine5_carla || exit /b
+-    pushd UnrealEngine5_carla
+-    set CARLA_UNREAL_ENGINE_PATH=!cd!
+-    setx CARLA_UNREAL_ENGINE_PATH !cd!
++    pushd UnrealEngine5_carla || exit /b
++    set "CARLA_UNREAL_ENGINE_PATH=!cd!"
++    setx CARLA_UNREAL_ENGINE_PATH "!cd!" >nul
+     echo Running Unreal Engine pre-build steps...
+     call Setup.bat || exit /b
+     call GenerateProjectFiles.bat || exit /b
+@@ -118,31 +254,65 @@ if exist "%CARLA_UNREAL_ENGINE_PATH%" (
+     msbuild ^
+         Engine\Intermediate\ProjectFiles\UE5.vcxproj ^
+         /property:Configuration="Development_Editor" ^
+-        /property:Platform="x64" || exit /b
++        /property:Platform="x64" ^
++        /m ^
++        /nologo || exit /b
+     popd
+     popd
+ )
+ 
+ rem -- BUILD CARLA --
++
++rem Configure and install into the resolved interpreter. Its directory goes first
++rem in PATH so that the "python" the carla-python-api-install target runs (on
++rem Windows it is the python in PATH, by design) is the same interpreter.
++set "python_args="
++if not "%python_exe%"=="" set python_args=-DPython_EXECUTABLE="%python_exe%" -DPython3_EXECUTABLE="%python_exe%"
++if not "%python_exe%"=="" for %%d in ("%python_exe%") do set "PATH=%%~dpd;%PATH%"
++
+ echo Configuring the CARLA CMake project...
+ cmake ^
+     -G Ninja ^
+-    -S . ^
+-    -B Build ^
+-    --toolchain=CMake/Toolchain.cmake ^
+-    -DPython_ROOT_DIR=%python_root% ^
+-    -DPython3_ROOT_DIR=%python_root% ^
++    -S "%cd%" ^
++    -B "%cd%\Build" ^
++    --toolchain="%cd%\CMake\Toolchain.cmake" ^
+     -DCMAKE_BUILD_TYPE=Release ^
+-    -DCARLA_UNREAL_ENGINE_PATH=%CARLA_UNREAL_ENGINE_PATH% || exit /b
++    -DCARLA_UNREAL_ENGINE_PATH="%CARLA_UNREAL_ENGINE_PATH%" ^
++    %python_args% || exit /b
+ echo Building CARLA...
+-cmake --build Build || exit /b
++cmake --build "%cd%\Build" || exit /b
+ echo Installing Python API...
+-cmake --build Build --target carla-python-api-install || exit /b
++cmake --build "%cd%\Build" --target carla-python-api-install || exit /b
+ echo CARLA Python API build+install succeeded.
+ 
+ rem -- POST-BUILD STEPS --
+ 
+-if %launch%==true (
++if "%launch%"=="true" (
+     echo Launching Carla Unreal Editor...
+-    cmake --build Build --target launch || exit /b
++    cmake --build "%cd%\Build" --target launch || exit /b
+ )
++
++exit /b 0
++
++rem -- USAGE --
++
++:usage
++echo Usage: %~nx0 [options]
++echo.
++echo Clones the CARLA content and the CARLA Unreal Engine 5 fork when they are
++echo missing, then builds CARLA and installs the Python API.
++echo.
++echo Options:
++echo   -p, --skip-prerequisites   Install nothing; Git, CMake, Ninja, Visual
++echo                              Studio 2022 and Python must already be set up.
++echo   -l, --launch               Open the Unreal editor once the build finishes.
++echo   --python-root PATH         Directory containing the python.exe the Python
++echo                              API is built for.
++echo   -i, --interactive          Accepted for symmetry with CarlaSetup.sh, unused.
++echo   -h, --help                 Show this message.
++echo.
++echo Requirements: Git, CMake %cmake_min_version% or later, Ninja, Visual Studio
++echo 2022 with the MSVC and Windows SDK workloads, Python 3.8 to 3.10 (64-bit)
++echo with the packages in requirements.txt, Windows Developer Mode, and about
++echo 225 GB of free disk space on the drive that holds this checkout.
++goto :eof
+\ No newline at end of file
+diff --git a/Util/SetupUtils/InstallPrerequisites.bat b/Util/SetupUtils/InstallPrerequisites.bat
+index e5e76c1..b559b12 100644
+--- a/Util/SetupUtils/InstallPrerequisites.bat
++++ b/Util/SetupUtils/InstallPrerequisites.bat
+@@ -1,4 +1,5 @@
+ @echo off
++setlocal EnableDelayedExpansion
+ 
+ set ninja_version=1.12.1
+ 
+@@ -23,22 +24,21 @@ set visual_studio_components=^
+ rem -- PARSE COMMAND LINE ARGUMENTS --
+ 
+ :parse
+-    if "%1"=="" (
++    if "%~1"=="" (
+         goto main
+     )
+-    echo %1 | findstr /B /C:"--python-path=" >nul
+-    if not errorlevel 1 (
+-        set python_path="%1"
+-        set python_path="!python_path:--python-path=!"
+-    ) else if "%1"=="--python-path" (
+-        set python_path=%2
++    set "arg=%~1"
++    if /i "!arg:~0,14!"=="--python-path=" (
++        set "python_path=!arg:~14!"
++    ) else if /i "!arg!"=="--python-path" (
++        set "python_path=%~2"
+         shift
+-    ) else if "%1"=="-pypath" (
+-        set python_path=%2
++    ) else if /i "!arg!"=="-pypath" (
++        set "python_path=%~2"
+         shift
+     ) else (
+-        echo Unknown argument "%1"
+-        exit /b
++        echo Unknown argument "!arg!"
++        exit /b 1
+     )
+     shift
+     goto parse
+@@ -50,13 +50,23 @@ rem -- MAIN --
+ rem -- INSTALL VISUAL STUDIO IF NOT FOUND --
+ setlocal EnableDelayedExpansion
+ set "vs_found=false"
+-if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" (
++rem Any Visual Studio with the C++ tools counts, whatever its version, edition or
++rem install drive (2022, 2026, Build Tools), so ask vswhere instead of assuming a
++rem 2022 layout. The default 2022 locations are the fallback.
++set "vswhere=%PROGRAMFILES(X86)%\Microsoft Visual Studio\Installer\vswhere.exe"
++if exist "%vswhere%" (
++    for /f "delims=" %%i in ('"%vswhere%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2^>nul') do set "vs_found=true"
++)
++if "!vs_found!"=="false" if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" (
++    set "vs_found=true"
++)
++if "!vs_found!"=="false" if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat" (
+     set "vs_found=true"
+ )
+-if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat" (
++if "!vs_found!"=="false" if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
+     set "vs_found=true"
+ )
+-if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
++if "!vs_found!"=="false" if exist "%PROGRAMFILES%\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
+     set "vs_found=true"
+ )
+ 
+@@ -67,15 +77,15 @@ if "!vs_found!"=="true" (
+     echo Could not find Visual Studio 2022. Downloading...
+ )
+ 
+-if not exist %cd%\Temp (
+-    mkdir %cd%\Temp
++if not exist "%cd%\Temp" (
++    mkdir "%cd%\Temp"
+ )
+-pushd Temp
++pushd "%cd%\Temp"
+ curl -L -O https://aka.ms/vs/17/release/vs_community.exe || exit /b
+-popd Temp
+-%cd%\Temp\vs_community.exe --add %visual_studio_components% --installWhileDownloading --passive --wait || exit /b
+-del %cd%\Temp\vs_community.exe
+-rmdir %cd%\Temp
++popd
++"%cd%\Temp\vs_community.exe" --add %visual_studio_components% --installWhileDownloading --passive --wait --norestart || exit /b
++del "%cd%\Temp\vs_community.exe"
++rmdir "%cd%\Temp"
+ 
+ :end_vs_install
+ 
+@@ -83,18 +93,18 @@ rem -- INSTALL NINJA --
+ ninja --version >nul 2>nul
+ if errorlevel 1 (
+     echo Could not find Ninja. Downloading...
+-    curl -L -o %USERPROFILE%\AppData\Local\Microsoft\WindowsApps\ninja-win.zip https://github.com/ninja-build/ninja/releases/download/v%ninja_version%/ninja-win.zip || exit /b
++    curl -L -o "%USERPROFILE%\AppData\Local\Microsoft\WindowsApps\ninja-win.zip" https://github.com/ninja-build/ninja/releases/download/v%ninja_version%/ninja-win.zip || exit /b
+     powershell -command "Expand-Archive $env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\ninja-win.zip $env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\ninja-win" || exit /b
+-    move %USERPROFILE%\AppData\Local\Microsoft\WindowsApps\ninja-win\ninja.exe %USERPROFILE%\AppData\Local\Microsoft\WindowsApps\ninja.exe || exit /b
+-    rmdir /s /q %USERPROFILE%\AppData\Local\Microsoft\WindowsApps\ninja-win
+-    del /f %USERPROFILE%\AppData\Local\Microsoft\WindowsApps\ninja-win.zip
++    move "%USERPROFILE%\AppData\Local\Microsoft\WindowsApps\ninja-win\ninja.exe" "%USERPROFILE%\AppData\Local\Microsoft\WindowsApps\ninja.exe" || exit /b
++    rmdir /s /q "%USERPROFILE%\AppData\Local\Microsoft\WindowsApps\ninja-win"
++    del /f "%USERPROFILE%\AppData\Local\Microsoft\WindowsApps\ninja-win.zip"
+     echo Installed Ninja %ninja_version%.
+ ) else (
+     echo Found Ninja.
+ )
+ 
+ rem -- INSTALL PYTHON --
+-%python_path% -V >nul 2>nul
++"%python_path%" -V >nul 2>nul
+ if errorlevel 1 (
+     echo Could not find Python. Downloading...
+     echo Installing Python %python_version_default%...
+@@ -108,5 +118,5 @@ if errorlevel 1 (
+ )
+ 
+ rem -- INSTALL PYTHON PACKAGES --
+-%python_path% -m pip install --upgrade pip || exit /b
+-%python_path% -m pip install -r requirements.txt || exit /b
++"%python_path%" -m pip install --upgrade pip || exit /b
++"%python_path%" -m pip install -r requirements.txt || exit /b

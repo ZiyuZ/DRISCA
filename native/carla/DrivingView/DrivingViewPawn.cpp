@@ -180,6 +180,11 @@ void ADrivingViewPawn::ApplyLayoutToMirrors()
   {
     Mirrors[Index].ScreenPosition = Viewports[Index]->ScreenPosition;
     Mirrors[Index].bVisible = Viewports[Index]->bVisible;
+    if (USceneCaptureComponent2D *Capture = Mirrors[Index].Capture)
+    {
+      Capture->bCaptureEveryFrame = Mirrors[Index].bVisible;
+      Capture->SetComponentTickEnabled(Mirrors[Index].bVisible);
+    }
     Mirrors[Index].BorderWidth = Layout.BorderWidth;
     Mirrors[Index].BorderColor = Layout.BorderColor;
   }
@@ -217,7 +222,8 @@ void ADrivingViewPawn::BuildMirrors()
     Capture->FOVAngle = Cameras[Index]->Fov;
     Capture->TextureTarget = Target;
     Capture->CaptureSource = ESceneCaptureSource::SCS_FinalToneCurveHDR;
-    Capture->bCaptureEveryFrame = true;
+    Capture->bCaptureEveryFrame = Viewports[Index]->bVisible;
+    Capture->SetComponentTickEnabled(Viewports[Index]->bVisible);
     Capture->bCaptureOnMovement = false;
     Capture->bAlwaysPersistRenderingState = true;
     Capture->SetRelativeLocationAndRotation(
@@ -584,6 +590,11 @@ void ADrivingViewPawn::OnPressed(const FString &ActionName)
     bReverse = Gear < 0;
   }
 
+  // 离散事件同步读取本次切换后的输入，连续状态仍在物理后采样。
+  State.Input.bReverse = bReverse;
+  State.Input.bHandBrake = bHandBrake;
+  State.Input.bManualGearShift = bManualGearShift;
+  State.Input.Gear = Gear;
   OnAction.Broadcast(ActionName);
 }
 

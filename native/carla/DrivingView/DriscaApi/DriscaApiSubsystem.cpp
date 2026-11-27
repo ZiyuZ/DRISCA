@@ -4,7 +4,6 @@
 #include "DriscaApiTrafficLights.h"
 
 #include "DriscaApiServer.h"
-#include "DriscaBoost.h"
 #include "DrivingViewPawn.h"
 #include "DrivingViewSubsystem.h"
 
@@ -374,7 +373,6 @@ void UDriscaApiSubsystem::HandleWorldSwitch(UWorld *World)
   VehicleTracks.Empty();
   LastLightStates.Empty();
   bWorldReady = false;
-  ActiveWeatherPreset = TEXT("Custom");
   bHasSample = false;
   // 旧世界的录像对象随世界销毁，归属状态一并清理。
   OwnedRecorder.Reset();
