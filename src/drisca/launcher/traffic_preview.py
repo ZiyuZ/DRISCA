@@ -14,6 +14,7 @@ from drisca.core.config import (
     TrafficConfig,
 )
 from drisca.core.driving_view import keyboard_mapping
+from drisca.core.types import JsonObject, NativeOp, TrafficLightSnapshot, op_update_view
 from drisca.traffic import RoadGraph, SignalTracker, TrafficManager, TrafficScene
 
 PREVIEW_INTERVAL = 1 / 20
@@ -27,7 +28,7 @@ class TrafficPreviewRunner:
         *,
         on_state: Callable[[bool, int, str | None, int | None], None],
         on_log: Callable[[str, str], None],
-        on_signal: Callable[[dict[str, object] | None], None] | None = None,
+        on_signal: Callable[[JsonObject | None], None] | None = None,
     ) -> None:
         self._on_state = on_state
         self._on_log = on_log
@@ -37,11 +38,11 @@ class TrafficPreviewRunner:
         self._thread: threading.Thread | None = None
         self._pending_view_mode: str | None = None
         self._pending_follow_id: int | None = None
-        self._pending_ops: list[dict[str, object]] = []
+        self._pending_ops: list[NativeOp | JsonObject] = []
         self._actor_ids: tuple[int, ...] = ()
         self._follow_index = 0
 
-    def queue_operation(self, op: dict[str, object]) -> None:
+    def queue_operation(self, op: NativeOp | JsonObject) -> None:
         with self._lock:
             self._pending_ops.append(op)
 
@@ -176,18 +177,20 @@ class TrafficPreviewRunner:
 
             last_snapshot = None
             last_scene = None
-            last_lights: tuple[dict, ...] = ()
+            last_lights: tuple[TrafficLightSnapshot, ...] = ()
             selected_actor_id: int | None = None
-            last_signal_payload: dict[str, object] | None = None
+            last_signal_payload: JsonObject | None = None
             while not self._stop_event.is_set():
                 deadline = time.monotonic() + PREVIEW_INTERVAL
-                ops = (
-                    manager.step_operations(
-                        last_snapshot,
-                        last_scene,
-                        last_lights,
-                        PREVIEW_INTERVAL,
-                        selected_actor_id=selected_actor_id,
+                ops: list[NativeOp | JsonObject] = (
+                    list(
+                        manager.step_operations(
+                            last_snapshot,
+                            last_scene,
+                            last_lights,
+                            PREVIEW_INTERVAL,
+                            selected_actor_id=selected_actor_id,
+                        )
                     )
                     if last_snapshot is not None and last_scene is not None
                     else []
@@ -197,12 +200,7 @@ class TrafficPreviewRunner:
                     next_follow, self._pending_follow_id = self._pending_follow_id, None
                     extra_ops, self._pending_ops = self._pending_ops, []
                 if next_mode is not None or next_follow is not None:
-                    update_params: dict[str, object] = {}
-                    if next_mode is not None:
-                        update_params['view_mode'] = next_mode
-                    if next_follow is not None:
-                        update_params['ego_actor_id'] = next_follow
-                    ops.append({'method': 'driving_view.update', 'params': update_params})
+                    ops.append(op_update_view(view_mode=next_mode, ego_actor_id=next_follow))
                 if extra_ops:
                     ops.extend(extra_ops)
                 result = api.exchange(ops, session_id=session_id)
@@ -211,26 +209,22 @@ class TrafficPreviewRunner:
                 last_scene = TrafficScene.from_vehicles(result.snapshot.vehicles)
                 last_lights = result.traffic_lights
                 selected_actor_id = result.selected_actor_id
-                signal_payload: dict[str, object] | None = None
+                signal_payload: JsonObject | None = None
                 if result.selected_signal_actor_id is not None:
                     matched = next(
                         (
                             item
                             for item in result.traffic_lights
-                            if int(item.get('actor_id', 0)) == result.selected_signal_actor_id
+                            if item.actor_id == result.selected_signal_actor_id
                         ),
                         None,
                     )
                     signal_payload = {
                         'actor_id': result.selected_signal_actor_id,
-                        'signal_id': str((matched or {}).get('signal_id') or ''),
-                        'state': str((matched or {}).get('state') or 'unknown'),
-                        'frozen': bool((matched or {}).get('frozen', False)),
-                        'group_id': (
-                            int(matched['group_id'])
-                            if matched and matched.get('group_id') is not None
-                            else None
-                        ),
+                        'signal_id': matched.signal_id if matched is not None else '',
+                        'state': matched.state.value if matched is not None else 'unknown',
+                        'frozen': matched.frozen if matched is not None else False,
+                        'group_id': matched.group_id if matched is not None else None,
                     }
                 if signal_payload != last_signal_payload:
                     last_signal_payload = signal_payload

@@ -7,6 +7,7 @@
 import json
 import socket
 import threading
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -27,6 +28,7 @@ from drisca.core.snapshot import (
     Snapshot,
     decode_snapshot,
 )
+from drisca.core.types import JsonObject, NativeOp, TrafficLightSnapshot
 
 PROTOCOL_VERSION: Final = 1
 API_PATH: Final = '/drisca/v1'
@@ -81,7 +83,7 @@ class ExchangeResult:
     outcomes: tuple[OperationOutcome, ...]
     events: tuple[dict[str, Any], ...]
     control_state: tuple[dict[str, Any], ...]
-    traffic_lights: tuple[dict[str, Any], ...]
+    traffic_lights: tuple[TrafficLightSnapshot, ...]
     traffic_controllers: tuple[dict[str, Any], ...]
     snapshot: Snapshot
     selected_actor_id: int | None = None
@@ -149,7 +151,7 @@ class NativeApiClient:
                 except OSError:
                     pass
             except (OSError, TimeoutError, WebSocketException) as exc:
-                raise ConnectionError(f'原生接口连接失败：{self.url}') from exc
+                raise ConnectionError(f'CARLA 服务连接失败：{self.url}') from exc
             self._next_id = 1
             _, result = self._call(
                 'hello',
@@ -389,14 +391,15 @@ class NativeApiClient:
 
     def exchange(
         self,
-        operations: list[dict[str, Any]],
+        operations: Sequence[NativeOp | JsonObject | dict[str, Any]],
         *,
         session_id: str,
         timeout: float | None = None,
     ) -> ExchangeResult:
         limit = self._timeout(timeout)
+        wire_ops = [op.to_wire() if isinstance(op, NativeOp) else op for op in operations]
         with self._lock:
-            params = {**self._world(), 'session_id': session_id, 'operations': operations}
+            params = {**self._world(), 'session_id': session_id, 'operations': wire_ops}
             request_id, result = self._call('exchange', params, limit)
             if result.get('snapshot') is not True:
                 self._close_locked()
@@ -418,6 +421,10 @@ class NativeApiClient:
             selected_signal_actor_id = (
                 int(raw_signal) if isinstance(raw_signal, int) and raw_signal > 0 else None
             )
+            raw_lights = result.get('traffic_lights') or ()
+            parsed_lights = tuple(
+                TrafficLightSnapshot.from_wire(item) for item in raw_lights if isinstance(item, dict)
+            )
             return ExchangeResult(
                 request_id=request_id,
                 world_id=world_id,
@@ -425,7 +432,7 @@ class NativeApiClient:
                 outcomes=_outcomes(result.get('results')),
                 events=tuple(result.get('events') or ()),
                 control_state=tuple(result.get('control_state') or ()),
-                traffic_lights=tuple(result.get('traffic_lights') or ()),
+                traffic_lights=parsed_lights,
                 traffic_controllers=tuple(result.get('traffic_controllers') or ()),
                 snapshot=snapshot,
                 selected_actor_id=selected_actor_id,
@@ -550,14 +557,14 @@ class NativeApiClient:
 
     def _require_socket(self, method: str) -> ClientConnection:
         if self._socket is None:
-            raise ConnectionError(f'原生接口尚未连接，无法发送 {method}')
+            raise ConnectionError(f'CARLA 服务尚未连接，无法发送 {method}')
         return self._socket
 
     def _call(self, method: str, params: dict[str, Any], timeout: float) -> tuple[int, dict[str, Any]]:
         socket = self._require_socket(method)
         if self._next_id >= MAX_REQUEST_ID:
             self._close_locked()
-            raise RuntimeError('请求编号已耗尽，请重新连接原生接口')
+            raise RuntimeError('请求编号已耗尽，请重新连接 CARLA 服务')
         request_id = self._next_id
         self._next_id += 1
         payload = {'id': request_id, 'method': method, 'params': params}
@@ -566,10 +573,10 @@ class NativeApiClient:
             raw = socket.recv(timeout=timeout)
         except TimeoutError as exc:
             self._close_locked()
-            raise TimeoutError(f'原生接口 {method} 响应超时（{timeout:g} 秒）') from exc
+            raise TimeoutError(f'CARLA 服务 {method} 响应超时（{timeout:g} 秒）') from exc
         except (OSError, WebSocketException) as exc:
             self._close_locked()
-            raise ConnectionError(f'原生接口 {method} 通信中断：{exc}') from exc
+            raise ConnectionError(f'CARLA 服务 {method} 通信中断：{exc}') from exc
         if not isinstance(raw, str):
             self._close_locked()
             raise NativeApiError(method, 'invalid_response', '收到非预期的二进制响应')
@@ -599,10 +606,10 @@ class NativeApiClient:
             raw = socket.recv(timeout=timeout)
         except TimeoutError as exc:
             self._close_locked()
-            raise TimeoutError(f'原生接口 {method} 快照超时（{timeout:g} 秒）') from exc
+            raise TimeoutError(f'CARLA 服务 {method} 快照超时（{timeout:g} 秒）') from exc
         except (OSError, WebSocketException) as exc:
             self._close_locked()
-            raise ConnectionError(f'原生接口 {method} 通信中断：{exc}') from exc
+            raise ConnectionError(f'CARLA 服务 {method} 通信中断：{exc}') from exc
         if not isinstance(raw, (bytes, bytearray)):
             self._close_locked()
             raise NativeApiError(method, 'invalid_response', '快照应为二进制消息')

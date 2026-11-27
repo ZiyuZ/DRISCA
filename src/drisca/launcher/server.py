@@ -170,7 +170,7 @@ def create_app() -> FastAPI:
             rt().machine.carla != config.carla or rt().machine.driving_view != config.driving_view
         )
         if rt().carla_process is not None and connection_changed:
-            raise HTTPException(409, '请先关闭 Unreal，再修改 CARLA 与原生接口连接参数')
+            raise HTTPException(409, '请先关闭 CARLA，再修改连接参数')
         save_machine_config(config)
         rt().machine = config
         if connection_changed:

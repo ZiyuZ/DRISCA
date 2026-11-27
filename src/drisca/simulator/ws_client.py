@@ -3,10 +3,13 @@
 import asyncio
 import queue
 import threading
-from typing import Any
+from typing import TYPE_CHECKING
 
 from loguru import logger
 from websockets.asyncio.client import connect
+
+if TYPE_CHECKING:
+    from loguru import Message
 
 from drisca.core.protocol import (
     LauncherCommand,
@@ -41,15 +44,16 @@ class WorkerWSClient:
         logger.remove()
         self.sink_id = logger.add(self._log, catch=False)
 
-    def _log(self, message: Any) -> None:
+    def _log(self, message: Message) -> None:
         record = message.record
+        extra_cid = record['extra'].get('command_id')
         self.send_event(
             LogEvent(
                 role=self.role,
                 timestamp=record['time'].timestamp(),
                 level=LogLevel(record['level'].name),
                 message=record['message'],
-                command_id=record['extra'].get('command_id'),
+                command_id=str(extra_cid) if extra_cid is not None else None,
             )
         )
 

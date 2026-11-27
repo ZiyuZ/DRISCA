@@ -1,11 +1,12 @@
 """原生环境接口的状态模型、事件载荷与局部球雾配置转换。"""
 
 import math
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field
 
 from drisca.core.config import FogRegionConfig, GlobalWeather
+from drisca.core.types import JsonObject, JsonValue
 
 EnvironmentOperation = Literal['apply', 'update', 'create', 'delete']
 
@@ -109,10 +110,11 @@ class EnvironmentReplacedPayload(BaseModel, frozen=True, extra='forbid'):
     reason: str | None = None  # 实验停止时为 session_ended，此时不带 new_* 字段
 
 
-def region_payload(region: FogRegionConfig) -> dict[str, Any]:
+def region_payload(region: FogRegionConfig) -> JsonObject:
     """把预设中的球雾条目转换为 environment.create 的参数。"""
+    center: list[JsonValue] = list(region.center_m)
     return {
-        'center_m': list(region.center_m),
+        'center_m': center,
         'radius_m': region.radius_m,
         'weather': {'fog': {'density': region.density}},
         'transition_seconds': region.transition_seconds,

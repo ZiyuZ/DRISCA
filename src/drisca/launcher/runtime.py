@@ -11,7 +11,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal, Unpack
 from uuid import uuid4
 
 import win32api  # ty: ignore[import-not-found]
@@ -43,10 +43,17 @@ from drisca.core.protocol import (
     WorkerStatusEvent,
     dump_launcher_command,
 )
+from drisca.core.types import JsonObject, JsonValue, as_float, as_int
 from drisca.core.weather import from_native, to_config, to_payload
 from drisca.launcher.commands import MODELS, REGISTRY
 from drisca.launcher.replay import ReplayRunner
-from drisca.launcher.state import ExperimentPhase, StateStore, UnrealPhase
+from drisca.launcher.state import (
+    ExperimentPhase,
+    LauncherState,
+    LauncherStatePatch,
+    StateStore,
+    UnrealPhase,
+)
 from drisca.launcher.traffic_preview import TrafficPreviewRunner
 from drisca.launcher.unreal import launch_arguments
 from drisca.storage.db import StorageDB
@@ -111,14 +118,14 @@ class Runtime:
         with self.db_session() as db:
             db.abort_stale_running_sessions()
 
-    def snapshot_state(self) -> dict[str, Any]:
+    def snapshot_state(self) -> LauncherState:
         """返回线程安全的状态深拷贝，供 SSE 首次推送与 HTTP 读取。"""
         return self.store.snapshot()
 
-    def emit(self, kind: str, data) -> None:
+    def emit(self, kind: str, data: JsonValue | LauncherState) -> None:
         self.store.emit(kind, data)
 
-    def update(self, **changes) -> None:
+    def update(self, **changes: Unpack[LauncherStatePatch]) -> None:
         self.store.update(**changes)
 
     def log(
@@ -278,7 +285,7 @@ class Runtime:
         finally:
             self.carla_process = None
             self.close_api()
-            changes: dict[str, Any] = {
+            changes: LauncherStatePatch = {
                 'carla_connected': False,
                 'carla_connecting': False,
                 'catalog': {
@@ -316,7 +323,7 @@ class Runtime:
 
     def _require_api(self) -> NativeApiClient:
         if self.api is None:
-            raise RuntimeError('原生接口尚未连接')
+            raise RuntimeError('CARLA 服务尚未连接')
         return self.api
 
     def close_api(self) -> None:
@@ -335,7 +342,7 @@ class Runtime:
             info = api.connect()
             if not info.map_name:
                 api.close()
-                raise RuntimeError('原生接口已连接，但世界尚未就绪')
+                raise RuntimeError('CARLA 服务已连接，但世界尚未就绪')
             self.api = api
             self.refresh_world()
             self.update(
@@ -374,16 +381,17 @@ class Runtime:
             fog_regions=self.read_fog_regions(),
         )
 
-    def read_fog_regions(self) -> list[dict[str, Any]]:
+    def read_fog_regions(self) -> list[JsonObject]:
         """读取当前世界的局部球雾；渐变中按目标值展示，便于确认待生效状态。"""
         return [self.region_state(region) for region in self._require_api().environment_list()]
 
     @staticmethod
-    def region_state(region: RegionSnapshot) -> dict[str, Any]:
+    def region_state(region: RegionSnapshot) -> JsonObject:
         state = region.target if region.remaining_seconds > 0 else region.current
+        center: list[JsonValue] = list(state.center_m)
         return {
             'region_id': region.region_id,
-            'center_m': list(state.center_m),
+            'center_m': center,
             'radius_m': state.radius_m,
             'density': state.weather.fog.density,
             'deleting': region.deleting,
@@ -511,7 +519,7 @@ class Runtime:
         self.replay_runner.stop()
         self.stop_traffic_preview()
         if self.api is None:
-            raise RuntimeError('原生接口尚未连接')
+            raise RuntimeError('CARLA 服务尚未连接')
         self.worker_error = None
         try:
             for instruction in preset.instructions:
@@ -729,7 +737,7 @@ class Runtime:
         else:
             item = event.model_dump(mode='json')
             if item['name'] == 'update_camera':
-                cameras = dict(self.state['cameras'])
+                cameras = dict(self.state['cameras'] or {})
                 cameras[item['payload']['camera_name']] = item['payload']['mount']
                 self.update(cameras=cameras)
             elif item['name'] == 'update_layout':
@@ -738,37 +746,48 @@ class Runtime:
                 self._apply_environment_event(item['name'], item['payload'])
             self.event(item)
 
-    def _apply_environment_event(self, name: str, payload: dict[str, Any]) -> None:
+    def _apply_environment_event(self, name: str, payload: JsonObject) -> None:
         region_id = payload.get('region_id')
-        entity = payload.get('target') if name == 'environment_applied' else payload.get('current')
-        state = entity or {}
+        raw_entity = payload.get('target') if name == 'environment_applied' else payload.get('current')
+        state: JsonObject = raw_entity if isinstance(raw_entity, dict) else {}
         if region_id is None:
             weather = state.get('weather')
-            if weather is not None:
+            if isinstance(weather, dict):
                 self.update(weather=to_config(from_native(weather)).model_dump(mode='json'))
             return
-        regions = {int(item['region_id']): item for item in self.state['fog_regions']}
+        raw_regions = self.state.get('fog_regions')
+        regions: dict[int, JsonObject] = {
+            as_int(item.get('region_id')): item
+            for item in (raw_regions if isinstance(raw_regions, list) else [])
+            if isinstance(item, dict)
+        }
         operation = payload.get('operation')
-        duration = float(payload.get('transition_seconds') or 0)
+        duration = as_float(payload.get('transition_seconds'))
         removed = (name == 'environment_completed' and operation == 'delete') or (
             name == 'environment_applied' and operation == 'delete' and duration == 0
         )
+        rid = as_int(region_id)
         if removed:
-            regions.pop(int(region_id), None)
+            regions.pop(rid, None)
         else:
-            regions[int(region_id)] = {
-                'region_id': int(region_id),
-                'center_m': list(state.get('center_m') or ()),
-                'radius_m': state.get('radius_m', 0.0),
-                'density': (((state.get('weather') or {}).get('fog')) or {}).get('density', 0.0),
+            raw_center = state.get('center_m')
+            raw_w = state.get('weather')
+            raw_f = raw_w.get('fog') if isinstance(raw_w, dict) else None
+            density = as_float(raw_f.get('density')) if isinstance(raw_f, dict) else 0.0
+            regions[rid] = {
+                'region_id': rid,
+                'center_m': list(raw_center) if isinstance(raw_center, list) else [],
+                'radius_m': as_float(state.get('radius_m')),
+                'density': density,
                 'deleting': bool(payload.get('deleting')),
             }
-        self.update(fog_regions=[regions[key] for key in sorted(regions)])
+        ordered: list[JsonObject] = [regions[key] for key in sorted(regions)]
+        self.update(fog_regions=ordered)
 
     def execute(self, instruction) -> None:
         self.trigger_command(instruction.command, instruction.params)
 
-    def trigger_command(self, command_name: str, raw_params: dict[str, Any]) -> None:
+    def trigger_command(self, command_name: str, raw_params: JsonObject) -> None:
         spec = REGISTRY.get(command_name)
         if spec is None:
             raise RuntimeError(f'未知的实验事件或指令：{command_name}')

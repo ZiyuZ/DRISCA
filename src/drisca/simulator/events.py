@@ -1,7 +1,5 @@
 """原生事件到 DRISCA 实验事件的映射。"""
 
-from typing import Any
-
 from drisca.core.protocol import (
     ChangeGearEvent,
     CollisionEvent,
@@ -27,6 +25,7 @@ from drisca.core.protocol import (
     UpdateLayoutEvent,
     UpdateViewModeEvent,
 )
+from drisca.core.types import JsonObject, as_int
 
 _EVENT_MODELS = {
     'toggle_reverse': ToggleReverseEvent,
@@ -53,17 +52,19 @@ _EVENT_MODELS = {
 }
 
 
-def native_event_ref(raw: dict[str, Any]) -> NativeEventRef:
+def native_event_ref(raw: JsonObject) -> NativeEventRef:
+    raw_req = raw.get('request_id')
+    raw_op = raw.get('operation_index')
     return NativeEventRef(
-        event_id=int(raw['event_id']),
-        world_id=int(raw['world_id']),
-        simulation_time_us=int(raw['simulation_time_us']),
-        request_id=raw.get('request_id'),
-        operation_index=raw.get('operation_index'),
+        event_id=as_int(raw.get('event_id')),
+        world_id=as_int(raw.get('world_id')),
+        simulation_time_us=as_int(raw.get('simulation_time_us')),
+        request_id=as_int(raw_req) if raw_req is not None else None,
+        operation_index=as_int(raw_op) if raw_op is not None else None,
     )
 
 
-def map_event(raw: dict[str, Any], *, command_id: str | None, source: str) -> ExperimentEvent:
+def map_event(raw: JsonObject, *, command_id: str | None, source: str) -> ExperimentEvent:
     name = str(raw['name'])
     model = _EVENT_MODELS.get(name)
     if model is None:
@@ -71,8 +72,8 @@ def map_event(raw: dict[str, Any], *, command_id: str | None, source: str) -> Ex
     return model.model_validate(
         {
             'source': source,
-            'frame_no': int(raw['frame_no']),
-            'timestamp': int(raw['wall_time_us']) / 1e6,
+            'frame_no': as_int(raw.get('frame_no')),
+            'timestamp': as_int(raw.get('wall_time_us')) / 1e6,
             'command_id': command_id,
             'native': native_event_ref(raw).model_dump(mode='json'),
             'payload': raw.get('payload') or {},

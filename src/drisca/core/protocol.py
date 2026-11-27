@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter
 
@@ -12,6 +12,8 @@ from .environment import (
     TransitionSeconds,
     WorldPoint,
 )
+from .traffic_models import TrafficAction, TrafficActionParams
+from .types import JsonObject
 
 
 class WorkerRole(StrEnum):
@@ -37,23 +39,6 @@ class LogLevel(StrEnum):
 class ControlMode(StrEnum):
     MANUAL = 'manual'
     AUTOPILOT = 'autopilot'
-
-
-class TrafficLightState(StrEnum):
-    """原生信号灯状态枚举，与 DriscaApiTrafficLights.cpp 返回值一致。"""
-
-    RED = 'red'
-    YELLOW = 'yellow'
-    GREEN = 'green'
-    OFF = 'off'
-    UNKNOWN = 'unknown'
-
-    @classmethod
-    def parse(cls, value: str) -> TrafficLightState:
-        try:
-            return cls(value.strip().lower())
-        except ValueError:
-            return cls.UNKNOWN
 
 
 class EventKind(StrEnum):
@@ -327,7 +312,7 @@ class CustomExperimentEvent(ExperimentEventBase, frozen=True):
     """自定义剧本打点或其他扩展事件"""
 
     name: Literal['custom'] = 'custom'
-    payload: dict[str, Any] = Field(default_factory=dict)
+    payload: JsonObject = Field(default_factory=dict)
 
 
 # 实验事件按名称还原为具体子类。
@@ -540,17 +525,8 @@ class TrafficActionCommand(BaseModel, frozen=True):
 
     command_id: str
     type: Literal['traffic_action'] = 'traffic_action'
-    action: Literal[
-        'lead_hard_brake',
-        'adjacent_cut_in',
-        'rear_overtake',
-        'lead_breakdown',
-        'ahead_signal_change',
-        'dual_lane_slowdown',
-        'red_light_runner',
-        'set_traffic_count',
-    ]
-    params: dict[str, Any] = Field(default_factory=dict)
+    action: TrafficAction
+    params: TrafficActionParams
 
 
 LauncherCommand = Annotated[

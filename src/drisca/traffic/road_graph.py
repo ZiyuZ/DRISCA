@@ -2,9 +2,10 @@
 
 import math
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
+
+from drisca.core.types import JsonObject, as_float, as_int
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,29 +69,48 @@ class RoadGraph:
         self._driving_lanes: tuple[LaneNode, ...] = tuple(driving_lanes)
 
     @classmethod
-    def from_native(cls, raw: dict[str, Any]) -> RoadGraph:
+    def from_native(cls, raw: JsonObject) -> RoadGraph:
         lanes: dict[str, LaneNode] = {}
-        for item in raw.get('lanes') or ():
-            samples = item.get('centerline') or ()
-            if not samples:
+        raw_lanes = raw.get('lanes')
+        if not isinstance(raw_lanes, list):
+            return cls(lanes)
+        for item in raw_lanes:
+            if not isinstance(item, dict):
                 continue
-            points = np.array([[s['x'], s['y'], s['z']] for s in samples], dtype=np.float64)
-            directions = np.array([s['dir'] for s in samples], dtype=np.float64)
-            s_values = np.array([s['s'] for s in samples], dtype=np.float64)
-            road_s_values = np.array([s['road_s'] for s in samples], dtype=np.float64)
+            samples = item.get('centerline')
+            if not isinstance(samples, list) or not samples:
+                continue
+            points = np.array(
+                [[s['x'], s['y'], s['z']] for s in samples if isinstance(s, dict)],  # type: ignore[index]
+                dtype=np.float64,
+            )
+            directions = np.array(
+                [s['dir'] for s in samples if isinstance(s, dict)],  # type: ignore[index]
+                dtype=np.float64,
+            )
+            s_values = np.array(
+                [s['s'] for s in samples if isinstance(s, dict)],  # type: ignore[index]
+                dtype=np.float64,
+            )
+            road_s_values = np.array(
+                [s['road_s'] for s in samples if isinstance(s, dict)],  # type: ignore[index]
+                dtype=np.float64,
+            )
             lane_key = str(item['id'])
+            raw_succ = item.get('successors')
+            raw_pred = item.get('predecessors')
             lanes[lane_key] = LaneNode(
                 lane_key=lane_key,
-                road_id=int(item['road_id']),
-                section_id=int(item['section_id']),
-                lane_id=int(item['lane_id']),
+                road_id=as_int(item.get('road_id', 0)),
+                section_id=as_int(item.get('section_id', 0)),
+                lane_id=as_int(item.get('lane_id', 0)),
                 lane_type=str(item.get('type', '')),
-                length=float(item.get('length', 0.0)),
-                section_start_s=float(item.get('section_start_s', 0.0)),
+                length=as_float(item.get('length', 0.0)),
+                section_start_s=as_float(item.get('section_start_s', 0.0)),
                 is_junction=bool(item.get('is_junction', False)),
                 is_positive_direction=bool(item.get('is_positive_direction', True)),
-                successors=tuple(str(s) for s in (item.get('successors') or ())),
-                predecessors=tuple(str(p) for p in (item.get('predecessors') or ())),
+                successors=tuple(str(s) for s in raw_succ) if isinstance(raw_succ, list) else (),
+                predecessors=tuple(str(p) for p in raw_pred) if isinstance(raw_pred, list) else (),
                 left_lane=str(item['left_lane']) if item.get('left_lane') else None,
                 right_lane=str(item['right_lane']) if item.get('right_lane') else None,
                 left_same_direction=bool(item.get('left_same_direction', False)),

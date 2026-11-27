@@ -3,8 +3,10 @@
 import random
 import time
 from collections import deque
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+
+from drisca.core.types import NativeOp, TrafficLightSnapshot, op_apply_control
 
 from .car_following import create_car_following_model
 from .idm import LeadVehicle
@@ -30,21 +32,18 @@ class VehicleControl:
     manual_gear_shift: bool = False
     gear: int = 0
 
-    def to_operation(self, actor_id: int, expected_control_revision: int) -> dict[str, Any]:
-        return {
-            'method': 'vehicle.apply_control',
-            'params': {
-                'actor_id': actor_id,
-                'expected_control_revision': expected_control_revision,
-                'throttle': self.throttle,
-                'steer': self.steer,
-                'brake': self.brake,
-                'hand_brake': self.hand_brake,
-                'reverse': self.reverse,
-                'manual_gear_shift': self.manual_gear_shift,
-                'gear': self.gear,
-            },
-        }
+    def to_operation(self, actor_id: int, expected_control_revision: int) -> NativeOp:
+        return op_apply_control(
+            actor_id=actor_id,
+            expected_control_revision=expected_control_revision,
+            throttle=self.throttle,
+            steer=self.steer,
+            brake=self.brake,
+            hand_brake=self.hand_brake,
+            reverse=self.reverse,
+            manual_gear_shift=self.manual_gear_shift,
+            gear=self.gear,
+        )
 
 
 class AutopilotController:
@@ -87,6 +86,7 @@ class AutopilotController:
         self._perception_buffer: deque[tuple[float, LeadVehicle | None, float | None]] = deque()
         self._last_path_points: list[list[float]] = []
         self._lane_change_lock_until = 0.0
+        self._waiting_for_signal = False
 
     def reset(self) -> None:
         self._planner.reset()
@@ -98,6 +98,11 @@ class AutopilotController:
         self._perception_buffer.clear()
         self._last_path_points = []
         self._lane_change_lock_until = 0.0
+        self._waiting_for_signal = False
+
+    @property
+    def waiting_for_signal(self) -> bool:
+        return self._waiting_for_signal
 
     def planned_points(self) -> list[list[float]]:
         """返回最近一步局部规划路径的稀疏世界坐标点 [[x, y, z], ...]，供自由视角轨迹高亮。"""
@@ -139,7 +144,7 @@ class AutopilotController:
         road_id: int | None,
         lane_id: int | None,
         road_speed_limit_mps: float,
-        traffic_lights: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+        traffic_lights: Sequence[TrafficLightSnapshot],
         scene: TrafficScene | None = None,
         self_actor_id: int = 0,
         ignore_signals: bool = False,
@@ -174,6 +179,7 @@ class AutopilotController:
             else None
         )
         raw_stop = None if ignore_signals else self._signals.nearest_stop_distance(path, traffic_lights)
+        self._waiting_for_signal = raw_stop is not None and raw_stop < 18.0
         lead, stop_distance = self._apply_reaction_delay(dt, raw_lead, raw_stop)
 
         can_auto_lc = (

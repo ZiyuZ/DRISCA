@@ -1,9 +1,9 @@
 """交通信号灯停止线索引与前方红黄灯距离估算。"""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
 
-from drisca.core.protocol import TrafficLightState
+from drisca.core.types import JsonObject, TrafficLightSnapshot, TrafficLightState, as_float, as_int
 
 from .planner import RoutePath
 from .road_graph import RoadGraph
@@ -26,29 +26,39 @@ class SignalTracker:
         self._by_lane = by_lane
 
     @classmethod
-    def from_native(cls, raw_signals: dict[str, Any], graph: RoadGraph) -> SignalTracker:
+    def from_native(cls, raw_signals: JsonObject, graph: RoadGraph) -> SignalTracker:
         entries_by_lane: dict[str, list[SignalStopEntry]] = {}
         seen: set[tuple[str, str]] = set()
 
-        for sig in raw_signals.get('signals') or ():
+        raw_list = raw_signals.get('signals')
+        if not isinstance(raw_list, list):
+            return cls({})
+
+        for sig in raw_list:
+            if not isinstance(sig, dict):
+                continue
             signal_id = str(sig.get('signal_id') or sig.get('id') or '')
             raw_actor = sig.get('actor_id')
-            actor_id = int(raw_actor) if raw_actor is not None else None
+            actor_id = (
+                int(raw_actor) if isinstance(raw_actor, int) and not isinstance(raw_actor, bool) else None
+            )
             if not signal_id and actor_id is None:
                 continue
 
-            zones = sig.get('trigger_zones') or ()
-            if zones:
+            zones = sig.get('trigger_zones')
+            if isinstance(zones, list) and zones:
                 for zone in zones:
-                    road_id = int(zone['road_id'])
-                    section_id = int(zone['section_id'])
-                    lane_id = int(zone['lane_id'])
+                    if not isinstance(zone, dict):
+                        continue
+                    road_id = as_int(zone.get('road_id', 0))
+                    section_id = as_int(zone.get('section_id', 0))
+                    lane_id = as_int(zone.get('lane_id', 0))
                     key = f'{road_id}:{section_id}:{lane_id}'
                     lane = graph.get(key)
                     if lane is None or (key, signal_id) in seen:
                         continue
                     seen.add((key, signal_id))
-                    stop_s = lane.road_s_to_travel_s(float(zone['s']))
+                    stop_s = lane.road_s_to_travel_s(as_float(zone.get('s', 0.0)))
                     entries_by_lane.setdefault(key, []).append(
                         SignalStopEntry(
                             lane_key=key,
@@ -60,12 +70,22 @@ class SignalTracker:
                 continue
 
             # 缺少 trigger_zones 时根据 OpenDRIVE signal references 推导停止线
-            for ref in sig.get('references') or ():
-                road_id = int(ref['road_id'])
-                ref_s = float(ref['s'])
-                for validity in ref.get('validities') or ():
-                    from_lane = int(validity['from_lane'])
-                    to_lane = int(validity['to_lane'])
+            refs = sig.get('references')
+            if not isinstance(refs, list):
+                continue
+            for ref in refs:
+                if not isinstance(ref, dict):
+                    continue
+                road_id = as_int(ref.get('road_id', 0))
+                ref_s = as_float(ref.get('s', 0.0))
+                validities = ref.get('validities')
+                if not isinstance(validities, list):
+                    continue
+                for validity in validities:
+                    if not isinstance(validity, dict):
+                        continue
+                    from_lane = as_int(validity.get('from_lane', 0))
+                    to_lane = as_int(validity.get('to_lane', 0))
                     lo, hi = min(from_lane, to_lane), max(from_lane, to_lane)
                     for lid in range(lo, hi + 1):
                         if lid == 0:
@@ -96,7 +116,7 @@ class SignalTracker:
     def nearest_stop_distance(
         self,
         path: RoutePath,
-        traffic_lights: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+        traffic_lights: Sequence[TrafficLightSnapshot],
         *,
         max_distance_m: float = 55.0,
     ) -> float | None:
@@ -107,11 +127,10 @@ class SignalTracker:
         by_actor: dict[int, TrafficLightState] = {}
         by_signal: dict[str, TrafficLightState] = {}
         for item in traffic_lights:
-            state = TrafficLightState.parse(str(item.get('state', '')))
-            if item.get('actor_id') is not None:
-                by_actor[int(item['actor_id'])] = state
-            if item.get('signal_id'):
-                by_signal[str(item['signal_id'])] = state
+            if item.actor_id is not None:
+                by_actor[item.actor_id] = item.state
+            if item.signal_id:
+                by_signal[item.signal_id] = item.state
 
         nearest: float | None = None
         for idx, lane_key in enumerate(path.lane_keys):
@@ -143,7 +162,7 @@ class SignalTracker:
     def nearest_signal(
         self,
         path: RoutePath,
-        traffic_lights: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+        traffic_lights: Sequence[TrafficLightSnapshot],
         *,
         max_distance_m: float = 120.0,
     ) -> tuple[int, str, float, TrafficLightState] | None:
@@ -154,14 +173,10 @@ class SignalTracker:
         by_actor: dict[int, tuple[str, TrafficLightState]] = {}
         by_signal: dict[str, tuple[int, TrafficLightState]] = {}
         for item in traffic_lights:
-            state = TrafficLightState.parse(str(item.get('state', '')))
-            raw_actor = item.get('actor_id')
-            sig_id = str(item.get('signal_id') or '')
-            if raw_actor is not None:
-                aid = int(raw_actor)
-                by_actor[aid] = (sig_id, state)
-                if sig_id:
-                    by_signal[sig_id] = (aid, state)
+            if item.actor_id is not None:
+                by_actor[item.actor_id] = (item.signal_id, item.state)
+                if item.signal_id:
+                    by_signal[item.signal_id] = (item.actor_id, item.state)
 
         best: tuple[int, str, float, TrafficLightState] | None = None
         for idx, lane_key in enumerate(path.lane_keys):

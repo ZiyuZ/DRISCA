@@ -2,9 +2,9 @@
 
 import statistics
 import time
+from collections.abc import Sequence
 from contextlib import ExitStack
 from pathlib import Path
-from typing import Any
 
 from loguru import logger
 
@@ -30,6 +30,14 @@ from drisca.core.protocol import (
     WorkerStatusEvent,
 )
 from drisca.core.snapshot import Snapshot
+from drisca.core.types import (
+    JsonObject,
+    NativeOp,
+    TrafficLightSnapshot,
+    as_float,
+    as_int,
+    op_set_vehicle_mode,
+)
 from drisca.core.weather import to_payload
 from drisca.simulator.events import map_event
 from drisca.simulator.state import DrivingState, project_snapshot, research_ready
@@ -57,7 +65,7 @@ class SimulatorApp:
         self.last_snapshot: Snapshot | None = None
         self.last_scene: TrafficScene | None = None
         self.last_driving: DrivingState | None = None
-        self.last_traffic_lights: tuple[dict[str, Any], ...] = ()
+        self.last_traffic_lights: tuple[TrafficLightSnapshot, ...] = ()
         self.last_selected_actor_id: int | None = None
         self._pending_mode_toggle = False
         self._pending_init_autopilot = run_config.preset.ego.init_autopilot
@@ -80,7 +88,7 @@ class SimulatorApp:
         api = NativeApiClient(cfg.machine.driving_view, client='drisca-worker')
         info = api.connect()
         stack.callback(api.close)
-        logger.info(f'原生接口已连接：{info.map_name}，world_id {info.world_id}')
+        logger.info(f'CARLA 服务已连接：{info.map_name}')
         api.set_world(cfg.preset.world.simulation_fps)
         ego_actor_id, describe = self._spawn_ego(api)
         self.ego_actor_id = ego_actor_id
@@ -109,11 +117,19 @@ class SimulatorApp:
             directory = Path(cfg.machine.recorder_dir).resolve()
             directory.mkdir(parents=True, exist_ok=True)
             api.recorder_start(str(directory / f'{cfg.session_id}.rec'))
+        raw_box = describe.get('bounding_box')
+        vehicle_box: dict[str, dict[str, float]] = {}
+        if isinstance(raw_box, dict):
+            vehicle_box = {
+                str(k): {str(sk): as_float(sv) for sk, sv in v.items()}
+                for k, v in raw_box.items()
+                if isinstance(v, dict)
+            }
         channel.send_event(
             WorkerReadyEvent(
                 ego_actor_id=ego_actor_id,
                 ego_type_id=str(describe['blueprint']),
-                vehicle_box=describe['bounding_box'],
+                vehicle_box=vehicle_box,
                 fog_regions=api.environment_list(),
             )
         )
@@ -144,7 +160,7 @@ class SimulatorApp:
             default_speed_limit_mps=ego.default_speed_limit,
         )
         logger.info(
-            f'自研交通模块已初始化：车道数 {int(raw_graph.get("lane_count", 0))}，'
+            f'交通流模块已初始化：车道数 {int(raw_graph.get("lane_count", 0))}，'
             f'背景车 {self.traffic_manager.vehicle_count} 辆'
         )
 
@@ -160,7 +176,7 @@ class SimulatorApp:
             self.prepared_regions.add(result.region_id)
             logger.info(f'局部球雾已创建：region_id {result.region_id}，半径 {region.radius_m:g} m')
 
-    def _spawn_ego(self, api: NativeApiClient) -> tuple[int, dict[str, Any]]:
+    def _spawn_ego(self, api: NativeApiClient) -> tuple[int, JsonObject]:
         ego = self.config.preset.ego
         if not ego.blueprint:
             raise RuntimeError('预设未选择主车蓝图')
@@ -222,7 +238,10 @@ class SimulatorApp:
             operations, command_ids = self._operations(channel.poll_commands(), api, channel)
             if not self.running and not operations:
                 break
-            mode_changed_in_batch = any(op.get('method') == 'vehicle.set_mode' for op in operations)
+            mode_changed_in_batch = any(
+                (op.method if isinstance(op, NativeOp) else op.get('method')) == 'vehicle.set_mode'
+                for op in operations
+            )
             if mode_changed_in_batch:
                 # 收到显式模式切换命令时清空旧的待切换意图，避免下一帧意外反转模式
                 self._pending_init_autopilot = False
@@ -422,8 +441,8 @@ class SimulatorApp:
         commands: list[LauncherCommand],
         api: NativeApiClient,
         channel: WorkerWSClient,
-    ) -> tuple[list[dict[str, Any]], dict[int, str]]:
-        operations: list[dict[str, Any]] = []
+    ) -> tuple[list[NativeOp | JsonObject], dict[int, str]]:
+        operations: list[NativeOp | JsonObject] = []
         command_ids: dict[int, str] = {}
         for command in commands:
             if isinstance(command, StopCommand):
@@ -449,7 +468,7 @@ class SimulatorApp:
             logger.error('交通流或主车状态尚未就绪，无法执行交通事件')
             return
         try:
-            detail = self.traffic_manager.trigger_action(
+            result = self.traffic_manager.trigger_action(
                 api,
                 action=command.action,
                 params=command.params,
@@ -474,13 +493,13 @@ class SimulatorApp:
                     frame_no=self.last_driving.frame_no,
                     timestamp=time.time(),
                     command_id=command.command_id,
-                    payload={'label': f'traffic:{detail["action"]}', **detail},
+                    payload=result.to_event_payload(),
                 )
             )
         except Exception as exc:
             logger.error(f'交通事件 {command.action} 执行失败：{exc}')
 
-    def _operation(self, command: LauncherCommand) -> dict[str, Any] | None:
+    def _operation(self, command: LauncherCommand) -> NativeOp | JsonObject | None:
         if isinstance(command, SetWeatherCommand):
             return {
                 'method': 'environment.apply',
@@ -500,7 +519,7 @@ class SimulatorApp:
                 },
             }
         if isinstance(command, UpdateFogRegionCommand):
-            params: dict[str, Any] = {
+            params: JsonObject = {
                 'region_id': command.region_id,
                 'transition_seconds': command.transition_seconds,
             }
@@ -545,46 +564,38 @@ class SimulatorApp:
             return self._manual_operation()
         raise ValueError(f'未知的驾驶端命令：{command}')
 
-    def _external_operation(self) -> dict[str, Any] | None:
+    def _external_operation(self) -> NativeOp | None:
         if self.control_mode == 'external':
             logger.info('主车已处于自动驾驶，无需切换控制模式')
             return None
-        return {
-            'method': 'vehicle.set_mode',
-            'params': {
-                'actor_id': self.ego_actor_id,
-                'mode': 'external',
-                'controller': 'python',
-                'expected_control_revision': self.control_revision,
-            },
-        }
+        return op_set_vehicle_mode(
+            actor_id=self.ego_actor_id,
+            mode='external',
+            controller='python',
+            expected_control_revision=self.control_revision,
+        )
 
-    def _manual_operation(self) -> dict[str, Any] | None:
+    def _manual_operation(self) -> NativeOp | None:
         if self.control_mode == 'manual':
             logger.info('主车已处于人工驾驶，无需切换控制模式')
             return None
-        return {
-            'method': 'vehicle.set_mode',
-            'params': {
-                'actor_id': self.ego_actor_id,
-                'mode': 'manual',
-                'controller': 'human',
-                'expected_control_revision': self.control_revision,
-            },
-        }
+        return op_set_vehicle_mode(
+            actor_id=self.ego_actor_id,
+            mode='manual',
+            controller='human',
+            expected_control_revision=self.control_revision,
+        )
 
-    def _apply_control_state(
-        self, control_state: tuple[dict[str, Any], ...] | list[dict[str, Any]] | None
-    ) -> None:
+    def _apply_control_state(self, control_state: Sequence[JsonObject] | None) -> None:
         if self.traffic_manager is not None:
             self.traffic_manager.apply_control_state(control_state)
         for item in control_state or ():
-            if int(item.get('actor_id', 0)) != self.ego_actor_id:
+            if as_int(item.get('actor_id')) != self.ego_actor_id:
                 continue
             new_mode = str(item.get('mode', ''))
             if new_mode != self.control_mode and self.autopilot is not None:
                 self.autopilot.reset()
-            self.control_revision = int(item.get('revision', 0))
+            self.control_revision = as_int(item.get('revision'))
             self.control_mode = new_mode
 
     def _forward_events(
@@ -601,14 +612,15 @@ class SimulatorApp:
     def _forward_raw(
         self,
         channel: WorkerWSClient,
-        events: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+        events: Sequence[JsonObject],
         request_id: int | None,
         command_ids: dict[int, str],
     ) -> None:
         for raw in events:
             session_id = str(raw.get('session_id') or '')
             name = str(raw['name'])
-            payload = raw.get('payload') or {}
+            raw_payload = raw.get('payload')
+            payload: JsonObject = raw_payload if isinstance(raw_payload, dict) else {}
             if not session_id:
                 # 空 session 的外部管理旧事件过滤；本次 worker 在 start_view 前创建
                 # 的准备区域事件保留，按 create 返回的 region_id 精确识别。
@@ -616,7 +628,7 @@ class SimulatorApp:
                 prepared = (
                     name.startswith('environment_')
                     and region_id is not None
-                    and int(region_id) in self.prepared_regions
+                    and as_int(region_id) in self.prepared_regions
                 )
                 if not prepared:
                     continue
@@ -625,7 +637,9 @@ class SimulatorApp:
             event_request = raw.get('request_id')
             index = raw.get('operation_index')
             key = (
-                (int(event_request), int(index)) if event_request is not None and index is not None else None
+                (as_int(event_request), as_int(index))
+                if event_request is not None and index is not None
+                else None
             )
             source = str(raw['source'])
             command_id = None
@@ -641,7 +655,7 @@ class SimulatorApp:
                     if name in ('environment_completed', 'environment_replaced'):
                         self.pending_environment.pop(key, None)
                     if name == 'environment_applied' and command_id is not None:
-                        if float(payload.get('transition_seconds') or 0) > 0:
+                        if as_float(payload.get('transition_seconds')) > 0:
                             self.pending_environment[key] = command_id
             elif key is not None and request_id is not None and key[0] == request_id:
                 command_id = command_ids.get(key[1])
@@ -652,7 +666,7 @@ class SimulatorApp:
     def _emit(
         self,
         channel: WorkerWSClient,
-        raw: dict[str, Any],
+        raw: JsonObject,
         *,
         command_id: str | None,
         source: str,
@@ -662,12 +676,15 @@ class SimulatorApp:
             self._pending_mode_toggle = True
             logger.info('收到驾驶人自动驾驶切换请求，下一交换帧执行模式切换')
         if event.name == 'collision':
-            payload = raw.get('payload') or {}
-            intensity = float(payload.get('intensity', 0.0))
+            raw_payload = raw.get('payload')
+            payload: JsonObject = raw_payload if isinstance(raw_payload, dict) else {}
+            intensity = as_float(payload.get('intensity'))
             other = str(payload.get('other_actor_type') or payload.get('other_actor_id') or '障碍物')
             logger.warning(f'检测到主车碰撞：对象={other}，碰撞强度={intensity:.1f}')
         if event.name == 'lane_invasion':
-            markings = (raw.get('payload') or {}).get('markings') or ()
+            raw_payload = raw.get('payload')
+            raw_markings = raw_payload.get('markings') if isinstance(raw_payload, dict) else None
+            markings = raw_markings if isinstance(raw_markings, list) else ()
             self.invaded_lane_marking = ', '.join(str(item) for item in markings)
             if self.invaded_lane_marking:
                 logger.info(f'检测到主车压线/越线：{self.invaded_lane_marking}')

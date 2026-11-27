@@ -6,9 +6,46 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Literal, Protocol, Unpack
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from drisca.core.client import NativeApiClient
+from drisca.core.protocol import LauncherCommand
+from drisca.core.traffic_models import (
+    AdjacentCutInParams,
+    AheadSignalChangeParams,
+    DualLaneSlowdownParams,
+    LeadBreakdownParams,
+    LeadHardBrakeParams,
+    RearOvertakeParams,
+    RedLightRunnerParams,
+    SetTrafficCountParams,
+    TrafficAction,
+    TrafficActionParams,
+)
+from drisca.core.types import JsonObject, JsonValue, as_float, as_int
+from drisca.launcher.state import LauncherState, LauncherStatePatch
+
+
+class CommandRuntime(Protocol):
+    """实验指令处理器依赖的 Runtime 最小接口协议。"""
+
+    api: NativeApiClient | None
+    state: LauncherState
+
+    def send(self, command: LauncherCommand) -> None: ...
+    def speak(self, text: str, command_id: str) -> None: ...
+    def update(self, **changes: Unpack[LauncherStatePatch]) -> None: ...
+    def log(
+        self,
+        message: str,
+        level: str = 'INFO',
+        role: str = 'launcher',
+        *,
+        detail: str | None = None,
+    ) -> None: ...
+    def read_fog_regions(self) -> list[JsonObject]: ...
 
 
 class CommandCategory(StrEnum):
@@ -27,36 +64,47 @@ class CommandSpec:
     description: str
     category: CommandCategory
     params_model: type[BaseModel]
-    fields: tuple[dict[str, Any], ...]
-    handler: Callable[[Any, Any, str], None]
+    fields: tuple[JsonObject, ...]
+    handler: Callable[[CommandRuntime, BaseModel, str], None]
 
-    def to_bootstrap(self) -> dict[str, Any]:
+    def to_bootstrap(self) -> JsonObject:
+        field_list: list[JsonValue] = list(self.fields)
         return {
             'id': self.id,
             'label': self.label,
             'description': self.description,
             'category': str(self.category),
-            'fields': list(self.fields),
+            'fields': field_list,
         }
 
 
 REGISTRY: dict[str, CommandSpec] = {}
 MODELS: dict[str, type[BaseModel]] = {}
-COMMANDS: list[dict[str, Any]] = []
+COMMANDS: list[JsonObject] = []
 
 
-def register_command(
+def register_command[P: BaseModel](
     *,
     command_id: str,
     label: str,
     description: str,
     category: CommandCategory,
-    params_model: type[BaseModel],
-    fields: list[dict[str, Any]],
-) -> Callable[[Callable[[Any, Any, str], None]], Callable[[Any, Any, str], None]]:
+    params_model: type[P],
+    fields: list[JsonObject],
+) -> Callable[[Callable[[CommandRuntime, P, str], None]], Callable[[CommandRuntime, P, str], None]]:
     """注册一条可由前端动态渲染与触发的实验事件/指令。"""
 
-    def decorator(func: Callable[[Any, Any, str], None]) -> Callable[[Any, Any, str], None]:
+    def decorator(
+        func: Callable[[CommandRuntime, P, str], None],
+    ) -> Callable[[CommandRuntime, P, str], None]:
+        def runner(rt: CommandRuntime, raw_params: BaseModel, command_id: str) -> None:
+            validated = (
+                raw_params
+                if isinstance(raw_params, params_model)
+                else params_model.model_validate(raw_params.model_dump())
+            )
+            func(rt, validated, command_id)
+
         spec = CommandSpec(
             id=command_id,
             label=label,
@@ -64,7 +112,7 @@ def register_command(
             category=category,
             params_model=params_model,
             fields=tuple(fields),
-            handler=func,
+            handler=runner,
         )
         REGISTRY[command_id] = spec
         MODELS[command_id] = params_model
@@ -121,7 +169,7 @@ class RainSquallParams(BaseModel):
     params_model=AutopilotParams,
     fields=[{'key': 'enabled', 'label': '启用', 'type': 'boolean', 'required': True, 'default': True}],
 )
-def _run_autopilot(rt: Any, params: AutopilotParams, command_id: str) -> None:
+def _run_autopilot(rt: CommandRuntime, params: AutopilotParams, command_id: str) -> None:
     from drisca.core.protocol import SetAutopilotCommand
 
     rt.send(SetAutopilotCommand(command_id=command_id, enabled=params.enabled))
@@ -138,7 +186,7 @@ def _run_autopilot(rt: Any, params: AutopilotParams, command_id: str) -> None:
         {'key': 'speech', 'label': '语音内容', 'type': 'text', 'required': True, 'default': ''},
     ],
 )
-def _run_takeover(rt: Any, params: TakeoverParams, command_id: str) -> None:
+def _run_takeover(rt: CommandRuntime, params: TakeoverParams, command_id: str) -> None:
     from drisca.core.protocol import SetTakeoverCommand
 
     rt.send(SetTakeoverCommand(command_id=command_id, enabled=params.enabled))
@@ -153,7 +201,7 @@ def _run_takeover(rt: Any, params: TakeoverParams, command_id: str) -> None:
     params_model=SpeechParams,
     fields=[{'key': 'text', 'label': '语音内容', 'type': 'text', 'required': True, 'default': ''}],
 )
-def _run_speech(rt: Any, params: SpeechParams, command_id: str) -> None:
+def _run_speech(rt: CommandRuntime, params: SpeechParams, command_id: str) -> None:
     rt.speak(params.text, command_id)
 
 
@@ -192,7 +240,7 @@ def _run_speech(rt: Any, params: SpeechParams, command_id: str) -> None:
         {'key': 'fade_out_s', 'label': '渐出时长 · s', 'type': 'number', 'required': True, 'default': 2},
     ],
 )
-def _run_local_fog_burst(rt: Any, params: LocalFogBurstParams, command_id: str) -> None:
+def _run_local_fog_burst(rt: CommandRuntime, params: LocalFogBurstParams, command_id: str) -> None:
     from uuid import uuid4
 
     from drisca.core.protocol import CreateFogRegionCommand, DeleteFogRegionCommand
@@ -201,18 +249,21 @@ def _run_local_fog_burst(rt: Any, params: LocalFogBurstParams, command_id: str) 
         center = (params.x, params.y, params.z)
     else:
         telemetry = rt.state.get('telemetry')
-        if telemetry is not None:
-            x = float(telemetry['location_x'])
-            y = float(telemetry['location_y'])
-            z = float(telemetry['location_z'])
-            yaw = math.radians(float(telemetry['rotation_yaw']))
+        if isinstance(telemetry, dict):
+            x = as_float(telemetry.get('location_x'))
+            y = as_float(telemetry.get('location_y'))
+            z = as_float(telemetry.get('location_z'))
+            yaw = math.radians(as_float(telemetry.get('rotation_yaw')))
         else:
-            spawns = rt.state.get('catalog', {}).get('spawn_points') or []
-            if not spawns:
+            catalog = rt.state.get('catalog')
+            spawns = catalog.get('spawn_points') if isinstance(catalog, dict) else None
+            if not isinstance(spawns, list) or not spawns or not isinstance(spawns[0], dict):
                 raise RuntimeError('当前无主车遥测且无可用出生点，无法按主车前方定位')
             sp = spawns[0]
-            x, y, z = float(sp['x']), float(sp['y']), float(sp['z'])
-            yaw = math.radians(float(sp['yaw']))
+            x = as_float(sp.get('x'))
+            y = as_float(sp.get('y'))
+            z = as_float(sp.get('z'))
+            yaw = math.radians(as_float(sp.get('yaw')))
         center = (
             x + math.cos(yaw) * params.distance_m,
             y + math.sin(yaw) * params.distance_m,
@@ -221,7 +272,12 @@ def _run_local_fog_burst(rt: Any, params: LocalFogBurstParams, command_id: str) 
 
     if rt.state['phase'] == 'running':
         expected_session = rt.state.get('session_id')
-        before_ids = {int(r['region_id']) for r in (rt.state.get('fog_regions') or [])}
+        raw_regions = rt.state.get('fog_regions')
+        before_ids = {
+            as_int(r.get('region_id'))
+            for r in (raw_regions if isinstance(raw_regions, list) else [])
+            if isinstance(r, dict)
+        }
         rt.send(
             CreateFogRegionCommand(
                 command_id=command_id,
@@ -234,13 +290,18 @@ def _run_local_fog_burst(rt: Any, params: LocalFogBurstParams, command_id: str) 
         if params.hold_s <= 0:
             return
 
+        def _region_ids() -> list[int]:
+            regions = rt.state.get('fog_regions')
+            if not isinstance(regions, list):
+                return []
+            return [as_int(r.get('region_id')) for r in regions if isinstance(r, dict)]
+
         def schedule_cleanup() -> None:
             # 等待新区域创建事件回传以获取 region_id，并校验会话一致性
             region_id: int | None = None
             deadline = time.monotonic() + 3.0
             while time.monotonic() < deadline and rt.state.get('session_id') == expected_session:
-                current = [int(r['region_id']) for r in (rt.state.get('fog_regions') or [])]
-                added = [rid for rid in current if rid not in before_ids]
+                added = [rid for rid in _region_ids() if rid not in before_ids]
                 if added:
                     region_id = added[-1]
                     break
@@ -250,7 +311,7 @@ def _run_local_fog_burst(rt: Any, params: LocalFogBurstParams, command_id: str) 
             time.sleep(params.fade_in_s + params.hold_s)
             if rt.state['phase'] != 'running' or rt.state.get('session_id') != expected_session:
                 return
-            if any(int(r['region_id']) == region_id for r in (rt.state.get('fog_regions') or [])):
+            if region_id in _region_ids():
                 rt.send(
                     DeleteFogRegionCommand(
                         command_id=uuid4().hex,
@@ -326,7 +387,7 @@ def _run_local_fog_burst(rt: Any, params: LocalFogBurstParams, command_id: str) 
         {'key': 'fade_out_s', 'label': '恢复渐变 · s', 'type': 'number', 'required': True, 'default': 5},
     ],
 )
-def _run_rain_squall(rt: Any, params: RainSquallParams, command_id: str) -> None:
+def _run_rain_squall(rt: CommandRuntime, params: RainSquallParams, command_id: str) -> None:
     from uuid import uuid4
 
     from drisca.core.config import PrecipitationConfig, SurfaceConfig, WeatherConfig
@@ -336,7 +397,8 @@ def _run_rain_squall(rt: Any, params: RainSquallParams, command_id: str) -> None
     raw_weather = rt.state.get('weather')
     if raw_weather is None:
         preset = rt.state.get('active_preset')
-        raw_weather = preset['world']['weather'] if preset else None
+        world = preset.get('world') if isinstance(preset, dict) else None
+        raw_weather = world.get('weather') if isinstance(world, dict) else None
     if raw_weather is None:
         raise RuntimeError('当前无可用全局天气基准，无法触发短时强降雨')
 
@@ -403,80 +465,10 @@ def _run_rain_squall(rt: Any, params: RainSquallParams, command_id: str) -> None
         raise RuntimeError('CARLA 尚未连接，无法触发短时强降雨')
 
 
-class LeadHardBrakeParams(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
-    max_distance_m: float = Field(default=60.0, gt=0, le=300)
-    duration_s: float = Field(default=2.5, gt=0, le=30)
-    brake_intensity: float = Field(default=0.95, ge=0.1, le=1.0)
-
-
-class AdjacentCutInParams(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
-    mode: Literal['reuse_adjacent', 'spawn_cut_in'] = 'reuse_adjacent'
-    side: Literal['any', 'left', 'right'] = 'any'
-    min_front_m: float = Field(default=3.5, ge=-20, le=100)
-    max_front_m: float = Field(default=28.0, gt=0, le=200)
-    spawn_distance_m: float = Field(default=45.0, ge=10, le=200)
-    trigger_distance_m: float = Field(default=14.0, ge=4, le=80)
-
-
-class RearOvertakeParams(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
-    mode: Literal['reuse_rear', 'spawn_rear'] = 'reuse_rear'
-    side: Literal['any', 'left', 'right'] = 'any'
-    rear_distance_m: float = Field(default=22.0, ge=6, le=120)
-    extra_speed_mps: float = Field(default=8.0, ge=2.0, le=30.0)
-    clear_front_m: float = Field(default=18.0, ge=8, le=60)
-    return_to_lane: bool = True
-
-
-class LeadBreakdownParams(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
-    mode: Literal['reuse_lead', 'spawn_far'] = 'reuse_lead'
-    distance_m: float = Field(default=130.0, ge=15, le=350)
-    speed_factor: float = Field(default=0.0, ge=0.0, le=1.2)
-
-
-class AheadSignalChangeParams(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
-    target_state: Literal['yellow', 'red', 'green'] = 'yellow'
-    max_distance_m: float = Field(default=120.0, ge=10, le=300)
-
-
-class DualLaneSlowdownParams(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
-    max_distance_m: float = Field(default=100.0, ge=15, le=250)
-    speed_factor: float = Field(default=0.45, ge=0.1, le=0.9)
-    duration_s: float = Field(default=10.0, ge=2.0, le=60.0)
-
-
-class RedLightRunnerParams(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
-    max_distance_m: float = Field(default=120.0, ge=15, le=250)
-    duration_s: float = Field(default=8.0, ge=2.0, le=30.0)
-
-
-class SetTrafficCountParams(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
-    target_count: int = Field(default=10, ge=0, le=100)
-
-
-_TrafficActionName = Literal[
-    'lead_hard_brake',
-    'adjacent_cut_in',
-    'rear_overtake',
-    'lead_breakdown',
-    'ahead_signal_change',
-    'dual_lane_slowdown',
-    'red_light_runner',
-    'set_traffic_count',
-]
-
-
 def _send_traffic_action(
-    rt: Any,
-    action: _TrafficActionName,
-    params: BaseModel,
+    rt: CommandRuntime,
+    action: TrafficAction,
+    params: TrafficActionParams,
     command_id: str,
 ) -> None:
     from drisca.core.protocol import TrafficActionCommand
@@ -487,7 +479,7 @@ def _send_traffic_action(
         TrafficActionCommand(
             command_id=command_id,
             action=action,
-            params=params.model_dump(mode='json'),
+            params=params,
         )
     )
 
@@ -552,8 +544,8 @@ def _send_traffic_action(
         },
     ],
 )
-def _run_rear_overtake(rt: Any, params: RearOvertakeParams, command_id: str) -> None:
-    _send_traffic_action(rt, 'rear_overtake', params, command_id)
+def _run_rear_overtake(rt: CommandRuntime, params: RearOvertakeParams, command_id: str) -> None:
+    _send_traffic_action(rt, TrafficAction.REAR_OVERTAKE, params, command_id)
 
 
 @register_command(
@@ -616,8 +608,8 @@ def _run_rear_overtake(rt: Any, params: RearOvertakeParams, command_id: str) -> 
         },
     ],
 )
-def _run_adjacent_cut_in(rt: Any, params: AdjacentCutInParams, command_id: str) -> None:
-    _send_traffic_action(rt, 'adjacent_cut_in', params, command_id)
+def _run_adjacent_cut_in(rt: CommandRuntime, params: AdjacentCutInParams, command_id: str) -> None:
+    _send_traffic_action(rt, TrafficAction.ADJACENT_CUT_IN, params, command_id)
 
 
 @register_command(
@@ -650,8 +642,8 @@ def _run_adjacent_cut_in(rt: Any, params: AdjacentCutInParams, command_id: str) 
         },
     ],
 )
-def _run_lead_hard_brake(rt: Any, params: LeadHardBrakeParams, command_id: str) -> None:
-    _send_traffic_action(rt, 'lead_hard_brake', params, command_id)
+def _run_lead_hard_brake(rt: CommandRuntime, params: LeadHardBrakeParams, command_id: str) -> None:
+    _send_traffic_action(rt, TrafficAction.LEAD_HARD_BRAKE, params, command_id)
 
 
 @register_command(
@@ -688,8 +680,8 @@ def _run_lead_hard_brake(rt: Any, params: LeadHardBrakeParams, command_id: str) 
         },
     ],
 )
-def _run_lead_breakdown(rt: Any, params: LeadBreakdownParams, command_id: str) -> None:
-    _send_traffic_action(rt, 'lead_breakdown', params, command_id)
+def _run_lead_breakdown(rt: CommandRuntime, params: LeadBreakdownParams, command_id: str) -> None:
+    _send_traffic_action(rt, TrafficAction.LEAD_BREAKDOWN, params, command_id)
 
 
 @register_command(
@@ -720,8 +712,8 @@ def _run_lead_breakdown(rt: Any, params: LeadBreakdownParams, command_id: str) -
         },
     ],
 )
-def _run_ahead_signal_change(rt: Any, params: AheadSignalChangeParams, command_id: str) -> None:
-    _send_traffic_action(rt, 'ahead_signal_change', params, command_id)
+def _run_ahead_signal_change(rt: CommandRuntime, params: AheadSignalChangeParams, command_id: str) -> None:
+    _send_traffic_action(rt, TrafficAction.AHEAD_SIGNAL_CHANGE, params, command_id)
 
 
 @register_command(
@@ -754,8 +746,8 @@ def _run_ahead_signal_change(rt: Any, params: AheadSignalChangeParams, command_i
         },
     ],
 )
-def _run_dual_lane_slowdown(rt: Any, params: DualLaneSlowdownParams, command_id: str) -> None:
-    _send_traffic_action(rt, 'dual_lane_slowdown', params, command_id)
+def _run_dual_lane_slowdown(rt: CommandRuntime, params: DualLaneSlowdownParams, command_id: str) -> None:
+    _send_traffic_action(rt, TrafficAction.DUAL_LANE_SLOWDOWN, params, command_id)
 
 
 @register_command(
@@ -781,8 +773,8 @@ def _run_dual_lane_slowdown(rt: Any, params: DualLaneSlowdownParams, command_id:
         },
     ],
 )
-def _run_red_light_runner(rt: Any, params: RedLightRunnerParams, command_id: str) -> None:
-    _send_traffic_action(rt, 'red_light_runner', params, command_id)
+def _run_red_light_runner(rt: CommandRuntime, params: RedLightRunnerParams, command_id: str) -> None:
+    _send_traffic_action(rt, TrafficAction.RED_LIGHT_RUNNER, params, command_id)
 
 
 @register_command(
@@ -801,5 +793,5 @@ def _run_red_light_runner(rt: Any, params: RedLightRunnerParams, command_id: str
         },
     ],
 )
-def _run_set_traffic_count(rt: Any, params: SetTrafficCountParams, command_id: str) -> None:
-    _send_traffic_action(rt, 'set_traffic_count', params, command_id)
+def _run_set_traffic_count(rt: CommandRuntime, params: SetTrafficCountParams, command_id: str) -> None:
+    _send_traffic_action(rt, TrafficAction.SET_TRAFFIC_COUNT, params, command_id)

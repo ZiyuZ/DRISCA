@@ -3,19 +3,30 @@
 import math
 import random
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
 
 from loguru import logger
+from pydantic import BaseModel
 
 from drisca.core.client import NativeApiClient, NativeApiError
 from drisca.core.config import TrafficConfig
 from drisca.core.snapshot import Snapshot
+from drisca.core.traffic_models import TrafficAction
+from drisca.core.types import (
+    JsonObject,
+    NativeOp,
+    TrafficLightSnapshot,
+    as_int,
+    op_destroy_vehicles,
+    op_highlight_path,
+    op_set_vehicle_lights,
+)
 
 from .controller import AutopilotController, VehicleControl
 from .profiles import resolve_profile, sample_profile
 from .road_graph import RoadGraph
-from .scenarios import execute_traffic_action
+from .scenarios import EgoState, ScenarioContext, ScenarioResult, execute_traffic_action
 from .scene import TrafficScene
 from .signals import SignalTracker
 
@@ -60,6 +71,7 @@ class ManagedVehicle:
     overtake_return_side: str | None = None
     overtake_clear_front_m: float = 10.0
     overtake_extra_speed_mps: float = 0.0
+    stuck_seconds: float = 0.0
 
 
 class TrafficManager:
@@ -70,7 +82,7 @@ class TrafficManager:
         self.signals = signals
         self._config = config
         self.vehicles: dict[int, ManagedVehicle] = {}
-        self._queued_operations: list[dict[str, Any]] = []
+        self._queued_operations: list[NativeOp] = []
         self._respawn_styles: list[str] = []
         self._last_respawn_at = 0.0
         self._respawn_rng = random.Random(config.seed + 7919)
@@ -83,7 +95,7 @@ class TrafficManager:
     def actor_ids(self) -> tuple[int, ...]:
         return tuple(self.vehicles)
 
-    def queue_operation(self, operation: dict[str, Any]) -> None:
+    def queue_operation(self, operation: NativeOp) -> None:
         self._queued_operations.append(operation)
 
     def spawn_managed_vehicle(
@@ -238,19 +250,17 @@ class TrafficManager:
         )
         return spawned
 
-    def apply_control_state(
-        self, control_state: tuple[dict[str, Any], ...] | list[dict[str, Any]] | None
-    ) -> None:
+    def apply_control_state(self, control_state: Sequence[JsonObject] | None) -> None:
         if not control_state:
             return
         active_ids: set[int] = set()
         for item in control_state:
-            actor_id = int(item.get('actor_id', 0))
+            actor_id = as_int(item.get('actor_id', 0))
             active_ids.add(actor_id)
             entry = self.vehicles.get(actor_id)
             if entry is None:
                 continue
-            entry.control_revision = int(item.get('revision', 0))
+            entry.control_revision = as_int(item.get('revision', 0))
             entry.control_mode = str(item.get('mode', ''))
             entry.confirmed_in_session = True
         # 清理已被 UE 销毁或移出会话控制表的背景车（如开出非封闭地图边界掉入 KillZ）
@@ -301,9 +311,7 @@ class TrafficManager:
                 if self.vehicles.pop(aid, None) is not None:
                     destroy_ids.append(aid)
             if destroy_ids:
-                self._queued_operations.append(
-                    {'method': 'vehicle.destroy', 'params': {'actor_ids': destroy_ids}}
-                )
+                self._queued_operations.append(op_destroy_vehicles(destroy_ids))
             return current, -len(destroy_ids)
 
         return current, 0
@@ -408,14 +416,14 @@ class TrafficManager:
         self,
         snapshot: Snapshot,
         scene: TrafficScene,
-        traffic_lights: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+        traffic_lights: Sequence[TrafficLightSnapshot],
         dt: float,
         *,
         ego_xy: tuple[float, float] | None = None,
         selected_actor_id: int | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[NativeOp]:
         """基于共享向量化场景批量计算全部背景车本步控制操作。"""
-        operations: list[dict[str, Any]] = []
+        operations: list[NativeOp] = []
         if self._queued_operations:
             operations.extend(self._queued_operations)
             self._queued_operations.clear()
@@ -465,12 +473,7 @@ class TrafficManager:
                     entry.pending_merge_lane = None
                     entry.permanent_stop = False
                     entry.controller.switch_lane(target_lane)
-                    operations.append(
-                        {
-                            'method': 'vehicle.set_lights',
-                            'params': {'actor_id': actor_id, 'light_state': 0},
-                        }
-                    )
+                    operations.append(op_set_vehicle_lights(actor_id=actor_id, light_state=0))
                     logger.info(
                         f'路侧停靠车触发起步切入：actor_id={actor_id} -> 车道 {target_lane}，'
                         f'距离={dist_to_ego:.1f}m'
@@ -523,11 +526,25 @@ class TrafficManager:
             )
             ignore_signals = now < entry.ignore_signals_until
 
+            speed_now = float(scene.speeds[idx])
+            if (
+                not entry.permanent_stop
+                and now >= entry.brake_override_until
+                and not entry.controller.waiting_for_signal
+                and speed_now < 0.35
+            ):
+                entry.stuck_seconds += max(dt, 0.0)
+                if entry.stuck_seconds >= 10.0:
+                    out_of_bounds.append(actor_id)
+                    continue
+            else:
+                entry.stuck_seconds = 0.0
+
             control = entry.controller.step(
                 x=vx,
                 y=vy,
                 yaw_deg=float(rec['rotation'][1]),
-                speed_mps=float(scene.speeds[idx]),
+                speed_mps=speed_now,
                 dt=dt,
                 road_id=int(scene.road_ids[idx]),
                 lane_id=int(scene.lane_ids[idx]),
@@ -557,24 +574,19 @@ class TrafficManager:
                 destroy_ids.append(aid)
                 logger.info(f'背景车 #{aid} 超出活动半径或异常姿态，已销毁')
         if destroy_ids:
-            operations.append({'method': 'vehicle.destroy', 'params': {'actor_ids': destroy_ids}})
+            operations.append(op_destroy_vehicles(destroy_ids))
         if selected_actor_id is not None and selected_actor_id in self.vehicles:
             pts = self.vehicles[selected_actor_id].controller.planned_points()
             if pts:
-                operations.append(
-                    {
-                        'method': 'debug.highlight_path',
-                        'params': {'actor_id': selected_actor_id, 'points': pts, 'duration_s': 0.35},
-                    }
-                )
+                operations.append(op_highlight_path(actor_id=selected_actor_id, points=pts, duration_s=0.35))
         return operations
 
     def trigger_action(
         self,
         api: NativeApiClient,
         *,
-        action: str,
-        params: dict[str, Any],
+        action: TrafficAction | str,
+        params: BaseModel | JsonObject,
         ego_actor_id: int,
         ego_x: float,
         ego_y: float,
@@ -583,25 +595,26 @@ class TrafficManager:
         ego_lane_id: int,
         ego_speed_mps: float = 0.0,
         scene: TrafficScene | None,
-        traffic_lights: tuple[dict[str, Any], ...] | list[dict[str, Any]] = (),
+        traffic_lights: Sequence[TrafficLightSnapshot] = (),
         default_speed_limit_mps: float,
         debug: bool = False,
-    ) -> dict[str, Any]:
-        """执行运行期交通场景事件并返回结构化结果载荷。"""
-        return execute_traffic_action(
-            self,
-            api,
-            action=action,
-            params=params,
-            ego_actor_id=ego_actor_id,
-            ego_x=ego_x,
-            ego_y=ego_y,
-            ego_yaw_deg=ego_yaw_deg,
-            ego_road_id=ego_road_id,
-            ego_lane_id=ego_lane_id,
-            ego_speed_mps=ego_speed_mps,
+    ) -> ScenarioResult:
+        """执行运行期交通场景事件并返回结构化结果。"""
+        ctx = ScenarioContext(
+            manager=self,
+            api=api,
+            ego=EgoState(
+                actor_id=ego_actor_id,
+                x=ego_x,
+                y=ego_y,
+                yaw_deg=ego_yaw_deg,
+                road_id=ego_road_id,
+                lane_id=ego_lane_id,
+                speed_mps=ego_speed_mps,
+            ),
             scene=scene,
             traffic_lights=traffic_lights,
             default_speed_limit_mps=default_speed_limit_mps,
             debug=debug,
         )
+        return execute_traffic_action(ctx, action, params)

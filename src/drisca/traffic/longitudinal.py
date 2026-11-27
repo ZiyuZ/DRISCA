@@ -55,7 +55,7 @@ class SpeedPIDController:
             if np.any(mask):
                 max_curv = float(np.max(path.curvatures[mask]))
                 if max_curv > 1e-4:
-                    curve_speed = math.sqrt(self._max_lateral_accel / max_curv)
+                    curve_speed = math.sqrt((self._max_lateral_accel * 0.8) / max_curv)
                     target = min(target, max(3.0, curve_speed))
         if stop_distance_m is not None:
             effective = stop_distance_m - self._stop_margin_m

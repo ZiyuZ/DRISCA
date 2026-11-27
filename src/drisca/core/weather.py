@@ -1,21 +1,20 @@
 """全局天气配置与原生环境载荷之间的转换。"""
 
-from typing import Any
-
 from drisca.core.config import GlobalWeather, WeatherConfig
+from drisca.core.types import JsonObject
 
 
-def to_payload(config: GlobalWeather) -> dict[str, Any]:
+def to_payload(config: GlobalWeather) -> JsonObject:
     """展开为 environment.apply/update 的 weather 对象。"""
     return config.model_dump(mode='json', exclude={'preset_name'})
 
 
-def from_payload(payload: dict) -> WeatherConfig:
+def from_payload(payload: JsonObject) -> WeatherConfig:
     """解析目录中的完整天气条目，条目同时带有同名 preset_name。"""
     return WeatherConfig.model_validate(payload)
 
 
-def from_native(payload: dict) -> GlobalWeather:
+def from_native(payload: JsonObject) -> GlobalWeather:
     """解析原生 current/target 中的 weather 对象，不含预设名。"""
     return GlobalWeather.model_validate(payload)
 
