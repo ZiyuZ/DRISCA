@@ -38,11 +38,11 @@ flowchart TD
 
 ```mermaid
 flowchart TD
+    storage["storage<br/>SQLite Schema v2、批量写入线程、查询导出"]
     launcher["launcher<br/>Web API、桌面壳、编排、预览、回放、导出"]
     simulator["simulator<br/>实验循环、主车采样、场景事件执行、方向盘占位"]
     traffic["traffic<br/>路网索引、IDM/MOBIL、Pure Pursuit、场景事件"]
     core["core<br/>不可变配置模型、协议消息、DRISCA WS 客户端"]
-    storage["storage<br/>SQLite Schema v2、批量写入线程、查询导出"]
 
     launcher --> core
     launcher --> storage
@@ -65,6 +65,6 @@ flowchart TD
 
 ## 正常停机与错误处理原则
 
-平台面向小规模受控实验环境，采用**尽早失败（Fail-Fast）**原则：端口占用、CARLA 断连、配置错误、道路位置无效、数据库版本不匹配或写入队列溢出时直接报错，并由 `launcher` 展示完整日志。
+平台面向小规模受控实验环境，采用 **尽早失败（Fail-Fast）** 原则：端口占用、CARLA 断连、配置错误、道路位置无效、数据库版本不匹配或写入队列溢出时直接报错，并由 `launcher` 展示完整日志。
 
 正常停止实验时，按顺序完成剩余数据行提交、离散事件与日志刷新、驾驶视图停止、场景车辆清理、子进程回收与数据库会话收尾。

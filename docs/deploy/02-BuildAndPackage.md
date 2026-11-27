@@ -14,7 +14,7 @@ cmake --build D:/Simulator/CarlaUE5/Build --target carla-unreal-editor
 
 ## 2. 构建单 EXE 增量补丁
 
-当 CARLA 源码对齐官方 **CARLA 1.0（`3ea166118d`）** 且保持既有 CARLA 类的 `UPROPERTY` 布局不变时，直接增量编译 `CarlaUnreal-Win64-Shipping.exe`（约 3 分钟，原始约 199 MB，ZIP 压缩后约 73 MB）：
+当 CARLA 源码对齐官方 **CARLA 1.0（`3ea166118d`）** 且保持既有 CARLA 类的 `UPROPERTY` 布局不变时，直接增量编译 `CarlaUnreal-Win64-Shipping.exe`：
 
 ```powershell
 D:/Simulator/UnrealEngine5_carla/Engine/Build/BatchFiles/Build.bat `
@@ -27,7 +27,7 @@ D:/Simulator/UnrealEngine5_carla/Engine/Build/BatchFiles/Build.bat `
 
 ## 3. 构建独立三地图 Shipping 基础包
 
-如需脱离官方预编译包独立托管完整服务端，可构建三地图 **Shipping** 基础包。DRISCA 基础包默认只 Cook 三个基础地图以控制体积：
+如需脱离官方预编译包独立托管完整服务端，建议构建 **Shipping** 基础包。DRISCA 基础包默认只 Cook 三个基础地图以控制体积：
 
 - `/Game/Carla/Maps/Town10HD_Opt`
 - `/Game/Carla/Maps/TestMaps/EmptyMap`

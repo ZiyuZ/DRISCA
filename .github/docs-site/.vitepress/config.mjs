@@ -80,6 +80,7 @@ export default withMermaid(
         { text: '构建与部署', link: '/deploy/01-CarlaSourceAndPatch', activeMatch: '/deploy/' },
         { text: '系统设计', link: '/design/01-Architecture', activeMatch: '/design/' },
       ],
+      socialLinks: [{ icon: 'github', link: 'https://github.com/ZiyuZ/DRISCA' }],
       sidebar: {
         '/guide/': group('guide', '使用指南'),
         '/deploy/': group('deploy', '构建与部署'),
